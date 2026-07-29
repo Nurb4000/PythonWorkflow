@@ -282,7 +282,7 @@ PythonWorkflow/
 - [x] Password hashing with bcrypt
 - [x] Login/register endpoints
 - [x] User management (CRUD, role updates)
-- [x] Group management (create, add/remove users)
+- [x] Group management for organizing users and workflow permissions
 - [x] API token generation
 - [x] Portal endpoints for user/staff workflow access
 - [x] Workflow permission checking by group
@@ -290,6 +290,18 @@ PythonWorkflow/
 - [x] Login/Register forms
 - [x] User Management admin page
 - [x] Protected routes with role-based access
+
+### Phase 6: Form Designer ✅ COMPLETE
+- [x] Form models (Form, FormSubmission, FormTemplate)
+- [x] Form service with validation
+- [x] Form CRUD endpoints
+- [x] Form submission handling
+- [x] Form template management
+- [x] Schema validation (required fields, types)
+- [x] Frontend FormDesigner component
+- [x] FormRenderer component for displaying forms
+- [x] Integration with workflow steps
+- [x] Navigation and routing
 
 ## Next Steps
 

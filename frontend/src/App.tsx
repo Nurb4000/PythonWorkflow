@@ -7,6 +7,7 @@ import { WorkflowDesigner } from './pages/WorkflowDesigner'
 import { RunMonitor } from './pages/RunMonitor'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { UserManagement } from './pages/UserManagement'
+import { FormDesigner } from './pages/FormDesigner'
 
 const ProtectedRoute: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const { isAuthenticated } = useAuth()
@@ -39,6 +40,7 @@ const AppContent: React.FC = () => {
               <a href="#/workflows">Workflows</a>
               <a href="#/admin">Admin</a>
               {user.role === 'admin' && <a href="#/admin/users">Users</a>}
+              <a href="#/forms">Forms</a>
               <span style={{ marginLeft: '1rem', opacity: 0.8 }}>
                 {user.full_name || user.username} ({user.role})
               </span>
@@ -61,6 +63,7 @@ const AppContent: React.FC = () => {
           <Route path="/runs/:runId" element={<ProtectedRoute><RunMonitor /></ProtectedRoute>} />
           <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
+          <Route path="/forms" element={<ProtectedRoute><FormDesigner /></ProtectedRoute>} />
         </Routes>
       </main>
     </div>
