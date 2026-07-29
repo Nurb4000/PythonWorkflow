@@ -38,8 +38,18 @@ See `DESIGN.md` for detailed progress and next steps.
 ## Getting Started
 
 ### Option 1: Docker (Recommended)
+
+**Choose your database:**
 ```bash
-# Start all services
+# SQLite (default, great for development)
+./switch-db.sh sqlite
+
+# PostgreSQL (production-like testing)
+./switch-db.sh postgresql
+```
+
+**Start all services:**
+```bash
 docker-compose up --build
 
 # Backend: http://localhost:8000

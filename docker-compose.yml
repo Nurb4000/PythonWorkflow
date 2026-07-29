@@ -35,16 +35,21 @@ services:
     ports:
       - "8000:8000"
     environment:
-      - DATABASE_URL=postgresql://workflow_user:workflow_password@postgres:5432/workflow_db
+      # Default to SQLite for easy development
+      # Override with: DATABASE_URL=postgresql://user:pass@postgres:5432/db
+      - DATABASE_URL=${DATABASE_URL:-sqlite:///./workflow.db}
       - LLAMA_CPP_URL=http://llama_cpp:8081
-      - SECRET_KEY=your-secret-key-change-in-production
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEBUG=True
     volumes:
       - ./backend:/app
       - backend_data:/app/data
+    # Only depend on postgres if using PostgreSQL
     depends_on:
       postgres:
         condition: service_healthy
+      sqlite:
+        condition: service_started
     command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
 
   # Frontend
