@@ -275,6 +275,22 @@ PythonWorkflow/
 - [x] Admin dashboard integration
 - [x] Scheduling documentation
 
+### Phase 5: User Management & Access Control ✅ COMPLETE
+- [x] User authentication models (User, Group, APIToken)
+- [x] Role-based access control (admin, developer, staff, user)
+- [x] Authentication service with JWT tokens
+- [x] Password hashing with bcrypt
+- [x] Login/register endpoints
+- [x] User management (CRUD, role updates)
+- [x] Group management (create, add/remove users)
+- [x] API token generation
+- [x] Portal endpoints for user/staff workflow access
+- [x] Workflow permission checking by group
+- [x] Frontend authentication context and components
+- [x] Login/Register forms
+- [x] User Management admin page
+- [x] Protected routes with role-based access
+
 ## Next Steps
 
 ### Phase 2: Web UI

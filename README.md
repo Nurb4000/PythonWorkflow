@@ -28,8 +28,8 @@ See `DESIGN.md` for system architecture and development phases.
 - [x] Phase 2: Web UI (React dashboard, workflow designer, admin monitoring)
 - [x] Phase 3: AI Integration Enhancement (knowledge base, templates, validation, tests)
 - [x] Phase 4: Scheduling & Triggers (cron jobs, webhooks, external API triggers, schedule management)
-- [ ] Phase 5: Admin Features (advanced reporting, user management, migration wizard UI)
-- [ ] Phase 6: Form Designer (visual builder, AI-assisted form creation)
+- [x] Phase 5: User Management & Access Control (authentication, RBAC, groups, portal, JWT)
+- [ ] Phase 6: Form Designer (visual builder, AI-assisted form creation, submission tracking)
 
 See `DESIGN.md` for detailed progress and next steps.
 
