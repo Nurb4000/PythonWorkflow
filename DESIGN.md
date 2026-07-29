@@ -265,6 +265,16 @@ PythonWorkflow/
 - [x] Step type validation
 - [x] Form schema validation
 
+### Phase 4: Scheduling & Triggers ✅ COMPLETE
+- [x] Enhanced scheduler with webhook support
+- [x] External API trigger endpoint
+- [x] Cron expression validation
+- [x] Schedule management (CRUD + test)
+- [x] Webhook trigger endpoint
+- [x] Frontend schedule manager component
+- [x] Admin dashboard integration
+- [x] Scheduling documentation
+
 ## Next Steps
 
 ### Phase 2: Web UI

@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { adminApi } from '../services/api'
+import { ScheduleManager } from '../components/ScheduleManager'
 
 interface Stats {
   total_runs: number
@@ -114,7 +115,9 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      <div className="card">
+      <ScheduleManager />
+
+      <div className="card" style={{ marginTop: '2rem' }}>
         <div className="card-header">
           <h3 className="card-title">Recent Runs</h3>
           <div style={{ display: 'flex', gap: '0.5rem' }}>

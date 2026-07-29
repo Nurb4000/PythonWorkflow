@@ -1,6 +1,7 @@
 """
 Admin API endpoints for monitoring and reporting
 """
+import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_
@@ -10,8 +11,41 @@ from datetime import datetime, timedelta
 from app.core.database import get_db
 from app.models.schemas import Workflow, WorkflowRun, StepInstance, Schedule
 from app.schemas.workflow import RunStatsResponse, AuditLogEntry
+from app.services.scheduler import scheduler_service
 
 router = APIRouter()
+
+
+def validate_cron_expression(cron_expr: str) -> bool:
+    """Validate a cron expression (5-part format)"""
+    parts = cron_expr.split()
+    if len(parts) != 5:
+        return False
+    
+    # Basic validation for each field
+    minute, hour, day, month, day_of_week = parts
+    
+    # Minute: 0-59
+    if not re.match(r'^(\*|[0-5]?[0-9])(-[0-5]?[0-9])?$', minute):
+        return False
+    
+    # Hour: 0-23
+    if not re.match(r'^(\*|[0-2]?[0-9])(-[0-2]?[0-9])?$', hour):
+        return False
+    
+    # Day: 1-31
+    if not re.match(r'^(\*|[1-31])(-[1-31])?$', day):
+        return False
+    
+    # Month: 1-12
+    if not re.match(r'^(\*|[1-12])(-[1-12])?$', month):
+        return False
+    
+    # Day of week: 0-6 (Sun-Sat)
+    if not re.match(r'^(\*|[0-6])(-[0-6])?$', day_of_week):
+        return False
+    
+    return True
 
 
 @router.get("/stats", response_model=RunStatsResponse)
@@ -146,6 +180,22 @@ async def list_schedules(db: AsyncSession = Depends(get_db)):
 @router.post("/schedules")
 async def create_schedule(schedule_data: dict, db: AsyncSession = Depends(get_db)):
     """Create a new schedule"""
+    
+    # Validate cron expression
+    if not validate_cron_expression(schedule_data["cron_expression"]):
+        raise HTTPException(
+            status_code=400, 
+            detail="Invalid cron expression. Use 5-part format: minute hour day month day_of_week"
+        )
+    
+    # Verify workflow exists
+    stmt = select(Workflow).where(Workflow.id == schedule_data["workflow_id"])
+    result = await db.execute(stmt)
+    workflow = result.scalar_one_or_none()
+    
+    if not workflow:
+        raise HTTPException(status_code=404, detail=f"Workflow {schedule_data['workflow_id']} not found")
+    
     schedule = Schedule(
         workflow_id=schedule_data["workflow_id"],
         cron_expression=schedule_data["cron_expression"],
@@ -154,6 +204,10 @@ async def create_schedule(schedule_data: dict, db: AsyncSession = Depends(get_db
     db.add(schedule)
     await db.commit()
     await db.refresh(schedule)
+    
+    # Add to scheduler if enabled
+    if schedule.is_enabled:
+        scheduler_service.add_schedule(schedule)
     
     return {
         "id": schedule.id,
@@ -175,13 +229,26 @@ async def update_schedule(schedule_id: int, schedule_data: dict, db: AsyncSessio
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
     
+    # Validate cron expression if provided
     if "cron_expression" in schedule_data:
+        if not validate_cron_expression(schedule_data["cron_expression"]):
+            raise HTTPException(
+                status_code=400, 
+                detail="Invalid cron expression. Use 5-part format: minute hour day month day_of_week"
+            )
         schedule.cron_expression = schedule_data["cron_expression"]
+    
     if "is_enabled" in schedule_data:
         schedule.is_enabled = schedule_data["is_enabled"]
     
     await db.commit()
     await db.refresh(schedule)
+    
+    # Update scheduler
+    if schedule.is_enabled:
+        scheduler_service.update_schedule(schedule)
+    else:
+        scheduler_service.remove_schedule(schedule_id)
     
     return {
         "id": schedule.id,
@@ -203,7 +270,36 @@ async def delete_schedule(schedule_id: int, db: AsyncSession = Depends(get_db)):
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
     
+    # Remove from scheduler
+    scheduler_service.remove_schedule(schedule_id)
+    
     await db.delete(schedule)
     await db.commit()
     
     return {"message": "Schedule deleted successfully"}
+
+
+@router.post("/schedules/{schedule_id}/test")
+async def test_schedule(schedule_id: int, db: AsyncSession = Depends(get_db)):
+    """Test a schedule by immediately triggering the workflow"""
+    stmt = select(Schedule).where(Schedule.id == schedule_id)
+    result = await db.execute(stmt)
+    schedule = result.scalar_one_or_none()
+    
+    if not schedule:
+        raise HTTPException(status_code=404, detail="Schedule not found")
+    
+    try:
+        # Trigger the workflow immediately
+        run = await scheduler_service.trigger_external_api(
+            schedule.workflow_id,
+            {"test": True, "scheduled_by": "manual_test"}
+        )
+        
+        return {
+            "success": True,
+            "run_id": run.id,
+            "message": "Schedule test triggered successfully"
+        }
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Test trigger failed: {str(e)}")
