@@ -1,12 +1,22 @@
 """
 Database connection and session management
 """
+import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 
+# Ensure database directory exists
+db_path = "backend_data"
+os.makedirs(db_path, exist_ok=True)
+
 # Create async engine
-engine = create_async_engine(settings.database_url, echo=settings.debug)
+if settings.database_url.startswith("sqlite"):
+    # For SQLite, use absolute path
+    db_url = f"sqlite+aiosqlite:///{os.path.join(db_path, 'workflow.db')}"
+    engine = create_async_engine(db_url, echo=settings.debug)
+else:
+    engine = create_async_engine(settings.database_url, echo=settings.debug)
 
 # Session factory
 async_session_factory = async_sessionmaker(

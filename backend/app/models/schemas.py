@@ -1,10 +1,13 @@
 """
 Database models for the workflow system
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Table
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
+
+# Import association table from auth models
+from app.models.auth import workflow_permissions
 
 
 class Workflow(Base):
@@ -15,12 +18,17 @@ class Workflow(Base):
     description = Column(Text, default="")
     version = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    is_published = Column(Boolean, default=False)
+    environment = Column(String(20), default="test")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
     steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan")
     runs = relationship("WorkflowRun", back_populates="workflow", cascade="all, delete-orphan")
+    created_by_user = relationship("User", back_populates="owned_workflows")
+    allowed_groups = relationship("Group", secondary=workflow_permissions, back_populates="workflows")
 
 
 class WorkflowStep(Base):

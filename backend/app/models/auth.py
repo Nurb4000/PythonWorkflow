@@ -60,18 +60,7 @@ class Group(Base):
     workflows = relationship("Workflow", secondary=workflow_permissions, back_populates="allowed_groups")
 
 
-class Workflow(Base):
-    """Extended Workflow model with user and permission relationships"""
-    __tablename__ = "workflows"
 
-    # Add these columns if not already present
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
-    is_published = Column(Boolean, default=False)  # True = live, False = test
-    environment = Column(String(20), default="test")  # test, production
-
-    # Relationships (add if not present)
-    created_by_user = relationship("User", back_populates="owned_workflows")
-    allowed_groups = relationship("Group", secondary=workflow_permissions, back_populates="workflows")
 
 
 class AuditLog(Base):
