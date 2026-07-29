@@ -1,5 +1,6 @@
-import React from 'react'
+import React, { useEffect, useState } from 'react'
 import { Routes, Route, Navigate } from 'react-router-dom'
+import axios from 'axios'
 import { AuthProvider, useAuth, LoginForm, RegisterForm } from './components/Auth'
 import { WorkflowList } from './pages/WorkflowList'
 import { WorkflowDetail } from './pages/WorkflowDetail'
@@ -7,6 +8,8 @@ import { WorkflowDesigner } from './pages/WorkflowDesigner'
 import { RunMonitor } from './pages/RunMonitor'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { UserManagement } from './pages/UserManagement'
+
+const API_URL = '/api'
 import { FormDesigner } from './pages/FormDesigner'
 
 const ProtectedRoute: React.FC<{children: React.ReactNode}> = ({ children }) => {
@@ -22,6 +25,42 @@ const PublicRoute: React.FC<{children: React.ReactNode}> = ({ children }) => {
   if (isAuthenticated) {
     return <Navigate to="/workflows" replace />
   }
+  return <>{children}</>
+}
+
+const SetupCheck: React.FC<{children: React.ReactNode}> = ({ children }) => {
+  const [setupRequired, setSetupRequired] = useState(false)
+  const [loading, setLoading] = useState(true)
+
+  useEffect(() => {
+    checkSetup()
+  }, [])
+
+  const checkSetup = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      if (token) {
+        setLoading(false)
+        return
+      }
+      
+      const response = await axios.get(`${API_URL}/auth/setup-required`)
+      setSetupRequired(response.data.setup_required)
+    } catch (error) {
+      console.error('Failed to check setup status:', error)
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  if (loading) {
+    return <div className="loading">Checking setup...</div>
+  }
+
+  if (setupRequired) {
+    return <RegisterForm />
+  }
+
   return <>{children}</>
 }
 
@@ -55,7 +94,7 @@ const AppContent: React.FC = () => {
       <main className="main-content">
         <Routes>
           <Route path="/login" element={<PublicRoute><LoginForm /></PublicRoute>} />
-          <Route path="/register" element={<PublicRoute><RegisterForm /></PublicRoute>} />
+          <Route path="/register" element={<SetupCheck><RegisterForm /></SetupCheck>} />
           <Route path="/" element={<ProtectedRoute><Navigate to="/workflows" replace /></ProtectedRoute>} />
           <Route path="/workflows" element={<ProtectedRoute><WorkflowList /></ProtectedRoute>} />
           <Route path="/workflows/:id" element={<ProtectedRoute><WorkflowDetail /></ProtectedRoute>} />

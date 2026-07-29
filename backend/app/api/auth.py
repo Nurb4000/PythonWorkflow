@@ -124,6 +124,22 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
     }
 
 
+@router.get("/auth/setup-required")
+async def check_setup_required(db: AsyncSession = Depends(get_db)):
+    """Check if setup is required (no users exist)"""
+    from app.models.auth import User
+    from sqlalchemy import select
+    
+    stmt = select(User)
+    result = await db.execute(stmt)
+    users = result.scalars().all()
+    
+    return {
+        "setup_required": len(users) == 0,
+        "user_count": len(users)
+    }
+
+
 @router.get("/auth/users", response_model=List[dict])
 async def list_users(
     role: Optional[str] = None,
