@@ -1,0 +1,30 @@
+version: '3.8'
+
+services:
+  # Use PostgreSQL in production
+  postgres:
+    environment:
+      POSTGRES_DB: ${POSTGRES_DB:-workflow_db}
+      POSTGRES_USER: ${POSTGRES_USER:-workflow_user}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-workflow_password}
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-workflow_user}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Backend with PostgreSQL
+  backend:
+    environment:
+      - DATABASE_URL=postgresql://${POSTGRES_USER:-workflow_user}:${POSTGRES_PASSWORD:-workflow_password}@postgres:5432/${POSTGRES_DB:-workflow_db}
+      - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
+      - DEBUG=False
+    ports:
+      - "8000:8000"
+
+volumes:
+  postgres_data:

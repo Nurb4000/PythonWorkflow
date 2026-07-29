@@ -303,35 +303,23 @@ PythonWorkflow/
 - [x] Integration with workflow steps
 - [x] Navigation and routing
 
+## Deployment
+
+### Docker (Recommended)
+```bash
+# Start all services
+docker-compose up --build
+
+# Backend: http://localhost:8000
+# Frontend: http://localhost:3000
+# API Docs: http://localhost:8000/docs
+```
+
+See `docs/docker-deployment.md` for detailed Docker setup and production deployment.
+
 ## Next Steps
 
-### Phase 2: Web UI
-- [ ] FastAPI CORS configuration
-- [ ] React/Streamlit dashboard
-- [ ] Visual workflow designer (React Flow)
-- [ ] Run monitoring interface
-- [ ] Form designer prototype
-
-### Phase 3: AI Integration Enhancement
-- [ ] llama.cpp server setup
-- [ ] Knowledge base with prompts/templates
-- [ ] Step generation validation
-- [ ] Form schema generation
-
-### Phase 4: Scheduling & Triggers
-- [ ] Cron-based workflow triggering
-- [ ] Manual trigger UI
-- [ ] External API triggers
-- [ ] Webhook support
-
-### Phase 5: Admin Features
-- [ ] Reporting dashboard
-- [ ] Query tools
-- [ ] User management
-- [ ] Migration wizard (GUI)
-
-### Phase 6: Form Designer
-- [ ] Visual form builder
-- [ ] AI-assisted form creation
-- [ ] Form templates
-- [ ] Submission tracking
+1. **Testing**: Run the application and test all features
+2. **Documentation**: Complete API documentation
+3. **Deployment**: Set up production environment with PostgreSQL
+4. **Monitoring**: Add logging and monitoring

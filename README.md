@@ -37,7 +37,19 @@ See `DESIGN.md` for detailed progress and next steps.
 
 ## Getting Started
 
-### Backend
+### Option 1: Docker (Recommended)
+```bash
+# Start all services
+docker-compose up --build
+
+# Backend: http://localhost:8000
+# Frontend: http://localhost:3000
+# API Docs: http://localhost:8000/docs
+```
+
+### Option 2: Local Development
+
+**Backend:**
 ```bash
 cd backend
 pip install -r requirements.txt
@@ -46,7 +58,7 @@ python run.py
 # Docs at http://localhost:8000/docs
 ```
 
-### Frontend
+**Frontend:**
 ```bash
 cd frontend
 npm install
