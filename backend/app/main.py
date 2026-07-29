@@ -39,10 +39,40 @@ app.include_router(portal.router)
 app.include_router(forms.router, prefix="/api", tags=["forms"])
 
 
+async def create_default_admin():
+    """Create default admin user if none exists"""
+    async with async_session_factory() as db:
+        from sqlalchemy import select
+        from app.models.auth import User
+        
+        stmt = select(User)
+        result = await db.execute(stmt)
+        users = result.scalars().all()
+        
+        if not users:
+            # No users exist, create default admin
+            from passlib.context import CryptContext
+            pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+            
+            admin = User(
+                username="admin",
+                email="admin@example.com",
+                password_hash=pwd_context.hash("admin123"),
+                full_name="Administrator",
+                role="admin",
+                is_active=True,
+                is_verified=True
+            )
+            db.add(admin)
+            await db.commit()
+            logger.info("Created default admin user (username: admin, password: admin123)")
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and scheduler on startup"""
     await init_db()
+    await create_default_admin()
     await scheduler_service.initialize(async_session_factory)
     logger.info("Application started")
 

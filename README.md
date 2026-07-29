@@ -55,6 +55,10 @@ docker-compose up --build
 # Backend: http://localhost:6000
 # Frontend: http://localhost:3000
 # API Docs: http://localhost:6000/docs
+
+# Default admin login (created on first run):
+# Username: admin
+# Password: admin123
 ```
 
 ### Option 2: Local Development
