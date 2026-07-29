@@ -24,7 +24,6 @@ class Form(Base):
 
     # Relationships
     submissions = relationship("FormSubmission", back_populates="form", cascade="all, delete-orphan")
-    workflow_steps = relationship("WorkflowStep", back_populates="form", foreign_keys="WorkflowStep.form_id")
 
 
 class FormSubmission(Base):
