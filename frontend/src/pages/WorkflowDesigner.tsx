@@ -1,6 +1,7 @@
-import React, { useState, useCallback } from 'react'
+import React, { useState, useCallback, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, useNavigate, Link } from 'react-router-dom'
+import { produce } from 'immer'
 import ReactFlow, {
   addEdge,
   Background,
@@ -9,7 +10,7 @@ import ReactFlow, {
   Node,
   Edge,
   Connection,
-  Panel
+  Panel as ReactFlowPanel
 } from 'react-flow-renderer'
 import { workflowApi } from '../services/api'
 import 'react-flow-renderer/dist/style.css'
@@ -131,13 +132,16 @@ export const WorkflowDesigner: React.FC = () => {
     queryKey: ['workflow', workflowId],
     queryFn: async () => {
       const response = await workflowApi.get(workflowId)
-      return response.data as Workflow
+      return response.data as any
     },
-    enabled: !!id,
-    onSuccess: (data) => {
-      convertStepsToNodes(data.steps)
-    }
+    enabled: !!id
   })
+
+  useEffect(() => {
+    if (workflow?.steps) {
+      convertStepsToNodes(workflow.steps)
+    }
+  }, [workflow])
 
   const updateMutation = useMutation({
     mutationFn: (data: any) => workflowApi.update(workflowId, data),
@@ -218,7 +222,7 @@ export const WorkflowDesigner: React.FC = () => {
   const onNodeClick = useCallback((_event: React.MouseEvent, node: Node) => {
     if (node.id.startsWith('step-')) {
       const stepId = parseInt(node.id.replace('step-', ''))
-      const step = workflow?.steps.find(s => s.id === stepId)
+      const step = workflow?.steps?.find((s: any) => s.id === stepId)
       if (step) {
         setSelectedStep(step)
         setShowAddStep(false)
@@ -230,16 +234,16 @@ export const WorkflowDesigner: React.FC = () => {
     await workflowApi.addStep(workflowId, {
       step_type: stepType,
       definition,
-      position: workflow?.steps.length || 0
+      position: workflow?.steps?.length || 0
     })
     setShowAddStep(false)
     queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
   }
 
   const handleUpdateStep = async () => {
-    if (selectedStep) {
+    if (selectedStep && workflow?.steps) {
       await workflowApi.update(workflowId, {
-        steps: workflow?.steps.map(s => 
+        steps: workflow.steps.map((s: any) => 
           s.id === selectedStep.id ? { ...s, definition: selectedStep.definition } : s
         )
       })
@@ -256,7 +260,7 @@ export const WorkflowDesigner: React.FC = () => {
     <div>
       <div className="card-header">
         <div>
-          <h2>Design Workflow: {workflow?.name}</h2>
+          <h2>Design Workflow: {(workflow as any)?.name || 'Loading...'}</h2>
           <p style={{ color: '#7f8c8d', marginTop: '0.5rem' }}>
             Visual workflow editor - drag nodes to rearrange
           </p>
@@ -301,10 +305,20 @@ export const WorkflowDesigner: React.FC = () => {
         <ReactFlow
           nodes={nodes}
           edges={edges}
-          onNodesChange={(changes) => setNodes((nds) => nds.map((node) => {
-            const change = changes.find(c => c.id === node.id)
-            return change ? { ...node, position: change.position || node.position } : node
-          }))}
+          onNodesChange={(changes) => {
+            setNodes((nds) => {
+              return produce(nds, (draft) => {
+                changes.forEach(change => {
+                  if (change.type === 'position' && change.position) {
+                    const node = draft.find(n => n.id === change.id)
+                    if (node) {
+                      node.position = change.position
+                    }
+                  }
+                })
+              })
+            })
+          }}
           onEdgesChange={() => {}}
           onConnect={onConnect}
           onNodeClick={onNodeClick}
@@ -313,11 +327,11 @@ export const WorkflowDesigner: React.FC = () => {
           <Background />
           <Controls />
           <MiniMap />
-          <Panel position="top-right">
+          <ReactFlowPanel position="top-right">
             <div style={{ background: 'white', padding: '10px', borderRadius: '4px' }}>
               <small>{nodes.length - 2} steps</small>
             </div>
-          </Panel>
+          </ReactFlowPanel>
         </ReactFlow>
       </div>
 

@@ -19,13 +19,24 @@ interface AuthState {
   token: string | null
 }
 
-const AuthContext = React.createContext<AuthState>({
-  isAuthenticated: false,
-  user: null,
-  token: null
-})
+interface AuthContextType {
+  isAuthenticated: boolean
+  user: User | null
+  token: string | null
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
+  register: (username: string, email: string, password: string, full_name?: string) => Promise<{ success: boolean; error?: string }>
+  logout: () => void
+}
 
-export const useAuth = () => React.useContext(AuthContext)
+const AuthContext = React.createContext<AuthContextType | null>(null)
+
+export const useAuth = () => {
+  const context = React.useContext(AuthContext)
+  if (!context) {
+    throw new Error('useAuth must be used within an AuthProvider')
+  }
+  return context
+}
 
 export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
@@ -113,7 +124,12 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   }
 
   return (
-    <AuthContext.Provider value={authState}>
+    <AuthContext.Provider value={{
+      ...authState,
+      login,
+      register,
+      logout
+    }}>
       {children}
     </AuthContext.Provider>
   )
