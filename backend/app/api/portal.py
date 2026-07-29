@@ -7,10 +7,12 @@ from sqlalchemy import select, or_
 from typing import List, Optional
 from sqlalchemy.orm import selectinload
 
+from fastapi import Depends
 from app.core.database import get_db
 from app.models.auth import User, Group, workflow_permissions
 from app.models.schemas import Workflow
-from app.services.auth_service import auth_service, get_current_user
+from app.services.auth_service import auth_service
+from app.api.auth import get_current_user
 
 router = APIRouter()
 
