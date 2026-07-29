@@ -9,8 +9,7 @@ import ReactFlow, {
   MiniMap,
   Node,
   Edge,
-  Connection,
-  Panel
+  Connection
 } from 'react-flow-renderer'
 import { workflowApi } from '../services/api'
 import 'react-flow-renderer/dist/style.css'
@@ -327,11 +326,6 @@ export const WorkflowDesigner: React.FC = () => {
           <Background />
           <Controls />
           <MiniMap />
-          <Panel position="top-right">
-            <div style={{ background: 'white', padding: '10px', borderRadius: '4px' }}>
-              <small>{nodes.length - 2} steps</small>
-            </div>
-          </Panel>
         </ReactFlow>
       </div>
 
