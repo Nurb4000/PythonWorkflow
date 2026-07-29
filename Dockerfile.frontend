@@ -3,8 +3,10 @@ FROM node:18-alpine as builder
 WORKDIR /app
 
 # Copy package files
-COPY frontend/package.json frontend/package-lock.json* ./
-RUN npm ci
+COPY frontend/package.json ./
+
+# Install dependencies (no lockfile required)
+RUN npm install
 
 # Copy source code
 COPY frontend/ .
