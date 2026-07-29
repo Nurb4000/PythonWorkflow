@@ -1,0 +1,216 @@
+# Workflow Templates
+
+## User Registration Flow
+```json
+{
+  "name": "User Registration",
+  "description": "Handle new user registration with email verification",
+  "steps": [
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/users",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"email": "$input.email", "name": "$input.name"}
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "insert",
+        "table": "users",
+        "data": {"email": "$output.email", "status": "pending_verification"}
+      }
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "$input.email",
+        "subject": "Verify your account",
+        "body": "Click here to verify: https://app.example.com/verify?token=$output.verification_token"
+      }
+    },
+    {
+      "step_type": "delay",
+      "definition": {"seconds": 86400}
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "GET",
+        "url": "https://api.example.com/users/$input.email/status"
+      },
+      "condition_expr": "output.status != 'verified'"
+    }
+  ]
+}
+```
+
+## Order Processing Flow
+```json
+{
+  "name": "Order Processing",
+  "description": "Process customer orders with inventory check",
+  "steps": [
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/orders",
+        "body": {"items": "$input.items", "customer_id": "$input.customer_id"}
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "select",
+        "table": "inventory",
+        "conditions": {"product_id": "$input.items[*].product_id"}
+      }
+    },
+    {
+      "step_type": "condition",
+      "definition": {
+        "expression": "all(item['quantity'] <= inv['stock'] for item, inv in zip(input.items, output.inventory))"
+      }
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://payments.example.com/charge",
+        "body": {"amount": "$input.total", "order_id": "$output.order_id"}
+      },
+      "condition_expr": "output.inventory_check == True"
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "$input.customer_email",
+        "subject": "Order Confirmation #{$output.order_id}",
+        "body": "Thank you for your order!"
+      },
+      "condition_expr": "output.payment_status == 'success'"
+    }
+  ]
+}
+```
+
+## Data Sync Flow
+```json
+{
+  "name": "Daily Data Sync",
+  "description": "Sync data between systems daily",
+  "steps": [
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "GET",
+        "url": "https://source-api.example.com/data?date=$yesterday"
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "upsert",
+        "table": "synced_data",
+        "data": "$output.data"
+      }
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "admin@example.com",
+        "subject": "Data Sync Complete: {$output.record_count} records synced"
+      }
+    }
+  ]
+}
+```
+
+## Approval Workflow
+```json
+{
+  "name": "Expense Approval",
+  "description": "Route expenses through approval chain",
+  "steps": [
+    {
+      "step_type": "form",
+      "definition": {
+        "form_id": "expense_report",
+        "fields": ["amount", "category", "receipt", "description"]
+      }
+    },
+    {
+      "step_type": "condition",
+      "definition": {
+        "expression": "input.amount <= 500"
+      }
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/approvals/manager",
+        "body": {"expense_id": "$input.expense_id", "amount": "$input.amount"}
+      },
+      "condition_expr": "output.approval_needed == True"
+    },
+    {
+      "step_type": "delay",
+      "definition": {"seconds": 3600},
+      "condition_expr": "output.status == 'pending'"
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "$output.manager_email",
+        "subject": "Expense Approval Required: $input.amount",
+        "body": "Please review and approve or reject."
+      }
+    }
+  ]
+}
+```
+
+## Webhook Handler Flow
+```json
+{
+  "name": "Payment Webhook Handler",
+  "description": "Process payment provider webhooks",
+  "steps": [
+    {
+      "step_type": "webhook",
+      "definition": {
+        "url": "/api/webhooks/payment",
+        "auth_token": "$webhook_secret"
+      }
+    },
+    {
+      "step_type": "condition",
+      "definition": {
+        "expression": "input.event_type in ['payment.success', 'payment.failed']"
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "update",
+        "table": "payments",
+        "data": {"status": "$input.event_type"},
+        "conditions": {"transaction_id": "$input.transaction_id"}
+      }
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/notifications",
+        "body": {"type": "payment_update", "data": "$input"}
+      },
+      "condition_expr": "output.status == 'success'"
+    }
+  ]
+}
+```

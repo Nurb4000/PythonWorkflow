@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory
-from app.api import workflows, workflow_runs, admin, ai
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, ai
 from app.services.scheduler import scheduler_service
 
 # Configure logging
@@ -33,6 +33,7 @@ app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"]
 app.include_router(workflow_runs.router, prefix="/api/workflows/{workflow_id}/runs", tags=["workflow-runs"])
 app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
 app.include_router(ai.router, tags=["ai"])
+app.include_router(knowledge_base.router, prefix="/api", tags=["knowledge-base"])
 
 
 @app.on_event("startup")

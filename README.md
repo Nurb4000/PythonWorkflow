@@ -26,10 +26,10 @@ See `DESIGN.md` for system architecture and development phases.
 
 - [x] Phase 1: Core Engine (workflow CRUD, step execution, AI integration, scheduler)
 - [x] Phase 2: Web UI (React dashboard, workflow designer, admin monitoring)
-- [ ] Phase 3: AI Integration Enhancement (knowledge base, validation)
-- [ ] Phase 4: Scheduling & Triggers (cron, webhooks)
-- [ ] Phase 5: Admin Features (reporting, user management)
-- [ ] Phase 6: Form Designer (visual builder, templates)
+- [x] Phase 3: AI Integration Enhancement (knowledge base, templates, validation, tests)
+- [ ] Phase 4: Scheduling & Triggers (cron jobs, webhooks, external triggers)
+- [ ] Phase 5: Admin Features (advanced reporting, user management, migration wizard UI)
+- [ ] Phase 6: Form Designer (visual builder, AI-assisted form creation)
 
 See `DESIGN.md` for detailed progress and next steps.
 
