@@ -164,26 +164,26 @@ export const LoginForm: React.FC = () => {
         <h2 className="card-title">Login</h2>
         {error && <div className="error">{error}</div>}
         <form onSubmit={handleSubmit}>
-          <div className="form-group">
-            <label className="form-label">Username</label>
-            <input
-              type="text"
-              className="form-input"
-              value={username}
-              onChange={(e) => setUsername(e.target.value)}
-              required
-            />
-          </div>
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input
-              type="password"
-              className="form-input"
-              value={password}
-              onChange={(e) => setPassword(e.target.value)}
-              required
-            />
-          </div>
+            <div className="form-group">
+              <label className="form-label">Username</label>
+              <input
+                type="text"
+                className="form-input"
+                value={username || ''}
+                onChange={(e) => setUsername(e.target.value)}
+                required
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Password</label>
+              <input
+                type="password"
+                className="form-input"
+                value={password || ''}
+                onChange={(e) => setPassword(e.target.value)}
+                required
+              />
+            </div>
           <button type="submit" className="btn btn-primary" style={{ width: '100%' }} disabled={loading}>
             {loading ? 'Logging in...' : 'Login'}
           </button>
@@ -213,7 +213,7 @@ export const RegisterForm: React.FC = () => {
     if (result.success) {
       setSuccess(true)
     } else {
-      setError(result.error)
+      setError(result.error || 'Registration failed')
     }
   }
 
