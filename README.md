@@ -25,13 +25,32 @@ See `DESIGN.md` for system architecture and development phases.
 ## Development Phases
 
 - [x] Phase 1: Core Engine (workflow CRUD, step execution, AI integration, scheduler)
-- [ ] Phase 2: Web UI (dashboard, workflow designer, form designer)
+- [x] Phase 2: Web UI (React dashboard, workflow designer, admin monitoring)
 - [ ] Phase 3: AI Integration Enhancement (knowledge base, validation)
 - [ ] Phase 4: Scheduling & Triggers (cron, webhooks)
 - [ ] Phase 5: Admin Features (reporting, user management)
 - [ ] Phase 6: Form Designer (visual builder, templates)
 
 See `DESIGN.md` for detailed progress and next steps.
+
+## Getting Started
+
+### Backend
+```bash
+cd backend
+pip install -r requirements.txt
+python run.py
+# API available at http://localhost:8000
+# Docs at http://localhost:8000/docs
+```
+
+### Frontend
+```bash
+cd frontend
+npm install
+npm run dev
+# UI available at http://localhost:3000
+```
 
 ## License
 

@@ -244,6 +244,17 @@ PythonWorkflow/
 - [x] Scheduler service (APScheduler)
 - [x] SQLite to PostgreSQL migration script
 
+### Phase 2: Web UI ✅ COMPLETE
+- [x] React + Vite + TypeScript setup
+- [x] React Flow for visual workflow designer
+- [x] API service layer (axios)
+- [x] Workflow list page with CRUD
+- [x] Workflow detail page with run history
+- [x] Visual workflow designer (React Flow)
+- [x] Run monitor with step instances
+- [x] Admin dashboard with stats and filters
+- [x] Responsive CSS styling
+
 ## Next Steps
 
 ### Phase 2: Web UI
