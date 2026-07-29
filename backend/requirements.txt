@@ -1,0 +1,26 @@
+# Core dependencies
+fastapi==0.104.1
+uvicorn[standard]==0.24.0
+sqlalchemy==2.0.23
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# Database
+aiosqlite==0.19.0  # For SQLite async support
+
+# Scheduling
+apscheduler==3.10.4
+
+# AI integration
+httpx==0.25.2  # For llama.cpp API calls
+
+# Utilities
+python-multipart==0.0.6
+python-jose[cryptography]==3.3.0
+passlib[bcrypt]==1.7.4
+bcrypt==4.1.2
+
+# Testing
+pytest==7.4.3
+pytest-asyncio==0.23.2
+httpx==0.25.2

@@ -231,13 +231,48 @@ PythonWorkflow/
 └── README.md
 ```
 
+## Current Progress
+
+### Phase 1: Core Engine ✅ COMPLETE
+- [x] FastAPI project structure
+- [x] Database models (SQLAlchemy)
+- [x] Workflow engine with step execution
+- [x] Step executors (API, DB, Email, Condition, Delay)
+- [x] API endpoints for workflows and runs
+- [x] Admin endpoints for monitoring
+- [x] AI integration service (llama.cpp)
+- [x] Scheduler service (APScheduler)
+- [x] SQLite to PostgreSQL migration script
+
 ## Next Steps
 
-1. Initialize git repo
-2. Set up FastAPI project structure
-3. Define initial database models
-4. Build core workflow engine
-5. Create basic API endpoints
-6. Set up llama.cpp integration
-7. Design frontend wireframes
-8. Implement form designer (later phase)
+### Phase 2: Web UI
+- [ ] FastAPI CORS configuration
+- [ ] React/Streamlit dashboard
+- [ ] Visual workflow designer (React Flow)
+- [ ] Run monitoring interface
+- [ ] Form designer prototype
+
+### Phase 3: AI Integration Enhancement
+- [ ] llama.cpp server setup
+- [ ] Knowledge base with prompts/templates
+- [ ] Step generation validation
+- [ ] Form schema generation
+
+### Phase 4: Scheduling & Triggers
+- [ ] Cron-based workflow triggering
+- [ ] Manual trigger UI
+- [ ] External API triggers
+- [ ] Webhook support
+
+### Phase 5: Admin Features
+- [ ] Reporting dashboard
+- [ ] Query tools
+- [ ] User management
+- [ ] Migration wizard (GUI)
+
+### Phase 6: Form Designer
+- [ ] Visual form builder
+- [ ] AI-assisted form creation
+- [ ] Form templates
+- [ ] Submission tracking

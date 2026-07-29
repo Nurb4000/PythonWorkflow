@@ -24,12 +24,14 @@ See `DESIGN.md` for system architecture and development phases.
 
 ## Development Phases
 
-1. Core Engine (workflow CRUD, step execution)
-2. Web UI (FastAPI endpoints, dashboard)
-3. AI Integration (llama.cpp, step generation)
-4. Scheduling & Triggers
-5. Admin Features (reporting, migration wizard)
-6. Form Designer
+- [x] Phase 1: Core Engine (workflow CRUD, step execution, AI integration, scheduler)
+- [ ] Phase 2: Web UI (dashboard, workflow designer, form designer)
+- [ ] Phase 3: AI Integration Enhancement (knowledge base, validation)
+- [ ] Phase 4: Scheduling & Triggers (cron, webhooks)
+- [ ] Phase 5: Admin Features (reporting, user management)
+- [ ] Phase 6: Form Designer (visual builder, templates)
+
+See `DESIGN.md` for detailed progress and next steps.
 
 ## License
 
