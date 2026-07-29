@@ -1,7 +1,7 @@
 """
 API endpoints for AI-powered generation
 """
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Body
 from typing import Optional
 from app.services.ai_service import ai_service
 
@@ -11,7 +11,7 @@ router = APIRouter()
 @router.post("/ai/generate-step")
 async def generate_step(
     description: str = Query(..., description="Natural language description of the step"),
-    context: Optional[dict] = Query(None, description="Additional context")
+    context: Optional[dict] = Body(None)
 ):
     """Generate a workflow step from natural language description"""
     try:
