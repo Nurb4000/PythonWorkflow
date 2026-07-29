@@ -10,7 +10,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db
 from app.models.auth import User, Group, workflow_permissions
 from app.models.schemas import Workflow
-from app.services.auth_service import auth_service
+from app.services.auth_service import auth_service, get_current_user
 
 router = APIRouter()
 
