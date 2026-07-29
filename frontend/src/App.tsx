@@ -1,5 +1,5 @@
 import React, { useEffect, useState } from 'react'
-import { Routes, Route, Navigate } from 'react-router-dom'
+import { Routes, Route, Navigate, Link } from 'react-router-dom'
 import axios from 'axios'
 import { AuthProvider, useAuth, LoginForm, RegisterForm } from './components/Auth'
 import { WorkflowList } from './pages/WorkflowList'
@@ -8,9 +8,9 @@ import { WorkflowDesigner } from './pages/WorkflowDesigner'
 import { RunMonitor } from './pages/RunMonitor'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { UserManagement } from './pages/UserManagement'
+import { FormDesigner } from './pages/FormDesigner'
 
 const API_URL = '/api'
-import { FormDesigner } from './pages/FormDesigner'
 
 const ProtectedRoute: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const { isAuthenticated } = useAuth()
@@ -76,10 +76,10 @@ const AppContent: React.FC = () => {
         <div className="nav-links">
           {user && (
             <>
-              <a href="#/workflows">Workflows</a>
-              <a href="#/admin">Admin</a>
-              {user.role === 'admin' && <a href="#/admin/users">Users</a>}
-              <a href="#/forms">Forms</a>
+              <Link to="/workflows">Workflows</Link>
+              <Link to="/admin">Admin</Link>
+              {user.role === 'admin' && <Link to="/admin/users">Users</Link>}
+              <Link to="/forms">Forms</Link>
               <span style={{ marginLeft: '1rem', opacity: 0.8 }}>
                 {user.full_name || user.username} ({user.role})
               </span>
