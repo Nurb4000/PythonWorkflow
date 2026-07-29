@@ -31,10 +31,10 @@ docker-compose up --profile ai --build
 
 ## Services
 
-### Backend (`http://localhost:8000`)
+### Backend (`http://localhost:6000`)
 - FastAPI application
 - REST API endpoints
-- Swagger docs at `http://localhost:8000/docs`
+- Swagger docs at `http://localhost:6000/docs`
 
 ### Frontend (`http://localhost:3000`)
 - React application served via Nginx

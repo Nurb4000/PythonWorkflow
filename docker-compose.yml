@@ -33,7 +33,7 @@ services:
       context: .
       dockerfile: Dockerfile.backend
     ports:
-      - "8000:8000"
+      - "6000:8000"
     environment:
       # Default to SQLite for easy development
       # Override with: DATABASE_URL=postgresql://user:pass@postgres:5432/db

@@ -52,9 +52,9 @@ See `DESIGN.md` for detailed progress and next steps.
 ```bash
 docker-compose up --build
 
-# Backend: http://localhost:8000
+# Backend: http://localhost:6000
 # Frontend: http://localhost:3000
-# API Docs: http://localhost:8000/docs
+# API Docs: http://localhost:6000/docs
 ```
 
 ### Option 2: Local Development
