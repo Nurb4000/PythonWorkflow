@@ -9,9 +9,9 @@ import ReactFlow, {
   MiniMap,
   Node,
   Edge,
-  Connection
+  Connection,
+  Panel
 } from 'react-flow-renderer'
-import { Panel } from 'react-flow-renderer'
 import { workflowApi } from '../services/api'
 import 'react-flow-renderer/dist/style.css'
 

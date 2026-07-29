@@ -153,7 +153,7 @@ export const LoginForm: React.FC = () => {
     if (result.success) {
       navigate('/workflows')
     } else {
-      setError(result.error)
+      setError(result.error || 'Login failed')
     }
     setLoading(false)
   }
