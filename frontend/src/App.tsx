@@ -9,6 +9,7 @@ import { RunMonitor } from './pages/RunMonitor'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { UserManagement } from './pages/UserManagement'
 import { FormDesigner } from './pages/FormDesigner'
+import { SettingsPage } from './pages/SettingsPage'
 
 const API_URL = '/api'
 
@@ -80,6 +81,7 @@ const AppContent: React.FC = () => {
               <Link to="/admin">Admin</Link>
               {user.role === 'admin' && <Link to="/admin/users">Users</Link>}
               <Link to="/forms">Forms</Link>
+              {user.role === 'admin' && <Link to="/settings">Settings</Link>}
               <span style={{ marginLeft: '1rem', opacity: 0.8 }}>
                 {user.full_name || user.username} ({user.role})
               </span>
@@ -103,6 +105,7 @@ const AppContent: React.FC = () => {
           <Route path="/admin" element={<ProtectedRoute><AdminDashboard /></ProtectedRoute>} />
           <Route path="/admin/users" element={<ProtectedRoute><UserManagement /></ProtectedRoute>} />
           <Route path="/forms" element={<ProtectedRoute><FormDesigner /></ProtectedRoute>} />
+          <Route path="/settings" element={<ProtectedRoute><SettingsPage /></ProtectedRoute>} />
         </Routes>
       </main>
     </div>
