@@ -39,9 +39,8 @@ class User(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_login = Column(DateTime(timezone=True))
 
-    # Relationships
+    # Relationships (defined after all models are loaded)
     groups = relationship("Group", secondary=user_groups, back_populates="users")
-    owned_workflows = relationship("Workflow", back_populates="created_by_user")
     audit_logs = relationship("AuditLog", back_populates="user")
 
 
