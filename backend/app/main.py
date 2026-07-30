@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, settings
 from app.services.scheduler import scheduler_service
 
 # Configure logging
@@ -37,6 +37,7 @@ app.include_router(knowledge_base.router, prefix="/api", tags=["knowledge-base"]
 app.include_router(auth.router)
 app.include_router(portal.router)
 app.include_router(forms.router, prefix="/api", tags=["forms"])
+app.include_router(settings.router, prefix="/api", tags=["settings"])
 
 
 async def create_default_admin():
