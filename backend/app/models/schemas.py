@@ -27,7 +27,6 @@ class Workflow(Base):
     # Relationships
     steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan")
     runs = relationship("WorkflowRun", back_populates="workflow", cascade="all, delete-orphan")
-    created_by_user = relationship("User", back_populates="owned_workflows")
     allowed_groups = relationship("Group", secondary=workflow_permissions, back_populates="workflows")
 
 
