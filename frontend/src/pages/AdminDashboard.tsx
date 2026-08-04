@@ -66,13 +66,13 @@ export const AdminDashboard: React.FC = () => {
   }
 
   if (statsLoading || runsLoading) {
-    return <div className="loading">Loading admin data...</div>
+    return <div className="loading">Loading dashboard data...</div>
   }
 
   return (
     <div>
       <div className="card-header">
-        <h2>Admin Dashboard</h2>
+        <h2>Dashboard</h2>
         <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
           <label>Time Range:</label>
           <select 

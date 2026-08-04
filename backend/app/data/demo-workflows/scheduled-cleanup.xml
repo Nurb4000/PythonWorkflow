@@ -1,0 +1,57 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-01-01T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>Scheduled Cleanup Workflow</Name>
+    <Description>A scheduled workflow that runs weekly to clean up old tasks, archive completed runs, and send a summary report.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="Scheduled Cleanup" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="🧹" order="5" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+
+    <Steps>
+      <Step id="step-1" type="database_query" position="0" isEnabled="true">
+        <Title>Find Old Tasks</Title>
+        <Description>Query for tasks older than 90 days that are closed</Description>
+        <Definition>{"query_type":"select","table":"tasks","columns":"id,title,status,completed_at","conditions":{},"next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <Step id="step-2" type="condition" position="1" isEnabled="true">
+        <Title>Check Results</Title>
+        <Description>Branch based on whether old tasks were found</Description>
+        <Definition>{"routes":[{"expression":"$input.row_count > 0","target_step_id":"step-3"},{"expression":"$input.row_count == 0","target_step_id":"step-5"}],"default_target_step_id":"step-5"}</Definition>
+      </Step>
+
+      <Step id="step-3" type="delay" position="2" isEnabled="true">
+        <Title>Pause Before Processing</Title>
+        <Description>Brief delay to allow other workflows to complete</Description>
+        <Definition>{"seconds":5,"next_step_ids":["step-4"]}</Definition>
+      </Step>
+
+      <Step id="step-4" type="report" position="3" isEnabled="true">
+        <Title>Cleanup Summary Report</Title>
+        <Description>Generate a report of tasks that were processed</Description>
+        <Definition>{"report_type":"sql_query","title":"Cleanup Summary","sql_query":"SELECT status, COUNT(*) as count FROM tasks WHERE completed_at IS NOT NULL GROUP BY status ORDER BY count DESC","sql_limit":50,"next_step_ids":["step-5"]}</Definition>
+      </Step>
+
+      <Step id="step-5" type="email" position="4" isEnabled="true">
+        <Title>Send Cleanup Report</Title>
+        <Description>Email the cleanup summary to the admin team</Description>
+        <Definition>{"to":"admin@example.com","subject":"Weekly Cleanup Report","body":"Cleanup workflow completed. Tasks processed: $input.row_count. Report data available in step output.","next_step_ids":[]}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules>
+      <Schedule isEnabled="true">
+        <CronExpression>0 2 * * 0</CronExpression>
+      </Schedule>
+    </Schedules>
+    <Permissions />
+  </Workflow>
+
+  <Forms />
+  <Groups />
+</WorkflowPackage>

@@ -3,7 +3,7 @@ Portal API endpoints for user/staff workflow access
 """
 from fastapi import APIRouter, HTTPException, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, and_
 from typing import List, Optional
 from sqlalchemy.orm import selectinload
 
@@ -22,13 +22,14 @@ async def get_available_workflows(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get workflows available to the current user based on their role and groups"""
+    """Get workflows available to the current user based on their role and groups (P3.3)"""
     
-    # Admins can see all workflows
-    if current_user.role == "admin":
-        stmt = select(Workflow).where(Workflow.is_active == True)
-        result = await db.execute(stmt)
-        workflows = result.scalars().all()
+    # Published + active workflows only
+    base = and_(Workflow.is_active == True, Workflow.is_published == True, Workflow.portal_visible == True)
+    
+    # Admins can see all published workflows
+    if current_user.role in ("admin", "developer"):
+        stmt = select(Workflow).where(base)
     else:
         # Get workflows where user's groups have permission
         user_group_ids = [g.id for g in current_user.groups]
@@ -36,8 +37,7 @@ async def get_available_workflows(
         if not user_group_ids:
             # Users without groups can only see published workflows marked for all
             stmt = select(Workflow).where(
-                Workflow.is_active == True,
-                Workflow.is_published == True,
+                base,
                 Workflow.environment == "production"
             )
         else:
@@ -46,16 +46,17 @@ async def get_available_workflows(
                 select(Workflow)
                 .join(workflow_permissions, workflow_permissions.c.workflow_id == Workflow.id)
                 .where(
+                    base,
                     or_(
                         workflow_permissions.c.group_id.in_(user_group_ids),
-                        and_(Workflow.is_published == True, Workflow.environment == "production")
-                    ),
-                    Workflow.is_active == True
+                        and_(Workflow.environment == "production")
+                    )
                 )
             )
-        
-        result = await db.execute(stmt)
-        workflows = result.scalars().all()
+    
+    stmt = stmt.order_by(Workflow.portal_order.asc(), Workflow.name.asc())
+    result = await db.execute(stmt)
+    workflows = result.scalars().all()
     
     return [
         {
@@ -63,7 +64,11 @@ async def get_available_workflows(
             "name": w.name,
             "description": w.description,
             "environment": w.environment,
-            "is_published": w.is_published
+            "is_published": w.is_published,
+            "portal_icon": w.portal_icon or "",
+            "portal_order": w.portal_order or 0,
+            "portal_visible": w.portal_visible,
+            "entry_form_id": w.entry_form_id,  # P3.3
         }
         for w in workflows
     ]
@@ -161,21 +166,51 @@ async def get_my_runs(
     ]
 
 
-@router.get("/portal/staff/pending-tasks")
-async def get_pending_tasks(
+@router.get("/portal/my-tasks")
+async def get_my_tasks(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get pending tasks for staff users (advanced feature for future)"""
+    """Get open tasks assigned to the current user (P3.3)"""
     
-    if current_user.role not in ["staff", "admin"]:
-        raise HTTPException(status_code=403, detail="Staff or admin access required")
+    from app.models.schemas import Task
     
-    # This would be enhanced with actual task assignment logic
-    return {
-        "pending_tasks": [],
-        "message": "Task tracking coming soon"
-    }
+    # Get tasks assigned to this user that are still open/owned
+    stmt = select(Task).where(
+        or_(
+            Task.assigned_to_user_id == current_user.id,
+            and_(Task.assigned_group_id != None, Task.assigned_to_user_id == None)  # noqa: E711
+        ),
+        Task.status.in_(["open", "owned"])
+    )
+    
+    # If user has groups, include group-assigned tasks
+    user_group_ids = [g.id for g in current_user.groups]
+    if user_group_ids:
+        stmt = stmt.where(
+            or_(
+                Task.assigned_to_user_id == current_user.id,
+                Task.assigned_group_id.in_(user_group_ids)
+            )
+        )
+    
+    stmt = stmt.order_by(Task.created_at.desc()).limit(50)
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+    
+    return [
+        {
+            "id": t.id,
+            "title": t.title,
+            "description": t.description,
+            "status": t.status,
+            "workflow_run_id": t.workflow_run_id,
+            "step_id": t.step_id,
+            "created_at": t.created_at,
+            "completed_at": t.completed_at,
+        }
+        for t in tasks
+    ]
 
 
 @router.get("/portal/search/workflows")

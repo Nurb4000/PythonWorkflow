@@ -134,6 +134,43 @@ class TestAIService:
         }
         with pytest.raises(ValueError, match="Invalid step type"):
             ai_service._validate_step(invalid_step)
+
+    def test_validate_condition_step_model_b(self, ai_service):
+        """Test condition steps validate against the Model B shape"""
+        # Valid Model B condition step (routes)
+        valid_condition = {
+            "step_type": "condition",
+            "definition": {
+                "routes": [
+                    {"expression": "data['value'] > 5", "target_step_id": None}
+                ],
+                "default_target_step_id": None
+            }
+        }
+        ai_service._validate_step(valid_condition)  # Should not raise
+
+        # Legacy Model A condition (expression only) must now fail
+        legacy_condition = {
+            "step_type": "condition",
+            "definition": {"expression": "data['value'] > 5"}
+        }
+        with pytest.raises(ValueError, match="Missing required field 'routes'"):
+            ai_service._validate_step(legacy_condition)
+
+    def test_template_service_loads_real_json(self):
+        """Test that templates are loaded as real JSON with Model B conditions"""
+        from app.services.template_service import TemplateService
+
+        service = TemplateService()
+        assert len(service.get_templates()) == 5
+
+        order = service.get_template("Order Processing")
+        assert order is not None
+        condition_step = next(
+            s for s in order["steps"] if s["step_type"] == "condition"
+        )
+        assert "routes" in condition_step["definition"]
+        assert "expression" in condition_step["definition"]["routes"][0]
     
     def test_validate_form_schema(self, ai_service):
         """Test form schema validation"""
@@ -180,4 +217,24 @@ class TestStepExecutors:
         
         # False condition
         result = await executor.execute({"value": 3}, {"expression": "data['value'] > 5"})
+        assert result["condition_met"] is False
+
+    @pytest.mark.asyncio
+    async def test_condition_executor_model_b(self):
+        """Test condition executor reads the Model B first-route expression"""
+        from app.services.step_executors import ConditionExecutor
+
+        executor = ConditionExecutor()
+
+        definition = {
+            "routes": [
+                {"expression": "data['value'] > 5", "target_step_id": None}
+            ],
+            "default_target_step_id": None
+        }
+
+        result = await executor.execute({"value": 10}, definition)
+        assert result["condition_met"] is True
+
+        result = await executor.execute({"value": 3}, definition)
         assert result["condition_met"] is False

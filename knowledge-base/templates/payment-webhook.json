@@ -1,0 +1,39 @@
+{
+  "name": "Payment Webhook Handler",
+  "description": "Process payment provider webhooks",
+  "steps": [
+    {
+      "step_type": "webhook",
+      "definition": {
+        "url": "/api/webhooks/payment",
+        "auth_token": "$webhook_secret"
+      }
+    },
+    {
+      "step_type": "condition",
+      "definition": {
+        "routes": [
+          {"expression": "data['event_type'] in ['payment.success', 'payment.failed']", "target_step_id": null}
+        ],
+        "default_target_step_id": null
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "update",
+        "table": "payments",
+        "data": {"status": "$input.event_type"},
+        "conditions": {"transaction_id": "$input.transaction_id"}
+      }
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/notifications",
+        "body": {"type": "payment_update", "data": "$input"}
+      }
+    }
+  ]
+}

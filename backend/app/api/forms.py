@@ -1,16 +1,62 @@
 """
 Form API endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+import os
+import uuid
+
+from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File as FileParam
+from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 from app.core.database import get_db
 from app.services.form_service import form_service
 from app.services.auth_service import auth_service
 from app.models.auth import User
-from app.api.auth import get_current_user
+from app.api.auth import get_current_user, get_current_developer
 
 router = APIRouter()
+
+UPLOAD_DIR = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(__file__))),
+    "uploads", "form_uploads"
+)
+
+
+@router.post("/forms/upload")
+async def upload_form_file(
+    file: UploadFile = FileParam(...),
+    current_user: User = Depends(get_current_user)
+):
+    """Upload an attachment for a form submission (authenticated users)"""
+    try:
+        os.makedirs(UPLOAD_DIR, exist_ok=True)
+        original = os.path.basename(file.filename or "file")
+        stored = f"{uuid.uuid4().hex}_{original}"
+        path = os.path.join(UPLOAD_DIR, stored)
+        content = await file.read()
+        with open(path, "wb") as f:
+            f.write(content)
+        return {"filename": stored, "original_name": original}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/forms/download/{filename}")
+async def download_form_file(
+    filename: str,
+    current_user: User = Depends(get_current_user)
+):
+    """Download an uploaded form attachment"""
+    try:
+        safe = os.path.basename(filename)
+        path = os.path.join(UPLOAD_DIR, safe)
+        if not os.path.exists(path):
+            raise HTTPException(status_code=404, detail="File not found")
+        return FileResponse(path, filename=safe)
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @router.post("/forms")
@@ -19,10 +65,10 @@ async def create_form(
     description: str = "",
     schema: str = None,  # JSON string
     environment: str = "test",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Create a new form"""
+    """Create a new form (admin/developer only)"""
     try:
         import json
         schema_data = json.loads(schema) if schema else {}
@@ -106,10 +152,10 @@ async def update_form(
     schema: Optional[str] = None,
     is_published: Optional[bool] = None,
     environment: Optional[str] = None,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update a form"""
+    """Update a form (admin/developer only)"""
     try:
         kwargs = {}
         if name:
@@ -140,10 +186,10 @@ async def update_form(
 @router.delete("/forms/{form_id}")
 async def delete_form(
     form_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a form"""
+    """Delete a form (admin/developer only)"""
     success = await form_service.delete_form(db, form_id)
     if not success:
         raise HTTPException(status_code=404, detail="Form not found")
@@ -256,10 +302,10 @@ async def save_as_template(
     form_id: int,
     template_name: str,
     category: str = "general",
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Save a form as a template"""
+    """Save a form as a template (admin/developer only)"""
     try:
         template = await form_service.save_as_template(db, form_id, template_name, category)
         

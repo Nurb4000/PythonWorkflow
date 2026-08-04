@@ -4,12 +4,15 @@ Authentication API endpoints
 from fastapi import APIRouter, HTTPException, Depends, Request, Response
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select
+from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
 
 from app.core.database import get_db
 from app.services.auth_service import auth_service
 from app.models.auth import User, Group
+from app.models.schemas import Workflow
 from app.schemas.workflow import AuditLogEntry
 
 router = APIRouter()
@@ -41,6 +44,33 @@ async def get_current_admin(user: User = Depends(get_current_user)) -> User:
     if user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
+
+
+async def get_current_developer(user: User = Depends(get_current_user)) -> User:
+    """Get current user who may develop workflows/forms (admin or developer)"""
+    if user.role not in ("admin", "developer"):
+        raise HTTPException(status_code=403, detail="Developer access required")
+    return user
+
+
+async def user_can_access_workflow(db: AsyncSession, user: User, workflow_id: int) -> bool:
+    """Admin/developer see all workflows; other roles only see workflows permitted to their groups"""
+    if user.role in ("admin", "developer"):
+        return True
+
+    stmt = (
+        select(Workflow)
+        .where(Workflow.id == workflow_id)
+        .options(selectinload(Workflow.allowed_groups))
+    )
+    result = await db.execute(stmt)
+    workflow = result.scalar_one_or_none()
+    if not workflow:
+        return False
+
+    user_group_ids = {g.id for g in user.groups}
+    allowed_ids = {g.id for g in workflow.allowed_groups}
+    return bool(user_group_ids & allowed_ids)
 
 
 @router.post("/auth/login")
@@ -79,21 +109,27 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
 
 @router.post("/auth/register")
 async def register(
+    request: Request,
     username: str,
     email: str,
     password: str,
     full_name: Optional[str] = None,
+    role: str = "user",
     db: AsyncSession = Depends(get_db)
 ):
-    """Register a new user (self-service for 'user' role)"""
+    """Register a new user (admin creates users, self-service defaults to 'user' role)"""
     try:
+        body = await request.json()
+        custom_data = body if body else None
+
         user = await auth_service.create_user(
             db=db,
             username=username,
             email=email,
             password=password,
-            role="user",
-            full_name=full_name or username
+            role=role,
+            full_name=full_name or username,
+            custom_data=custom_data
         )
         
         return {
@@ -144,10 +180,10 @@ async def check_setup_required(db: AsyncSession = Depends(get_db)):
 async def list_users(
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
-    admin_user: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all users (admin only)"""
+    """List all users (admin/developer)"""
     users = await auth_service.list_users(db, role=role, is_active=is_active)
     
     return [
@@ -161,7 +197,8 @@ async def list_users(
             "mfa_enabled": u.mfa_enabled,
             "groups": [{"id": g.id, "name": g.name} for g in u.groups],
             "created_at": u.created_at,
-            "last_login": u.last_login
+            "last_login": u.last_login,
+            "custom_data": u.custom_data or {}
         }
         for u in users
     ]
@@ -169,21 +206,26 @@ async def list_users(
 
 @router.put("/auth/users/{user_id}")
 async def update_user(
+    request: Request,
     user_id: int,
     email: Optional[str] = None,
     full_name: Optional[str] = None,
     role: Optional[str] = None,
     is_active: Optional[bool] = None,
     mfa_enabled: Optional[bool] = None,
+    password: Optional[str] = None,
     admin_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Update user (admin only)"""
     try:
+        body = await request.json()
+        custom_data = body if body else None
+
         # Admins can only update non-admin users unless they're updating themselves
         if role and role != "admin" and admin_user.id != user_id:
             pass  # Allow role change for non-admins
-        
+
         kwargs = {}
         if email is not None:
             kwargs["email"] = email
@@ -195,7 +237,11 @@ async def update_user(
             kwargs["is_active"] = is_active
         if mfa_enabled is not None:
             kwargs["mfa_enabled"] = mfa_enabled
-        
+        if password is not None:
+            kwargs["password"] = password
+        if custom_data is not None:
+            kwargs["custom_data"] = custom_data
+
         user = await auth_service.update_user(db, user_id, **kwargs)
         
         return {
@@ -226,10 +272,10 @@ async def delete_user(
 
 @router.get("/auth/groups", response_model=List[dict])
 async def list_groups(
-    admin_user: User = Depends(get_current_admin),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all groups (admin only)"""
+    """List all groups (admin/developer only)"""
     groups = await auth_service.list_groups(db)
     
     return [
@@ -267,7 +313,69 @@ async def create_group(
         raise HTTPException(status_code=400, detail=str(e))
 
 
-@router.post("/auth/groups/{group_id}/users/{user_id}")
+@router.put("/auth/groups/{group_id}")
+async def update_group(
+    group_id: int,
+    name: Optional[str] = None,
+    description: Optional[str] = None,
+    group_type: Optional[str] = None,
+    is_active: Optional[bool] = None,
+    admin_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update a group (admin only)"""
+    kwargs = {}
+    if name is not None:
+        kwargs["name"] = name
+    if description is not None:
+        kwargs["description"] = description
+    if group_type is not None:
+        kwargs["group_type"] = group_type
+    if is_active is not None:
+        kwargs["is_active"] = is_active
+
+    try:
+        group = await auth_service.update_group(db, group_id, **kwargs)
+        return {
+            "id": group.id,
+            "name": group.name,
+            "description": group.description,
+            "group_type": group.group_type,
+            "is_active": group.is_active
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
+@router.delete("/auth/groups/{group_id}")
+async def delete_group(
+    group_id: int,
+    admin_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a group (admin only)"""
+    success = await auth_service.delete_group(db, group_id)
+    if not success:
+        raise HTTPException(status_code=404, detail="Group not found")
+    return {"message": "Group deleted successfully"}
+
+
+@router.put("/auth/users/{user_id}/groups")
+async def set_user_groups(
+    user_id: int,
+    group_ids: List[int],
+    admin_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Replace the set of groups a user belongs to (admin only)"""
+    try:
+        user = await auth_service.set_user_groups(db, user_id, group_ids)
+        return {
+            "message": "User groups updated successfully",
+            "groups": [{"id": g.id, "name": g.name} for g in user.groups]
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 async def add_user_to_group(
     group_id: int,
     user_id: int,

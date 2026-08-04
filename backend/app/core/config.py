@@ -10,8 +10,8 @@ class Settings(BaseSettings):
     app_name: str = "Python Workflow System"
     debug: bool = True
     
-    # Database
-    database_url: str = "sqlite+aiosqlite:///./workflow.db"
+    # Database (PostgreSQL only)
+    database_url: str = "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db"
     
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8000"]
@@ -23,14 +23,26 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 30
+    access_token_expire_minutes: int = 10080
     
     # Scheduler
     scheduler_timezone: str = "UTC"
     
+    # SMTP / admin notices (leave host empty to disable)
+    smtp_host: str = ""
+    smtp_port: int = 587
+    smtp_username: str = ""
+    smtp_password: str = ""
+    smtp_from: str = "no-reply@pythonworkflow.local"
+    smtp_tls: bool = True
+    admin_notify_email: str = ""
+    
+    # Webhook authentication (leave empty to disable secret verification)
+    webhook_secret: str = ""
+    
     class Config:
         env_file = ".env"
-        case_sensitive = True
+        env_file_encoding = "utf-8"
 
 
 settings = Settings()

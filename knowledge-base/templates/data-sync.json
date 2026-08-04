@@ -1,0 +1,28 @@
+{
+  "name": "Daily Data Sync",
+  "description": "Sync data between systems daily",
+  "steps": [
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "GET",
+        "url": "https://source-api.example.com/data?date=$yesterday"
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "upsert",
+        "table": "synced_data",
+        "data": "$output.data"
+      }
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "admin@example.com",
+        "subject": "Data Sync Complete: {$output.record_count} records synced"
+      }
+    }
+  ]
+}

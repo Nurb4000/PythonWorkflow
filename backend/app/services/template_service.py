@@ -43,6 +43,25 @@ class TemplateService:
         """Get a specific template by name"""
         return next((t for t in self._templates if t.get("name") == name), None)
     
+    def get_step_templates(self) -> List[Dict[str, Any]]:
+        """Get all available step templates (P5.4)."""
+        step_templates = []
+        for template in self._templates:
+            for step in template.get("steps", []):
+                step_template = {
+                    "step_type": step.get("step_type"),
+                    "definition": step.get("definition", {}),
+                    "title": step.get("title", step.get("step_type")),
+                    "template_name": template.get("name"),
+                }
+                step_templates.append(step_template)
+        return step_templates
+    
+    def get_step_template(self, step_type: str) -> Optional[Dict[str, Any]]:
+        """Get a step template by type (P5.4)."""
+        step_templates = self.get_step_templates()
+        return next((t for t in step_templates if t["step_type"] == step_type), None)
+    
     async def create_from_template(self, db: AsyncSession, template_name: str, 
                                     customizations: Optional[Dict[str, Any]] = None) -> Workflow:
         """Create a workflow from a template"""

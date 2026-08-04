@@ -4,13 +4,15 @@ Admin API endpoints for monitoring and reporting
 import re
 from fastapi import APIRouter, Depends, HTTPException
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, func, and_, or_
 from typing import List, Optional
 from datetime import datetime, timedelta
 
 from app.core.database import get_db
+from app.models.auth import User
 from app.models.schemas import Workflow, WorkflowRun, StepInstance, Schedule
 from app.schemas.workflow import RunStatsResponse, AuditLogEntry
+from app.api.auth import get_current_admin
 from app.services.scheduler import scheduler_service
 
 router = APIRouter()
@@ -30,15 +32,15 @@ def validate_cron_expression(cron_expr: str) -> bool:
         return False
     
     # Hour: 0-23
-    if not re.match(r'^(\*|[0-2]?[0-9])(-[0-2]?[0-9])?$', hour):
+    if not re.match(r'^(\*|([01]?[0-9]|2[0-3]))(-([01]?[0-9]|2[0-3]))?$', hour):
         return False
     
     # Day: 1-31
-    if not re.match(r'^(\*|[1-31])(-[1-31])?$', day):
+    if not re.match(r'^(\*|([1-9]|[12]\d|3[01]))(-([1-9]|[12]\d|3[01]))?$', day):
         return False
     
     # Month: 1-12
-    if not re.match(r'^(\*|[1-12])(-[1-12])?$', month):
+    if not re.match(r'^(\*|([1-9]|1[012]))(-([1-9]|1[012]))?$', month):
         return False
     
     # Day of week: 0-6 (Sun-Sat)
@@ -52,6 +54,7 @@ def validate_cron_expression(cron_expr: str) -> bool:
 async def get_run_stats(
     workflow_id: Optional[int] = None,
     days: int = 30,
+    current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Get workflow execution statistics"""
@@ -94,40 +97,87 @@ async def get_run_stats(
 async def list_all_runs(
     status: Optional[str] = None,
     workflow_id: Optional[int] = None,
-    limit: int = 100,
+    q: Optional[str] = None,
+    limit: int = 500,
     offset: int = 0,
+    current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all workflow runs with filters"""
-    stmt = select(WorkflowRun)
+    """List all workflow runs with workflow name and step/node summary"""
+    stmt = (
+        select(WorkflowRun, Workflow.name.label("workflow_name"))
+        .join(Workflow, Workflow.id == WorkflowRun.workflow_id)
+    )
     
     if status:
         stmt = stmt.where(WorkflowRun.status == status)
     if workflow_id:
         stmt = stmt.where(WorkflowRun.workflow_id == workflow_id)
+    if q:
+        q = q.strip()
+        if q:
+            try:
+                run_id = int(q)
+                stmt = stmt.where(
+                    or_(
+                        WorkflowRun.id == run_id,
+                        Workflow.name.contains(q),
+                        WorkflowRun.triggered_by.contains(q),
+                        WorkflowRun.status.contains(q)
+                    )
+                )
+            except ValueError:
+                stmt = stmt.where(
+                    or_(
+                        Workflow.name.contains(q),
+                        WorkflowRun.triggered_by.contains(q),
+                        WorkflowRun.status.contains(q)
+                    )
+                )
     
     stmt = stmt.order_by(WorkflowRun.created_at.desc()).limit(limit).offset(offset)
     result = await db.execute(stmt)
-    runs = result.scalars().all()
+    rows = result.all()
+    
+    # Aggregate step instance statuses per run (the "nodes")
+    run_ids = [row.WorkflowRun.id for row in rows]
+    step_summary: dict = {}
+    if run_ids:
+        agg_stmt = (
+            select(StepInstance.workflow_run_id, StepInstance.status, func.count(StepInstance.id))
+            .where(StepInstance.workflow_run_id.in_(run_ids))
+            .group_by(StepInstance.workflow_run_id, StepInstance.status)
+        )
+        agg_result = await db.execute(agg_stmt)
+        for run_id, status_name, count in agg_result.all():
+            step_summary.setdefault(run_id, {})[status_name] = count
     
     return [
         {
             "id": run.id,
             "workflow_id": run.workflow_id,
+            "workflow_name": workflow_name,
             "status": run.status,
             "triggered_by": run.triggered_by,
             "started_at": run.started_at,
             "completed_at": run.completed_at,
             "created_at": run.created_at,
-            "error_message": run.error_message
+            "error_message": run.error_message,
+            "steps_total": sum((step_summary.get(run.id, {}) or {}).values()),
+            "steps_completed": (step_summary.get(run.id, {}) or {}).get("completed", 0),
+            "steps_failed": (step_summary.get(run.id, {}) or {}).get("failed", 0),
+            "steps_running": (step_summary.get(run.id, {}) or {}).get("running", 0),
+            "steps_pending": (step_summary.get(run.id, {}) or {}).get("pending", 0),
+            "steps_skipped": (step_summary.get(run.id, {}) or {}).get("skipped", 0)
         }
-        for run in runs
+        for run, workflow_name in rows
     ]
 
 
 @router.get("/workflows/{workflow_id}/audit-log")
 async def get_audit_log(
     workflow_id: int,
+    current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Get detailed audit log for a workflow"""
@@ -158,7 +208,7 @@ async def get_audit_log(
 
 
 @router.get("/schedules")
-async def list_schedules(db: AsyncSession = Depends(get_db)):
+async def list_schedules(current_user: User = Depends(get_current_admin), db: AsyncSession = Depends(get_db)):
     """List all schedules"""
     stmt = select(Schedule).order_by(Schedule.created_at.desc())
     result = await db.execute(stmt)
@@ -178,7 +228,11 @@ async def list_schedules(db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/schedules")
-async def create_schedule(schedule_data: dict, db: AsyncSession = Depends(get_db)):
+async def create_schedule(
+    schedule_data: dict,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
     """Create a new schedule"""
     
     # Validate cron expression
@@ -220,7 +274,12 @@ async def create_schedule(schedule_data: dict, db: AsyncSession = Depends(get_db
 
 
 @router.put("/schedules/{schedule_id}")
-async def update_schedule(schedule_id: int, schedule_data: dict, db: AsyncSession = Depends(get_db)):
+async def update_schedule(
+    schedule_id: int,
+    schedule_data: dict,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
     """Update a schedule"""
     stmt = select(Schedule).where(Schedule.id == schedule_id)
     result = await db.execute(stmt)
@@ -261,7 +320,11 @@ async def update_schedule(schedule_id: int, schedule_data: dict, db: AsyncSessio
 
 
 @router.delete("/schedules/{schedule_id}")
-async def delete_schedule(schedule_id: int, db: AsyncSession = Depends(get_db)):
+async def delete_schedule(
+    schedule_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
     """Delete a schedule"""
     stmt = select(Schedule).where(Schedule.id == schedule_id)
     result = await db.execute(stmt)
@@ -280,7 +343,11 @@ async def delete_schedule(schedule_id: int, db: AsyncSession = Depends(get_db)):
 
 
 @router.post("/schedules/{schedule_id}/test")
-async def test_schedule(schedule_id: int, db: AsyncSession = Depends(get_db)):
+async def test_schedule(
+    schedule_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
     """Test a schedule by immediately triggering the workflow"""
     stmt = select(Schedule).where(Schedule.id == schedule_id)
     result = await db.execute(stmt)

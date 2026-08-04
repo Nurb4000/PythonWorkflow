@@ -5,7 +5,7 @@ This project includes Docker support for easy testing and production deployment.
 
 ## Quick Start
 
-### Development Mode (SQLite)
+### Start all services
 ```bash
 # Build and start all services
 docker-compose up --build
@@ -20,15 +20,6 @@ docker-compose logs -f
 docker-compose down
 ```
 
-### Production Mode (PostgreSQL)
-```bash
-# Build with PostgreSQL
-docker-compose -f docker-compose.yml -f docker-compose.prod.yml up --build
-
-# Or use profiles
-docker-compose up --profile ai --build
-```
-
 ## Services
 
 ### Backend (`http://localhost:6000`)
@@ -41,8 +32,7 @@ docker-compose up --profile ai --build
 - Proxy API requests to backend
 
 ### Database
-- **Development**: SQLite (default)
-- **Production**: PostgreSQL (configured via environment)
+- PostgreSQL 15 (configured via `DATABASE_URL` environment variable)
 
 ### AI (Optional)
 - llama.cpp server for AI features
@@ -88,11 +78,7 @@ docker-compose down
 docker-compose down -v
 ```
 
-### Database Migration
-```bash
-# Migrate SQLite to PostgreSQL
-docker-compose exec backend python migrations/sqlite_to_pg.py
-```
+
 
 ## Production Deployment
 
@@ -210,14 +196,10 @@ For production, consider:
 ### Hot Reload
 Backend uses `--reload` flag for development. Frontend rebuilds on changes.
 
-### Database Switching
-Toggle between SQLite and PostgreSQL by changing `DATABASE_URL`:
+### Database Configuration
+Configure the database via the `DATABASE_URL` environment variable:
 ```bash
-# SQLite (development)
-DATABASE_URL=sqlite:///./workflow.db
-
-# PostgreSQL (production)
-DATABASE_URL=postgresql://user:pass@postgres:5432/workflow_db
+DATABASE_URL=postgresql+asyncpg://user:pass@postgres:5432/workflow_db
 ```
 
 ## Cleanup

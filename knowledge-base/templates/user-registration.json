@@ -1,0 +1,42 @@
+{
+  "name": "User Registration",
+  "description": "Handle new user registration with email verification",
+  "steps": [
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/users",
+        "headers": {"Content-Type": "application/json"},
+        "body": {"email": "$input.email", "name": "$input.name"}
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "insert",
+        "table": "users",
+        "data": {"email": "$output.email", "status": "pending_verification"}
+      }
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "$input.email",
+        "subject": "Verify your account",
+        "body": "Click here to verify: https://app.example.com/verify?token=$output.verification_token"
+      }
+    },
+    {
+      "step_type": "delay",
+      "definition": {"seconds": 86400}
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "GET",
+        "url": "https://api.example.com/users/$input.email/status"
+      }
+    }
+  ]
+}

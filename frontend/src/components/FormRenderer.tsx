@@ -26,6 +26,7 @@ interface FormRendererProps {
 
 export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, readOnly = false }) => {
   const [schema, setSchema] = useState<FormSchema | null>(null)
+  const [formName, setFormName] = useState('')
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [loading, setLoading] = useState(true)
   const [submitting, setSubmitting] = useState(false)
@@ -43,6 +44,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
         headers: { Authorization: `Bearer ${token}` }
       })
       setSchema(response.data.schema)
+      setFormName(response.data.name || '')
       
       // Initialize form data with defaults
       const initialData: Record<string, any> = {}
@@ -59,6 +61,43 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
 
   const handleInputChange = (fieldName: string, value: any) => {
     setFormData({ ...formData, [fieldName]: value })
+  }
+
+  const handleFileChange = async (fieldName: string, e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setError('')
+    try {
+      const token = localStorage.getItem('token')
+      const fd = new FormData()
+      fd.append('file', file)
+      const res = await axios.post(`${API_URL}/forms/upload`, fd, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setFormData({ ...formData, [fieldName]: res.data.filename })
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Upload failed')
+    }
+  }
+
+  const downloadFile = async (filename: string) => {
+    try {
+      const token = localStorage.getItem('token')
+      const res = await axios.get(`${API_URL}/forms/download/${encodeURIComponent(filename)}`, {
+        headers: { Authorization: `Bearer ${token}` },
+        responseType: 'blob'
+      })
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = filename
+      document.body.appendChild(a)
+      a.click()
+      a.remove()
+      window.URL.revokeObjectURL(url)
+    } catch (err: any) {
+      setError(err.response?.data?.detail || 'Download failed')
+    }
   }
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -103,7 +142,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
 
   return (
     <div className="card">
-      <h3 className="card-title">{schema.properties && Object.keys(schema.properties)[0] ? 'Form' : 'Empty Form'}</h3>
+      <h3 className="card-title">{formName || 'Form'}</h3>
       {error && <div className="error">{error}</div>}
       
       <form onSubmit={handleSubmit}>
@@ -141,6 +180,38 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
                   <option key={opt} value={opt}>{opt}</option>
                 ))}
               </select>
+            ) : field.type === 'date' ? (
+              <input
+                type="date"
+                className="form-input"
+                value={formData[key] || ''}
+                onChange={(e) => handleInputChange(key, e.target.value)}
+                disabled={readOnly}
+              />
+            ) : field.type === 'date-time' ? (
+              <input
+                type="datetime-local"
+                className="form-input"
+                value={formData[key] || ''}
+                onChange={(e) => handleInputChange(key, e.target.value)}
+                disabled={readOnly}
+              />
+            ) : field.type === 'file' ? (
+              readOnly ? (
+                formData[key] ? (
+                  <button type="button" className="btn btn-sm btn-primary" onClick={() => downloadFile(formData[key])}>
+                    ⬇ Download {formData[key]}
+                  </button>
+                ) : (
+                  <small style={{ color: '#999' }}>No file uploaded</small>
+                )
+              ) : (
+                <input
+                  type="file"
+                  className="form-input"
+                  onChange={(e) => handleFileChange(key, e)}
+                />
+              )
             ) : (
               <input
                 type={field.type === 'email' ? 'email' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}

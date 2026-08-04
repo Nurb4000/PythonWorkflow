@@ -20,7 +20,7 @@ services:
   # Backend with PostgreSQL
   backend:
     environment:
-      - DATABASE_URL=postgresql://${POSTGRES_USER:-workflow_user}:${POSTGRES_PASSWORD:-workflow_password}@postgres:5432/${POSTGRES_DB:-workflow_db}
+      - DATABASE_URL=postgresql+asyncpg://${POSTGRES_USER:-workflow_user}:${POSTGRES_PASSWORD:-workflow_password}@postgres:5432/${POSTGRES_DB:-workflow_db}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEBUG=False
     ports:

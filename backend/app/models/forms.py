@@ -36,6 +36,7 @@ class FormSubmission(Base):
     status = Column(String(20), default="submitted")  # submitted, approved, rejected
     workflow_run_id = Column(Integer, ForeignKey("workflow_runs.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    custom_data = Column(JSON, default=dict)  # Custom field extensions
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships

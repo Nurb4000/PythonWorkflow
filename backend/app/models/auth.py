@@ -1,7 +1,7 @@
 """
 User authentication and authorization models
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -38,6 +38,7 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_login = Column(DateTime(timezone=True))
+    custom_data = Column(JSON, default=dict)  # Custom field extensions
 
     # Relationships (defined after all models are loaded)
     groups = relationship("Group", secondary=user_groups, back_populates="users")
@@ -53,6 +54,7 @@ class Group(Base):
     group_type = Column(String(50), default="internal")  # internal, ldap, custom
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+    custom_data = Column(JSON, default=dict)  # Custom field extensions
 
     # Relationships
     users = relationship("User", secondary=user_groups, back_populates="groups")

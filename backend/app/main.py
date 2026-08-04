@@ -6,7 +6,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export
 from app.services.scheduler import scheduler_service
 
 # Configure logging
@@ -28,16 +28,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# Include routers
-app.include_router(workflows.router, prefix="/api/workflows", tags=["workflows"])
-app.include_router(workflow_runs.router, prefix="/api/workflows/{workflow_id}/runs", tags=["workflow-runs"])
-app.include_router(admin.router, prefix="/api/admin", tags=["admin"])
+# Include routers (nginx strips /api prefix, so backend routes exclude it)
+app.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
+app.include_router(workflow_runs.router, prefix="/workflows/{workflow_id}/runs", tags=["workflow-runs"])
+app.include_router(workflow_runs.runs_router, tags=["workflow-runs"])
+app.include_router(admin.router, prefix="/admin", tags=["admin"])
 app.include_router(ai.router, tags=["ai"])
-app.include_router(knowledge_base.router, prefix="/api", tags=["knowledge-base"])
+app.include_router(knowledge_base.router, tags=["knowledge-base"])
 app.include_router(auth.router)
 app.include_router(portal.router)
-app.include_router(forms.router, prefix="/api", tags=["forms"])
-app.include_router(system_settings.router, prefix="/api", tags=["system-settings"])
+app.include_router(forms.router, tags=["forms"])
+app.include_router(system_settings.router, tags=["system-settings"])
+app.include_router(tasks.router, tags=["tasks"])
+app.include_router(webhooks.router, tags=["webhooks"])
+app.include_router(data_fields.router, prefix="/data-fields", tags=["data-fields"])
+app.include_router(data_query.router, prefix="/data-query", tags=["data-query"])
+app.include_router(data_export.router, prefix="/data-export", tags=["data-export"])
+app.include_router(sql_views.router, prefix="/sql-views", tags=["sql-views"])
+app.include_router(workflow_import_export.router, prefix="/workflows", tags=["workflow-import-export"])
 
 
 async def create_default_admin():
@@ -80,6 +88,10 @@ async def startup_event():
     await init_db()
     await create_default_admin()
     await scheduler_service.initialize(async_session_factory)
+    from app.services.sql_view_service import sql_view_service
+    async with async_session_factory() as db:
+        await sql_view_service.sync_views(db)
+    await scheduler_service.start_email_monitor()
     logger.info("Application started")
 
 

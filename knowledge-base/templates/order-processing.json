@@ -1,0 +1,47 @@
+{
+  "name": "Order Processing",
+  "description": "Process customer orders with inventory check",
+  "steps": [
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/orders",
+        "body": {"items": "$input.items", "customer_id": "$input.customer_id"}
+      }
+    },
+    {
+      "step_type": "database_query",
+      "definition": {
+        "type": "select",
+        "table": "inventory",
+        "conditions": {"product_id": "$input.items[*].product_id"}
+      }
+    },
+    {
+      "step_type": "condition",
+      "definition": {
+        "routes": [
+          {"expression": "data['total'] <= 1000", "target_step_id": null}
+        ],
+        "default_target_step_id": null
+      }
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://payments.example.com/charge",
+        "body": {"amount": "$input.total", "order_id": "$output.order_id"}
+      }
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "$input.customer_email",
+        "subject": "Order Confirmation #{$output.order_id}",
+        "body": "Thank you for your order!"
+      }
+    }
+  ]
+}

@@ -185,10 +185,32 @@ class SchedulerService:
         return schedules
     
     def stop(self):
-        """Stop the scheduler"""
+        """Stop the scheduler and email monitor"""
+        self.stop_email_monitor()
         if self.scheduler.running:
             self.scheduler.shutdown()
             logger.info("Scheduler stopped")
+
+    # ------------------------------------------------------------------
+    # Email monitor integration
+    # ------------------------------------------------------------------
+
+    async def start_email_monitor(self):
+        """Start the IMAP email polling job based on admin settings."""
+        from app.services.email_monitor import email_monitor
+        await email_monitor._load_settings()
+        email_monitor.start_polling()
+
+    def stop_email_monitor(self):
+        """Stop the IMAP email polling job."""
+        from app.services.email_monitor import email_monitor
+        email_monitor.stop_polling()
+        email_monitor.disconnect()
+
+    def restart_email_monitor(self):
+        """Restart polling with updated settings (called after admin changes settings)."""
+        from app.services.email_monitor import email_monitor
+        email_monitor.restart_polling()
 
 
 # Global scheduler instance

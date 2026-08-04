@@ -14,6 +14,15 @@ from app.models.auth import User
 logger = logging.getLogger(__name__)
 
 
+VALID_FIELD_TYPES = [
+    "string", "number", "integer", "boolean", "object", "array",
+    "email", "textarea", "select", "info",
+    "date", "date-time", "file",
+]
+
+STRING_FIELD_TYPES = {"string", "email", "textarea", "select", "info", "date", "date-time", "file"}
+
+
 class FormService:
     """Manage forms, submissions, and templates"""
     
@@ -98,32 +107,52 @@ class FormService:
         result = await db.execute(stmt)
         return result.scalars().all()
     
-    async def submit_form(self, db: AsyncSession, form_id: int, data: Dict[str, Any], 
+    async def submit_form(self, db: AsyncSession, form_id: int, data: Dict[str, Any],
                          user_id: Optional[int] = None) -> FormSubmission:
         """Submit data to a form"""
-        
+
         # Get form and validate data against schema
-        stmt = select(Form).where(Form.id == form_id, Form.is_active == True)
+        stmt = select(Form).where(Form.id == form_id, Form.is_active == True, Form.is_published == True)
         result = await db.execute(stmt)
         form = result.scalar_one_or_none()
-        
+
         if not form:
-            raise ValueError(f"Form {form_id} not found or inactive")
-        
+            raise ValueError(f"Form {form_id} not found, inactive, or not published")
+
         # Validate submission data
         self._validate_submission(form.schema_json, data)
-        
+
+        # Handle reference fields - save values back to source table
+        properties = form.schema_json.get("properties", {})
+        for field_name, field_def in properties.items():
+            if field_def.get("source") == "reference" and field_name in data:
+                ref_table = field_def.get("ref_table")
+                ref_column = field_def.get("ref_column")
+                # Look for ref_record_id in submission data (prefixed with __ref_)
+                ref_key = f"__ref_{field_name}"
+                ref_record_id = data.get(ref_key) or field_def.get("ref_record_id")
+                if ref_table and ref_column and ref_record_id:
+                    from app.services.data_query_service import QUERYABLE_TABLES
+                    if ref_table in QUERYABLE_TABLES:
+                        model = QUERYABLE_TABLES[ref_table][0]
+                        stmt = select(model).where(model.id == ref_record_id)
+                        result = await db.execute(stmt)
+                        record = result.scalar_one_or_none()
+                        if record:
+                            setattr(record, ref_column, data[field_name])
+                            logger.info(f"Saved reference field '{field_name}' to {ref_table}.{ref_column} for record {ref_record_id}")
+
         submission = FormSubmission(
             form_id=form_id,
             submitted_by=user_id,
             data=data,
             status="submitted"
         )
-        
+
         db.add(submission)
         await db.commit()
         await db.refresh(submission)
-        
+
         logger.info(f"Form submission: {form.name} (ID: {submission.id})")
         return submission
     
@@ -209,7 +238,7 @@ class FormService:
         for field_name, field_def in schema["properties"].items():
             if "type" not in field_def:
                 raise ValueError(f"Field '{field_name}' must have a 'type'")
-            if field_def["type"] not in ["string", "number", "integer", "boolean", "object", "array"]:
+            if field_def["type"] not in VALID_FIELD_TYPES:
                 raise ValueError(f"Field '{field_name}' has invalid type: {field_def['type']}")
     
     def _validate_submission(self, schema: Dict[str, Any], data: Dict[str, Any]) -> None:
@@ -226,11 +255,11 @@ class FormService:
         for field_name, value in data.items():
             if field_name in properties:
                 expected_type = properties[field_name].get("type")
-                if expected_type == "string" and not isinstance(value, str):
+                if expected_type in STRING_FIELD_TYPES and not isinstance(value, str):
                     raise ValueError(f"Field '{field_name}' must be a string")
-                elif expected_type == "number" and not isinstance(value, (int, float)):
+                elif expected_type == "number" and (not isinstance(value, (int, float)) or isinstance(value, bool)):
                     raise ValueError(f"Field '{field_name}' must be a number")
-                elif expected_type == "integer" and not isinstance(value, int):
+                elif expected_type == "integer" and (not isinstance(value, int) or isinstance(value, bool)):
                     raise ValueError(f"Field '{field_name}' must be an integer")
                 elif expected_type == "boolean" and not isinstance(value, bool):
                     raise ValueError(f"Field '{field_name}' must be a boolean")

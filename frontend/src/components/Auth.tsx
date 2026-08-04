@@ -1,8 +1,19 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
+import { BrandingHeader } from './Branding'
 
 const API_URL = '/api'
+
+export const roleDefaultPath = (role: string): string => {
+  switch (role) {
+    case 'admin': return '/admin'
+    case 'developer': return '/workflows'
+    case 'staff': return '/tasks'
+    case 'user': return '/portal'
+    default: return '/workflows'
+  }
+}
 
 interface User {
   id: number
@@ -23,7 +34,8 @@ interface AuthContextType {
   isAuthenticated: boolean
   user: User | null
   token: string | null
-  login: (username: string, password: string) => Promise<{ success: boolean; error?: string }>
+  initializing: boolean
+  login: (username: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>
   register: (username: string, email: string, password: string, full_name?: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
 }
@@ -38,19 +50,74 @@ export const useAuth = () => {
   return context
 }
 
+const decodeJwtExp = (token: string): number | null => {
+  try {
+    const parts = token.split('.')
+    if (parts.length !== 3) return null
+    const payload = JSON.parse(atob(parts[1]))
+    return payload.exp ? payload.exp * 1000 : null
+  } catch {
+    return null
+  }
+}
+
 export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
     user: null,
     token: null
   })
+  const [initializing, setInitializing] = useState(() => !!localStorage.getItem('token'))
+  const refreshTimerRef = useRef<number | null>(null)
 
   useEffect(() => {
     // Check for existing token
     const token = localStorage.getItem('token')
     if (token) {
+      setInitializing(true)
       axios.defaults.headers.common['Authorization'] = `Bearer ${token}`
-      fetchCurrentUser(token)
+      fetchCurrentUser(token).finally(() => setInitializing(false))
+    }
+  }, [])
+
+  // Proactive token refresh: schedule a /auth/me ping before expiry
+  useEffect(() => {
+    if (refreshTimerRef.current) {
+      clearTimeout(refreshTimerRef.current)
+      refreshTimerRef.current = null
+    }
+    if (!authState.token) return
+
+    const exp = decodeJwtExp(authState.token)
+    if (!exp) return
+
+    const now = Date.now()
+    const timeUntilExpiry = exp - now
+    // Refresh 10 minutes before expiry, or immediately if < 10 min left
+    const refreshIn = Math.max(0, timeUntilExpiry - 10 * 60 * 1000)
+
+    if (refreshIn > 0) {
+      refreshTimerRef.current = window.setTimeout(async () => {
+        try {
+          await axios.get(`${API_URL}/auth/me`, {
+            headers: { Authorization: `Bearer ${authState.token}` }
+          })
+          // Token still valid, schedule next refresh
+          setAuthState(prev => ({ ...prev }))
+        } catch {
+          // Token expired, clear it
+          logout()
+        }
+      }, refreshIn)
+    }
+  }, [authState.token])
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (refreshTimerRef.current) {
+        clearTimeout(refreshTimerRef.current)
+      }
     }
   }, [])
 
@@ -90,7 +157,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
         token: access_token
       })
       
-      return { success: true }
+      return { success: true, user }
     } catch (error: any) {
       return { 
         success: false, 
@@ -126,6 +193,7 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
   return (
     <AuthContext.Provider value={{
       ...authState,
+      initializing,
       login,
       register,
       logout
@@ -151,7 +219,7 @@ export const LoginForm: React.FC = () => {
     const result = await login(username, password)
     
     if (result.success) {
-      navigate('/workflows')
+      navigate(result.user ? roleDefaultPath(result.user.role) : '/workflows')
     } else {
       setError(result.error || 'Login failed')
     }
@@ -160,6 +228,7 @@ export const LoginForm: React.FC = () => {
 
   return (
     <div style={{ maxWidth: '400px', margin: '2rem auto' }}>
+      <BrandingHeader subtitle="Sign in to your account" />
       <div className="card">
         <h2 className="card-title">Login</h2>
         {error && <div className="error">{error}</div>}
@@ -220,6 +289,7 @@ export const RegisterForm: React.FC = () => {
   if (success) {
     return (
       <div style={{ maxWidth: '400px', margin: '2rem auto' }}>
+        <BrandingHeader />
         <div className="card">
           <h2 className="card-title">Registration Successful</h2>
           <p>You can now log in with your credentials.</p>
@@ -230,6 +300,7 @@ export const RegisterForm: React.FC = () => {
 
   return (
     <div style={{ maxWidth: '400px', margin: '2rem auto' }}>
+      <BrandingHeader subtitle="Create your account" />
       <div className="card">
         <h2 className="card-title">Register</h2>
         {error && <div className="error">{error}</div>}

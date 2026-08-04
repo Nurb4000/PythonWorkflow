@@ -6,46 +6,6 @@ from typing import Optional, Dict, Any, List
 from datetime import datetime
 
 
-# Workflow Schemas
-class WorkflowCreate(BaseModel):
-    name: str = Field(..., min_length=1, max_length=255)
-    description: str = ""
-    steps: List[Dict[str, Any]] = []
-
-
-class WorkflowUpdate(BaseModel):
-    name: Optional[str] = None
-    description: Optional[str] = None
-    is_active: Optional[bool] = None
-    steps: Optional[List[Dict[str, Any]]] = None
-
-
-class WorkflowResponse(BaseModel):
-    id: int
-    name: str
-    description: str
-    version: int
-    is_active: bool
-    created_at: datetime
-    updated_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
-class WorkflowListResponse(BaseModel):
-    id: int
-    name: str
-    description: str
-    is_active: bool
-    steps_count: int
-    runs_count: int
-    created_at: datetime
-
-    class Config:
-        from_attributes = True
-
-
 # Step Schemas
 class StepCreate(BaseModel):
     step_type: str
@@ -69,10 +29,73 @@ class StepResponse(BaseModel):
         from_attributes = True
 
 
+# Workflow Schemas
+class WorkflowCreate(BaseModel):
+    name: str = Field(..., min_length=1, max_length=255)
+    description: str = ""
+    steps: List[Dict[str, Any]] = []
+    config: Dict[str, Any] = {}
+    allowed_group_ids: List[int] = []
+    portal_icon: str = ""
+    portal_order: int = 0
+    portal_visible: bool = True
+    entry_form_id: Optional[int] = None  # P3.3: form to show before triggering
+
+
+class WorkflowUpdate(BaseModel):
+    name: Optional[str] = None
+    description: Optional[str] = None
+    is_active: Optional[bool] = None
+    is_published: Optional[bool] = None
+    environment: Optional[str] = None
+    steps: Optional[List[Dict[str, Any]]] = None
+    config: Optional[Dict[str, Any]] = None
+    portal_icon: Optional[str] = None
+    portal_order: Optional[int] = None
+    portal_visible: Optional[bool] = None
+    entry_form_id: Optional[int] = None  # P3.3
+    manual_version_increment: bool = False  # P7: Manual version bump
+
+
+class WorkflowResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    version: int
+    is_active: bool
+    config: Dict[str, Any] = {}
+    steps: List[StepResponse] = []
+    portal_icon: str = ""
+    portal_order: int = 0
+    portal_visible: bool = True
+    entry_form_id: Optional[int] = None  # P3.3
+    created_at: datetime
+    updated_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
+class WorkflowListResponse(BaseModel):
+    id: int
+    name: str
+    description: str
+    is_active: bool
+    steps_count: int
+    runs_count: int
+    created_at: datetime
+
+    class Config:
+        from_attributes = True
+
+
 # Workflow Run Schemas
 class WorkflowRunCreate(BaseModel):
     input_data: Optional[Dict[str, Any]] = {}
     triggered_by: str = "manual"
+    timeout_seconds: int = 0  # 0 means no timeout
+    max_retries: int = 0  # Maximum retries per step
+    failure_hooks: List[Dict[str, Any]] = []  # List of failure hook configurations
 
 
 class WorkflowRunResponse(BaseModel):
@@ -85,6 +108,10 @@ class WorkflowRunResponse(BaseModel):
     error_message: str
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    timeout_seconds: int = 0
+    max_retries: int = 0
+    retry_count: int = 0
+    failure_hooks: List[Dict[str, Any]] = []
     created_at: datetime
 
     class Config:
@@ -101,6 +128,9 @@ class StepInstanceResponse(BaseModel):
     error_message: str
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    retry_count: int = 0
+    max_retries: int = 0
+    last_error: str = ""
 
     class Config:
         from_attributes = True
@@ -139,3 +169,47 @@ class AuditLogEntry(BaseModel):
     action: str
     user: str
     details: Dict[str, Any]
+
+
+# Task Schemas
+class TaskCreate(BaseModel):
+    workflow_run_id: Optional[int] = None
+    step_id: Optional[int] = None
+    title: str
+    description: Optional[str] = ""
+    assigned_to_user_id: Optional[int] = None
+    assigned_group_id: Optional[int] = None
+    form_id: Optional[int] = None
+    task_data: Dict[str, Any] = {}
+
+
+class TaskUpdate(BaseModel):
+    title: Optional[str] = None
+    description: Optional[str] = None
+    status: Optional[str] = None
+    assigned_to_user_id: Optional[int] = None
+    assigned_group_id: Optional[int] = None
+    form_id: Optional[int] = None
+    task_data: Optional[Dict[str, Any]] = None
+    result_data: Optional[Dict[str, Any]] = None
+
+
+class TaskResponse(BaseModel):
+    id: int
+    workflow_run_id: Optional[int]
+    step_id: Optional[int]
+    title: str
+    description: str
+    status: str
+    assigned_to_user_id: Optional[int]
+    assigned_group_id: Optional[int]
+    form_id: Optional[int]
+    task_data: Dict[str, Any]
+    result_data: Dict[str, Any]
+    created_at: datetime
+    updated_at: datetime
+    completed_at: Optional[datetime]
+    closed_at: Optional[datetime]
+
+    class Config:
+        from_attributes = True

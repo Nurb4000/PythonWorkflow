@@ -1,0 +1,71 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-01-01T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>Expense Approval Workflow</Name>
+    <Description>A complete expense approval process with form submission, manager approval, branching logic, and database updates.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="Expense Approval" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="💰" order="2" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+    <EntryForm refId="form-1" />
+
+    <Steps>
+      <Step id="step-1" type="form" position="0" isEnabled="true">
+        <Title>Submit Expense</Title>
+        <Description>User fills out the expense form</Description>
+        <Definition>{"form_id":"form-1","next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <Step id="step-2" type="approval" position="1" isEnabled="true">
+        <Title>Manager Approval</Title>
+        <Description>Manager reviews and approves or rejects the expense</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"assigned_group_id":"group-managers","form_id":"form-1","routes":[{"expression":"result == 'approved'","target_step_id":"step-3"},{"expression":"result == 'rejected'","target_step_id":"step-4"}],"default_target_step_id":"step-4"}</Definition>
+      </Step>
+
+      <Step id="step-3" type="database_query" position="2" isEnabled="true">
+        <Title>Record Approval</Title>
+        <Description>Update expense status to approved in database</Description>
+        <Definition>{"query_type":"select","table":"tasks","columns":"*","conditions":{},"next_step_ids":["step-5"]}</Definition>
+      </Step>
+
+      <Step id="step-4" type="email" position="3" isEnabled="true">
+        <Title>Notify Rejection</Title>
+        <Description>Send rejection notification to requester</Description>
+        <Definition>{"to":"$input.requester_email","subject":"Expense Request Rejected","body":"Your expense request has been rejected. Please contact your manager for details.","next_step_ids":[]}</Definition>
+      </Step>
+
+      <Step id="step-5" type="email" position="4" isEnabled="true">
+        <Title>Notify Approval</Title>
+        <Description>Send approval confirmation to requester and finance team</Description>
+        <Definition>{"to":"$input.requester_email","subject":"Expense Approved","body":"Your expense request has been approved. Finance will process payment within 5 business days.","next_step_ids":[]}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules />
+    <Permissions>
+      <Group refId="group-finance" />
+      <Group refId="group-managers" />
+    </Permissions>
+  </Workflow>
+
+  <Forms>
+    <Form id="form-1" name="Expense Submission Form" isPublished="true" environment="test">
+      <Description>Form for submitting expense requests with amount, category, and receipt details.</Description>
+      <Schema>{"type":"object","properties":{"amount":{"type":"number","title":"Amount","required":true},"category":{"type":"select","title":"Category","options":["Travel","Meals","Supplies","Software","Other"],"required":true},"date":{"type":"date","title":"Expense Date","required":true},"description":{"type":"textarea","title":"Description"},"receipt_url":{"type":"url","title":"Receipt URL"}},"required":["amount","category","date"]}</Schema>
+    </Form>
+  </Forms>
+
+  <Groups>
+    <Group id="group-managers" name="Managers" groupType="internal" isActive="true">
+      <Description>Department managers with approval authority for expenses.</Description>
+    </Group>
+    <Group id="group-finance" name="Finance" groupType="internal" isActive="true">
+      <Description>Finance team responsible for processing approved expenses.</Description>
+    </Group>
+  </Groups>
+</WorkflowPackage>

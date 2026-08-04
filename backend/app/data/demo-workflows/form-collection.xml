@@ -1,0 +1,67 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-01-01T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>Form Collection Workflow</Name>
+    <Description>Collects data via a form, routes to human review, then updates the database based on reviewer decisions.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="Form Collection" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="📝" order="4" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+
+    <Steps>
+      <Step id="step-1" type="form" position="0" isEnabled="true">
+        <Title>Collect Information</Title>
+        <Description>User submits data through the collection form</Description>
+        <Definition>{"form_id":"form-1","next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <Step id="step-2" type="human_task" position="1" isEnabled="true">
+        <Title>Review Submission</Title>
+        <Description>A staff member reviews the submitted data for accuracy</Description>
+        <MaxRetries>2</MaxRetries>
+        <RetryDelaySeconds>3600</RetryDelaySeconds>
+        <Definition>{"assigned_group_id":"group-staff","form_id":"form-1","description":"Review this submission and approve or request changes.","routes":[{"expression":"review_result == 'approved'","target_step_id":"step-3"},{"expression":"review_result == 'changes_needed'","target_step_id":"step-4"}],"default_target_step_id":"step-4"}</Definition>
+      </Step>
+
+      <Step id="step-3" type="database_query" position="2" isEnabled="true">
+        <Title>Save to Database</Title>
+        <Description>Insert approved data into the target table</Description>
+        <Definition>{"query_type":"select","table":"form_submissions","columns":"*","conditions":{},"next_step_ids":["step-5"]}</Definition>
+      </Step>
+
+      <Step id="step-4" type="email" position="3" isEnabled="true">
+        <Title>Request Changes</Title>
+        <Description>Notify the submitter that changes are needed</Description>
+        <Definition>{"to":"$input.submitter_email","subject":"Changes Requested","body":"Your submission requires changes. Please review and resubmit.","next_step_ids":[]}</Definition>
+      </Step>
+
+      <Step id="step-5" type="email" position="4" isEnabled="true">
+        <Title>Confirm Completion</Title>
+        <Description>Send confirmation that the submission was processed</Description>
+        <Definition>{"to":"$input.submitter_email","subject":"Submission Processed","body":"Your submission has been approved and saved successfully.","next_step_ids":[]}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules />
+    <Permissions>
+      <Group refId="group-staff" />
+    </Permissions>
+  </Workflow>
+
+  <Forms>
+    <Form id="form-1" name="Information Collection Form" isPublished="true" environment="test">
+      <Description>A general-purpose data collection form for gathering information that requires human review.</Description>
+      <Schema>{"type":"object","properties":{"full_name":{"type":"string","title":"Full Name","required":true},"email":{"type":"email","title":"Email Address","required":true},"department":{"type":"select","title":"Department","options":["Engineering","Marketing","Sales","Support","HR"],"required":true},"request_type":{"type":"select","title":"Request Type","options":["New Account","Access Change","Data Request","Other"],"required":true},"details":{"type":"textarea","title":"Details","required":true},"priority":{"type":"select","title":"Priority","options":["Low","Medium","High","Urgent"]}},"required":["full_name","email","department","request_type","details"]}</Schema>
+    </Form>
+  </Forms>
+
+  <Groups>
+    <Group id="group-staff" name="Staff" groupType="internal" isActive="true">
+      <Description>Staff members authorized to review and process form submissions.</Description>
+    </Group>
+  </Groups>
+</WorkflowPackage>

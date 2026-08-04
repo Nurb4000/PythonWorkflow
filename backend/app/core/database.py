@@ -1,22 +1,12 @@
 """
 Database connection and session management
 """
-import os
 from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 
-# Ensure database directory exists
-db_path = "backend_data"
-os.makedirs(db_path, exist_ok=True)
-
 # Create async engine
-if settings.database_url.startswith("sqlite"):
-    # For SQLite, use absolute path
-    db_url = f"sqlite+aiosqlite:///{os.path.join(db_path, 'workflow.db')}"
-    engine = create_async_engine(db_url, echo=settings.debug)
-else:
-    engine = create_async_engine(settings.database_url, echo=settings.debug)
+engine = create_async_engine(settings.database_url, echo=settings.debug)
 
 # Session factory
 async_session_factory = async_sessionmaker(
@@ -44,7 +34,12 @@ async def get_db() -> AsyncSession:
 
 
 async def init_db():
-    """Initialize database tables"""
+    """Initialize database tables (legacy fallback; migrations are the canonical path).
+
+    Tables and schema are managed by alembic (see backend/alembic). This only
+    exists as a safety net for running the app directly without running
+    `alembic upgrade head` first.
+    """
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
 

@@ -1,0 +1,42 @@
+{
+  "name": "Expense Approval",
+  "description": "Route expenses through approval chain",
+  "steps": [
+    {
+      "step_type": "form",
+      "definition": {
+        "form_id": "expense_report",
+        "fields": ["amount", "category", "receipt", "description"]
+      }
+    },
+    {
+      "step_type": "condition",
+      "definition": {
+        "routes": [
+          {"expression": "data['amount'] <= 500", "target_step_id": null}
+        ],
+        "default_target_step_id": null
+      }
+    },
+    {
+      "step_type": "api_call",
+      "definition": {
+        "method": "POST",
+        "url": "https://api.example.com/approvals/manager",
+        "body": {"expense_id": "$input.expense_id", "amount": "$input.amount"}
+      }
+    },
+    {
+      "step_type": "delay",
+      "definition": {"seconds": 3600}
+    },
+    {
+      "step_type": "email",
+      "definition": {
+        "to": "$output.manager_email",
+        "subject": "Expense Approval Required: $input.amount",
+        "body": "Please review and approve or reject."
+      }
+    }
+  ]
+}

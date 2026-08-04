@@ -78,3 +78,27 @@ async def save_as_template(
         if isinstance(e, HTTPException):
             raise e
         raise HTTPException(status_code=500, detail=str(e))
+
+
+@router.get("/step-templates")
+async def list_step_templates():
+    """P5.4: List all available step templates."""
+    step_templates = template_service.get_step_templates()
+    return [
+        {
+            "step_type": t["step_type"],
+            "title": t["title"],
+            "definition": t["definition"],
+            "template_name": t["template_name"],
+        }
+        for t in step_templates
+    ]
+
+
+@router.get("/step-templates/{step_type}")
+async def get_step_template(step_type: str):
+    """P5.4: Get a specific step template by type."""
+    template = template_service.get_step_template(step_type)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Step template '{step_type}' not found")
+    return template

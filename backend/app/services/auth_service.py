@@ -39,19 +39,19 @@ class AuthService:
         
         return user
     
-    async def create_user(self, db: AsyncSession, username: str, email: str, 
-                          password: str, role: str = "user", full_name: str = "") -> User:
+    async def create_user(self, db: AsyncSession, username: str, email: str,
+                          password: str, role: str = "user", full_name: str = "", custom_data: Optional[dict] = None) -> User:
         """Create a new user"""
-        
+
         # Check if user exists
         stmt = select(User).where(User.username == username)
         result = await db.execute(stmt)
         if result.scalar_one_or_none():
             raise ValueError(f"Username '{username}' already exists")
-        
+
         # Hash password
         password_hash = pwd_context.hash(password)
-        
+
         user = User(
             username=username,
             email=email,
@@ -59,7 +59,8 @@ class AuthService:
             role=role,
             full_name=full_name or username,
             is_active=True,
-            is_verified=True  # Auto-verify for internal auth
+            is_verified=True,
+            custom_data=custom_data or {}
         )
         
         db.add(user)
@@ -74,15 +75,23 @@ class AuthService:
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
-        
+
         if not user:
             raise ValueError(f"User {user_id} not found")
-        
+
         # Update allowed fields
         allowed_fields = ['email', 'full_name', 'role', 'is_active', 'mfa_enabled']
         for field in allowed_fields:
             if field in kwargs:
                 setattr(user, field, kwargs[field])
+
+        if 'password' in kwargs and kwargs['password']:
+            user.password_hash = pwd_context.hash(kwargs['password'])
+
+        if 'custom_data' in kwargs and kwargs['custom_data'] is not None:
+            current = user.custom_data or {}
+            current.update(kwargs['custom_data'])
+            user.custom_data = current
         
         await db.commit()
         await db.refresh(user)
@@ -147,7 +156,7 @@ class AuthService:
     async def list_users(self, db: AsyncSession, role: Optional[str] = None, 
                         is_active: Optional[bool] = None) -> List[User]:
         """List users with optional filters"""
-        stmt = select(User)
+        stmt = select(User).options(selectinload(User.groups))
         
         if role:
             stmt = stmt.where(User.role == role)
@@ -223,6 +232,68 @@ class AuthService:
         
         return True
     
+    async def update_group(self, db: AsyncSession, group_id: int, **kwargs) -> Group:
+        """Update group details (name, description, group_type, is_active)"""
+        stmt = select(Group).where(Group.id == group_id)
+        result = await db.execute(stmt)
+        group = result.scalar_one_or_none()
+
+        if not group:
+            raise ValueError(f"Group {group_id} not found")
+
+        allowed_fields = ['name', 'description', 'group_type', 'is_active']
+        for field in allowed_fields:
+            if field in kwargs:
+                setattr(group, field, kwargs[field])
+
+        await db.commit()
+        await db.refresh(group)
+
+        logger.info(f"Updated group: {group.name}")
+        return group
+
+    async def delete_group(self, db: AsyncSession, group_id: int) -> bool:
+        """Delete a group"""
+        stmt = select(Group).where(Group.id == group_id)
+        result = await db.execute(stmt)
+        group = result.scalar_one_or_none()
+
+        if not group:
+            return False
+
+        await db.delete(group)
+        await db.commit()
+        return True
+
+    async def set_user_groups(self, db: AsyncSession, user_id: int, group_ids: List[int]) -> User:
+        """Replace the set of groups a user belongs to"""
+        from sqlalchemy import delete, insert
+        from app.models.auth import user_groups
+
+        stmt = select(User).where(User.id == user_id)
+        result = await db.execute(stmt)
+        user = result.scalar_one_or_none()
+
+        if not user:
+            raise ValueError(f"User {user_id} not found")
+
+        stmt = select(Group).where(Group.id.in_(group_ids))
+        result = await db.execute(stmt)
+        groups = result.scalars().all()
+
+        if len(groups) != len(set(group_ids)):
+            raise ValueError("One or more groups not found")
+
+        await db.execute(delete(user_groups).where(user_groups.c.user_id == user_id))
+        if group_ids:
+            await db.execute(
+                insert(user_groups),
+                [{"user_id": user_id, "group_id": gid} for gid in group_ids]
+            )
+        await db.commit()
+        await db.refresh(user, attribute_names=["groups"])
+        return user
+
     async def list_groups(self, db: AsyncSession) -> List[Group]:
         """List all groups with users"""
         stmt = select(Group).options(selectinload(Group.users))

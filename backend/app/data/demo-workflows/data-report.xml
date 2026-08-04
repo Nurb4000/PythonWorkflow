@@ -1,0 +1,45 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-01-01T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>Data Report Workflow</Name>
+    <Description>Runs a SQL query against the database, generates a report, and emails the results to stakeholders.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="Data Report" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="📊" order="3" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+
+    <Steps>
+      <Step id="step-1" type="database_query" position="0" isEnabled="true">
+        <Title>Query Active Users</Title>
+        <Description>Pull active user data from the database</Description>
+        <Definition>{"query_type":"select","table":"users","columns":"id,username,email,full_name,is_active","conditions":{"is_active":true},"next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <Step id="step-2" type="report" position="1" isEnabled="true">
+        <Title>User Activity Report</Title>
+        <Description>Generate a report from the query results using SQL</Description>
+        <Definition>{"report_type":"sql_query","title":"Active Users Summary","sql_query":"SELECT u.full_name, u.email, COUNT(t.id) as task_count FROM users u LEFT JOIN tasks t ON u.id = t.assigned_to_user_id WHERE u.is_active = true GROUP BY u.full_name, u.email ORDER BY task_count DESC","sql_limit":100,"next_step_ids":["step-3"]}</Definition>
+      </Step>
+
+      <Step id="step-3" type="email" position="2" isEnabled="true">
+        <Title>Send Report</Title>
+        <Description>Email the report results to stakeholders</Description>
+        <Definition>{"to":"admin@example.com","subject":"Weekly User Activity Report","body":"Report generated at $input.executed_at. Total rows: $input.row_count. See attached data.","next_step_ids":[]}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules>
+      <Schedule isEnabled="true">
+        <CronExpression>0 9 * * 1</CronExpression>
+      </Schedule>
+    </Schedules>
+    <Permissions />
+  </Workflow>
+
+  <Forms />
+  <Groups />
+</WorkflowPackage>

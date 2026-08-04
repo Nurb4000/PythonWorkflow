@@ -1,5 +1,5 @@
 services:
-  # PostgreSQL Database (production)
+  # PostgreSQL Database
   postgres:
     image: postgres:15-alpine
     environment:
@@ -16,15 +16,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # SQLite Database (development)
-  sqlite:
-    image: python:3.11-slim
-    command: >
-      sh -c "python -m http.server 8000"
-    volumes:
-      - ./backend_data:/app/data
-    working_dir: /app/data
-
   # Backend API
   backend:
     build:
@@ -33,22 +24,19 @@ services:
     ports:
       - "6000:8000"
     environment:
-      # Default to SQLite for easy development
-      # Override with: DATABASE_URL=postgresql://user:pass@postgres:5432/db
-      - DATABASE_URL=${DATABASE_URL:-sqlite:///./workflow.db}
-      - LLAMA_CPP_URL=http://llama_cpp:8081
+      - DATABASE_URL=${DATABASE_URL:-postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db}
       - SECRET_KEY=${SECRET_KEY:-change-me-in-production}
       - DEBUG=True
+      - PYTHONPATH=/app
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     volumes:
       - ./backend:/app
-      - backend_data:/app/data
-    # Only depend on postgres if using PostgreSQL
+      - ./knowledge-base:/app/knowledge-base
     depends_on:
       postgres:
         condition: service_healthy
-      sqlite:
-        condition: service_started
-    command: uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload
+    command: sh -c "alembic upgrade head && exec uvicorn app.main:app --host 0.0.0.0 --port 8000 --reload"
 
   # Frontend
   frontend:
@@ -73,4 +61,3 @@ services:
 
 volumes:
   postgres_data:
-  backend_data:

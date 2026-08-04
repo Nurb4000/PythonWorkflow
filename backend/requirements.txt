@@ -6,10 +6,13 @@ pydantic==2.5.2
 pydantic-settings==2.1.0
 
 # Database
-aiosqlite==0.19.0  # For SQLite async support
+asyncpg==0.29.0  # For PostgreSQL async support
 
 # Scheduling
 apscheduler==3.10.4
+
+# Migrations
+alembic==1.13.1
 
 # AI integration
 httpx==0.25.2  # For llama.cpp API calls
@@ -23,4 +26,5 @@ bcrypt==4.1.2
 # Testing
 pytest==7.4.3
 pytest-asyncio==0.23.2
+aiosqlite==0.19.0  # In-memory SQLite for tests
 httpx==0.25.2

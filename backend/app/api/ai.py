@@ -1,17 +1,59 @@
 """
-API endpoints for AI-powered generation
+API endpoints for AI-powered generation and assistance
 """
-from fastapi import APIRouter, HTTPException, Query, Body
-from typing import Optional
+from fastapi import APIRouter, HTTPException, Depends
+from pydantic import BaseModel, Field
+from typing import Optional, Dict, Any, List
 from app.services.ai_service import ai_service
+from app.api.auth import get_current_developer
 
 router = APIRouter()
 
 
+# ---------------------------------------------------------------------------
+# Request/Response schemas
+# ---------------------------------------------------------------------------
+
+class AssistNodeRequest(BaseModel):
+    action: str = Field(..., description="generate, explain, fix, or optimize")
+    step_type: str = Field(..., description="Workflow step type")
+    description: Optional[str] = None
+    current_config: Optional[Dict[str, Any]] = None
+    upstream_data_shapes: Optional[Dict[str, Any]] = None
+    error_message: Optional[str] = None
+
+
+class AssistQueryRequest(BaseModel):
+    action: str = Field(..., description="generate, explain, or fix")
+    description: Optional[str] = None
+    table: Optional[str] = None
+    sql: Optional[str] = None
+    error_message: Optional[str] = None
+    available_columns: Optional[List[Dict[str, Any]]] = None
+
+
+class AssistFormRequest(BaseModel):
+    action: str = Field(..., description="suggest_fields or improve_schema")
+    description: Optional[str] = None
+    current_schema: Optional[Dict[str, Any]] = None
+
+
+class ExplainErrorRequest(BaseModel):
+    step_type: str
+    step_config: Dict[str, Any]
+    error_message: str
+    input_data_sample: Optional[Dict[str, Any]] = None
+
+
+# ---------------------------------------------------------------------------
+# Existing endpoints (preserved)
+# ---------------------------------------------------------------------------
+
 @router.post("/ai/generate-step")
 async def generate_step(
-    description: str = Query(..., description="Natural language description of the step"),
-    context: Optional[dict] = Body(None)
+    description: str = Field(..., description="Natural language description of the step"),
+    context: Optional[dict] = None,
+    user: Any = Depends(get_current_developer),
 ):
     """Generate a workflow step from natural language description"""
     try:
@@ -29,8 +71,9 @@ async def generate_step(
 
 @router.post("/ai/generate-workflow")
 async def generate_workflow(
-    description: str = Query(..., description="Natural language description of the workflow"),
-    template_name: Optional[str] = Query(None, description="Template to use as reference")
+    description: str = Field(..., description="Natural language description of the workflow"),
+    template_name: Optional[str] = None,
+    user: Any = Depends(get_current_developer),
 ):
     """Generate a complete workflow from natural language description"""
     try:
@@ -48,7 +91,8 @@ async def generate_workflow(
 
 @router.post("/ai/generate-form")
 async def generate_form(
-    description: str = Query(..., description="Natural language description of the form")
+    description: str = Field(..., description="Natural language description of the form"),
+    user: Any = Depends(get_current_developer),
 ):
     """Generate a form schema from natural language description"""
     try:
@@ -65,12 +109,11 @@ async def generate_form(
 
 
 @router.get("/ai/knowledge-base")
-async def get_knowledge_base():
-    """Get available knowledge base content"""
+async def get_knowledge_base(user: User = Depends(require_developer_role)):
+    """Get available knowledge base domains"""
     return {
-        "prompts": list(ai_service.knowledge_base["prompts"].keys()),
-        "templates": [t.get("name") for t in ai_service.knowledge_base["templates"]],
-        "step_types": list(ai_service.VALID_STEP_TYPES.keys())
+        "domains": list(ai_service.kb.keys()),
+        "step_types": list(ai_service.VALID_STEP_TYPES.keys()),
     }
 
 
@@ -85,7 +128,7 @@ async def ai_health():
                 "status": "healthy",
                 "llama_cpp_url": ai_service.base_url,
                 "model": ai_service.model,
-                "knowledge_base_loaded": len(ai_service.knowledge_base["templates"]) > 0
+                "kb_domains_loaded": len(ai_service.kb),
             }
     except Exception as e:
         return {
@@ -93,3 +136,132 @@ async def ai_health():
             "error": str(e),
             "llama_cpp_url": ai_service.base_url
         }
+
+
+# ---------------------------------------------------------------------------
+# New assist endpoints
+# ---------------------------------------------------------------------------
+
+@router.post("/ai/assist-node")
+async def assist_node(
+    request: AssistNodeRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Generate, explain, fix, or optimize a workflow node configuration"""
+    valid_actions = {"generate", "explain", "fix", "optimize"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action in ("explain", "fix", "optimize") and not request.current_config:
+        raise HTTPException(status_code=400, detail="current_config is required for this action")
+
+    try:
+        result = await ai_service.assist_node(
+            action=request.action,
+            step_type=request.step_type,
+            description=request.description,
+            current_config=request.current_config,
+            upstream_data_shapes=request.upstream_data_shapes,
+            error_message=request.error_message,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-query")
+async def assist_query(
+    request: AssistQueryRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Generate, explain, or fix SQL queries for the data explorer"""
+    valid_actions = {"generate", "explain", "fix"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action in ("explain", "fix") and not request.sql:
+        raise HTTPException(status_code=400, detail="SQL is required for this action")
+
+    try:
+        result = await ai_service.assist_query(
+            action=request.action,
+            description=request.description,
+            table=request.table,
+            sql=request.sql,
+            error_message=request.error_message,
+            available_columns=request.available_columns,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI query assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-form")
+async def assist_form(
+    request: AssistFormRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Suggest or improve form fields"""
+    valid_actions = {"suggest_fields", "improve_schema"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "suggest_fields" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for suggest_fields action")
+
+    if request.action == "improve_schema" and not request.current_schema:
+        raise HTTPException(status_code=400, detail="current_schema is required for improve_schema action")
+
+    try:
+        result = await ai_service.assist_form(
+            action=request.action,
+            description=request.description,
+            current_schema=request.current_schema,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI form assist failed: {str(e)}")
+
+
+@router.post("/ai/explain-error")
+async def explain_error(
+    request: ExplainErrorRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Diagnose a workflow run failure"""
+    try:
+        result = await ai_service.explain_error(
+            step_type=request.step_type,
+            step_config=request.step_config,
+            error_message=request.error_message,
+            input_data_sample=request.input_data_sample,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI error diagnosis failed: {str(e)}")
