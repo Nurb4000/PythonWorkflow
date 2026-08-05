@@ -251,49 +251,39 @@ class DatabaseQueryExecutor(BaseExecutor):
         }
 
     async def _execute_visual_query(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], visual_query: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
-        """Execute a visual query built with the QueryBuilder component."""
+        """Execute a visual query built with the QueryBuilder component.
+
+        Delegates to shared query_executor service (Phase 4).
+        """
         from app.core.database import async_session_factory
-        from app.services.data_query_service import execute_visual_query as run_visual
-        
+        from app.services.query_executor import execute_visual_query as run_visual
+
         table = visual_query.get("table", step_definition.get("table", ""))
-        if not table:
-            raise ValueError("Visual query requires a 'table'")
-        
         filters = visual_query.get("filters", [])
         logic = visual_query.get("logic", "AND")
         sort_by = visual_query.get("sortBy") or visual_query.get("sort_by")
         sort_order = visual_query.get("sortOrder", "desc")
         limit = min(visual_query.get("limit", 100), 10000)
-        
-        # Interpolate filter values with $input.* references
-        interpolated_filters = []
-        for f in filters:
-            interpolated_filters.append({
-                "field": f.get("column", ""),
-                "operator": f.get("operator", "="),
-                "value": self._interpolate_value(f.get("value", ""), input_data),
-                "is_custom": f.get("mode") == "custom",
-                "relationship_chain": f.get("rel_chain", []),
-            })
-        
+
         session = db
         if not session:
             session = async_session_factory()
             if hasattr(session, '__aenter__'):
                 session = await session.__aenter__()
-        
+
         try:
             result = await run_visual(
                 session,
                 table_name=table,
-                filters=interpolated_filters if interpolated_filters else None,
+                raw_filters=filters,
+                input_data=input_data,
                 logic=logic,
                 sort_by=sort_by,
                 sort_order=sort_order,
                 limit=limit,
                 offset=0,
             )
-            
+
             return {
                 "query_type": "select",
                 "table": table,
@@ -601,14 +591,21 @@ class CalculationExecutor(BaseExecutor):
 
 
 class ReportExecutor(BaseExecutor):
-    """Render read-only report (P5.3), including SQL query execution."""
+    """Render read-only report (P5.3), including SQL query execution.
 
-    DANGEROUS_KEYWORDS = [";", "--", "/*", "*/", "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE", "EXEC", "EXECUTE"]
+    Delegates read operations to the shared query_executor service (Phase 4).
+    Supports visual_query format from the QueryBuilder component (Phase 3).
+    """
 
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         report_type = step_definition.get("report_type", "table")
         title = step_definition.get("title", "Report")
         data_source_step_id = step_definition.get("data_source_step_id")
+
+        # Phase 3: Check for visual_query format from QueryBuilder
+        visual_query = step_definition.get("visual_query")
+        if visual_query and isinstance(visual_query, dict):
+            return await self._execute_visual_query(title, step_definition, visual_query, input_data, db)
 
         if report_type == "sql_query":
             return await self._execute_sql(title, step_definition, input_data, db)
@@ -623,32 +620,83 @@ class ReportExecutor(BaseExecutor):
             "executed_at": datetime.utcnow().isoformat(),
         }
 
+    async def _execute_visual_query(self, title: str, step_definition: Dict[str, Any], visual_query: Dict[str, Any], input_data: Dict[str, Any], db: Optional[AsyncSession]) -> Dict[str, Any]:
+        """Execute a visual query via shared query_executor service (Phase 4)."""
+        from app.core.database import async_session_factory
+        from app.services.query_executor import execute_visual_query as run_visual
+
+        table = visual_query.get("table", "")
+        filters = visual_query.get("filters", [])
+        logic = visual_query.get("logic", "AND")
+        sort_by = visual_query.get("sortBy") or visual_query.get("sort_by")
+        sort_order = visual_query.get("sortOrder", "desc")
+        limit = min(visual_query.get("limit", 100) or step_definition.get("sql_limit", 100), 10000)
+
+        session = db
+        if not session:
+            session = async_session_factory()
+            if hasattr(session, '__aenter__'):
+                session = await session.__aenter__()
+
+        try:
+            result = await run_visual(
+                session,
+                table_name=table,
+                raw_filters=filters,
+                input_data=input_data,
+                logic=logic,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                offset=0,
+            )
+
+            return {
+                "report_type": "sql_query",
+                "title": title,
+                "visual_query": True,
+                "table": table,
+                "columns": [],
+                "rows": result.get("items", []),
+                "row_count": result.get("total", 0),
+                "limit": limit,
+                "executed_at": datetime.utcnow().isoformat(),
+            }
+        except Exception as e:
+            return {
+                "report_type": "sql_query",
+                "title": title,
+                "visual_query": True,
+                "table": table,
+                "columns": [],
+                "rows": [],
+                "row_count": 0,
+                "limit": limit,
+                "error": str(e),
+                "executed_at": datetime.utcnow().isoformat(),
+            }
+        finally:
+            if not db and hasattr(session, 'close'):
+                await session.close()
+
     async def _execute_sql(self, title: str, step_definition: Dict[str, Any], input_data: Dict[str, Any], db: Optional[AsyncSession]) -> Dict[str, Any]:
+        """Execute raw SQL via shared query_executor service (Phase 4)."""
+        from app.services.query_executor import execute_raw_sql, validate_readonly_sql, interpolate_sql
+
         sql = step_definition.get("sql_query", "").strip()
         limit = min(step_definition.get("sql_limit", 100), 10000)
 
         if not sql:
             raise ValueError("SQL query is required for sql_query report type")
 
-        # Safety: only allow SELECT
-        upper = sql.upper().lstrip()
-        if not upper.startswith("SELECT"):
-            raise ValueError("Only SELECT queries are allowed in reports")
-
-        # Safety: reject dangerous patterns
-        for keyword in self.DANGEROUS_KEYWORDS:
-            if re.search(r'\b' + keyword + r'\b', sql, re.IGNORECASE):
-                if keyword not in ("SELECT",):
-                    raise ValueError(f"Query contains disallowed keyword: {keyword}")
-
-        # Interpolate $input.* references
-        sql = self._interpolate_sql(sql, input_data)
+        validate_readonly_sql(sql)
+        interpolated = interpolate_sql(sql, input_data)
 
         if db is None:
             return {
                 "report_type": "sql_query",
                 "title": title,
-                "sql": sql,
+                "sql": interpolated,
                 "limit": limit,
                 "columns": [],
                 "rows": [],
@@ -658,27 +706,22 @@ class ReportExecutor(BaseExecutor):
             }
 
         try:
-            result = await db.execute(sa_text(sql + f" LIMIT {limit}"))
-            columns = list(result.keys()) if result.returns_rows else []
-            rows = []
-            if result.returns_rows:
-                for row in result.fetchall():
-                    rows.append(dict(zip(columns, row)))
+            result = await execute_raw_sql(db, interpolated, {}, max_rows=limit)
             return {
                 "report_type": "sql_query",
                 "title": title,
-                "sql": sql,
+                "sql": interpolated,
                 "limit": limit,
-                "columns": columns,
-                "rows": rows,
-                "row_count": len(rows),
+                "columns": result.get("columns", []),
+                "rows": result.get("items", []),
+                "row_count": result.get("total", 0),
                 "executed_at": datetime.utcnow().isoformat(),
             }
         except Exception as e:
             return {
                 "report_type": "sql_query",
                 "title": title,
-                "sql": sql,
+                "sql": interpolated,
                 "limit": limit,
                 "columns": [],
                 "rows": [],
@@ -686,19 +729,6 @@ class ReportExecutor(BaseExecutor):
                 "error": str(e),
                 "executed_at": datetime.utcnow().isoformat(),
             }
-
-    def _interpolate_sql(self, sql: str, input_data: Dict[str, Any]) -> str:
-        """Replace $input.field references with actual values."""
-        def replace_match(match):
-            field = match.group(1)
-            value = input_data.get(field, match.group(0))
-            if isinstance(value, str):
-                escaped = value.replace("'", "''")
-                return "'" + escaped + "'"
-            elif value is None:
-                return "NULL"
-            return str(value)
-        return re.sub(r'\$input\.(\w+)', replace_match, sql)
 
 
 class ReadonlyFormExecutor(BaseExecutor):

@@ -103,41 +103,66 @@ Existing workflows with `definition.query` strings continue to work. New workflo
 
 ## Phase 3 — Report SQL Node Integration
 
-**Status:** Not started (depends on Phase 1)
+**Status:** ✅ Complete
 
 Add a "Build from Visual" toggle to the Report node's SQL Query mode.
 
 ### Changes to WorkflowDesigner.tsx
 
-In the `case 'report':` config panel (~line 1278), when `report_type === 'sql_query'`:
+In the `case 'report':` config panel, when `report_type === 'sql_query'`:
 
-- Add toggle: "Visual Builder" / "Raw SQL"
-- Visual mode → `<QueryBuilder includeSqlPreview />`
-- Raw mode → existing textarea + AI assist buttons
+- Added: "Use Visual Query Builder" checkbox toggle
+- Visual mode: renders `<QueryBuilder />` with tables loaded from `dataQueryApi.listTables()`
+- Raw mode: keeps existing SQL textarea + row limit input (backward compatible)
+- Node label appends "(visual)" when visual_query is present
 - Store visual query in `step.definition.visual_query`, raw SQL in `step.definition.sql_query`
 
 ### Changes to ReportExecutor
 
 In `backend/app/services/step_executors.py`:
 
-- If `visual_query` present, call `data_query_service.execute_visual_query()`
-- If `sql_query` present, use existing `_execute_sql()` path
+- Added `_interpolate_value()` method for `$input.*` reference resolution
+- Added `_execute_visual_query()` method that delegates to `data_query_service.execute_visual_query()`
+- `execute()` checks for `visual_query` first, falls back to `_execute_sql()` for raw SQL
 - Same backward-compatible approach as Phase 2
+
+### Backward compatibility
+
+Existing report nodes with `definition.sql_query` strings continue to work. New reports can use `definition.visual_query`. Visual builder is opt-in via checkbox toggle.
 
 ---
 
-## Phase 4 — Backend Unification (Optional)
+## Phase 4 — Backend Unification
 
-**Status:** Not started
+**Status:** ✅ Complete
 
 Make `DatabaseQueryExecutor` and `ReportExecutor` share the same execution path as the Data Explorer.
 
-### Approach
+### New file: `backend/app/services/query_executor.py`
 
-- Create a shared service method: `backend/app/services/query_executor.py`
-- Both visual filters and raw SQL go through this service
-- `data_query_service.execute_visual_query()` already handles the visual path
-- `DatabaseQueryExecutor` for write operations (INSERT/UPDATE/DELETE) remains separate — those can't use the read-only visual builder
+Shared service with two entry points:
+
+- **`execute_visual_query()`** — transforms QueryBuilder filter rows, interpolates `$input.*` references, delegates to `data_query_service.execute_visual_query()`
+- **`execute_raw_sql()`** — validates read-only SQL (rejects dangerous keywords), interpolates `$input.*`, executes with row limit safety net
+
+Shared utility functions:
+
+- `interpolate_value()` — recursive `$input.*` resolution
+- `transform_visual_filters()` — QueryBuilder format → data_query_service format
+- `validate_readonly_sql()` — safety checks (SELECT-only, no dangerous keywords)
+- `interpolate_sql()` — `$input.field` → actual values in raw SQL strings
+
+### Refactored executors
+
+**DatabaseQueryExecutor:** `_execute_visual_query()` now delegates to `query_executor.execute_visual_query()`. Write operations (INSERT/UPDATE/DELETE/UPSERT) remain in the executor.
+
+**ReportExecutor:** Both `_execute_visual_query()` and `_execute_sql()` delegate to `query_executor`. Removed duplicate `_interpolate_value()`, `_interpolate_sql()`, and `DANGEROUS_KEYWORDS` from the class.
+
+### What didn't change
+
+- `data_query_service.execute_visual_query()` — still the underlying ORM query builder
+- Write operations in `DatabaseQueryExecutor` — INSERT/UPDATE/DELETE/UPSERT remain separate
+- Frontend components — no changes required
 
 ---
 
@@ -160,3 +185,7 @@ Each phase is independently reversible:
 - [ ] Existing workflows with raw `query` strings still execute
 - [ ] Report node toggle switches between visual/raw modes
 - [ ] SQL preview in QueryBuilder matches actual query output
+- [ ] query_executor.execute_visual_query() returns same results as inline executor versions
+- [ ] query_executor.execute_raw_sql() validates and executes SQL correctly
+- [ ] $input.* interpolation works in both visual and raw SQL paths via shared service
+- [ ] Dangerous SQL keywords are rejected by validate_readonly_sql()

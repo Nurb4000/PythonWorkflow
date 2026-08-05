@@ -131,7 +131,10 @@ function nodeLabel(stepType: string, data: any) {
     case 'webhook': return `🔗 Webhook: ${data.url || '...'}`
     case 'custom_code': return `💻 Custom Code`
     case 'calculation': return `🧮 ${data.title || 'Calculation'}`
-    case 'report': return `📊 ${data.title || (data.report_type === 'sql_query' ? 'SQL Query' : 'Report')}`
+    case 'report': {
+      const hasVisual = !!data.visual_query
+      return `📊 ${data.title || (data.report_type === 'sql_query' ? 'SQL Query' : 'Report')}${hasVisual ? ' (visual)' : ''}`
+    }
     default: return stepType
   }
 }
@@ -408,6 +411,17 @@ export const WorkflowDesigner: React.FC = () => {
     limit: 100,
   })
 
+  // Visual query state for report step editor (Phase 3)
+  const [reportVisualMode, setReportVisualMode] = useState(false)
+  const [reportVisualQuery, setReportVisualQuery] = useState<VisualQuery>({
+    table: '',
+    filters: [{ id: 1, mode: 'native', column: '', rel_chain: [], operator: '=', value: '' }],
+    logic: 'AND',
+    sortBy: '',
+    sortOrder: 'desc',
+    limit: 100,
+  })
+
   // Initialize the draft from the loaded workflow
   useEffect(() => {
     if (workflow?.steps) {
@@ -601,6 +615,24 @@ export const WorkflowDesigner: React.FC = () => {
             sortBy: '',
             sortOrder: 'desc',
             limit: 100,
+          })
+        }
+      }
+      // Initialize visual query mode for report steps (Phase 3)
+      if (step.step_type === 'report' && step.definition?.report_type === 'sql_query') {
+        const def = step.definition || {}
+        if (def.visual_query) {
+          setReportVisualMode(true)
+          setReportVisualQuery(def.visual_query)
+        } else {
+          setReportVisualMode(false)
+          setReportVisualQuery({
+            table: '',
+            filters: [{ id: 1, mode: 'native', column: '', rel_chain: [], operator: '=', value: '' }],
+            logic: 'AND',
+            sortBy: '',
+            sortOrder: 'desc',
+            limit: def.sql_limit || 100,
           })
         }
       }
@@ -1401,22 +1433,50 @@ export const WorkflowDesigner: React.FC = () => {
               {editingDef.report_type === 'sql_query' ? (
                 <>
                   <div className="form-group">
-                    <label className="form-label">SQL Query</label>
-                    <textarea className="form-textarea" rows={6} value={editingDef.sql_query || ''}
-                      onChange={(e) => handleUpdateStepField('sql_query', e.target.value)}
-                      placeholder="SELECT name, email FROM users WHERE status = 'active' ORDER BY name"
-                      style={{ fontFamily: 'monospace', fontSize: '0.85rem' }} />
-                    <small style={{ color: '#7f8c8d' }}>
-                      SELECT queries only. Use $input.field_name to reference data from previous steps.
-                    </small>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={reportVisualMode}
+                        onChange={(e) => setReportVisualMode(e.target.checked)}
+                        style={{ width: '18px', height: '18px' }}
+                      />
+                      <span className="form-label" style={{ margin: 0 }}>Use Visual Query Builder</span>
+                    </label>
                   </div>
-                  <div className="form-group">
-                    <label className="form-label">Row Limit</label>
-                    <input className="form-input" type="number" min={1} max={10000}
-                      value={editingDef.sql_limit || 100}
-                      onChange={(e) => handleUpdateStepField('sql_limit', parseInt(e.target.value) || 100)}
-                      style={{ maxWidth: '200px' }} />
-                  </div>
+
+                  {reportVisualMode ? (
+                    <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                      <QueryBuilder
+                        tables={dbTables || []}
+                        value={reportVisualQuery}
+                        onChange={(q) => {
+                          setReportVisualQuery(q)
+                          handleUpdateStepField('visual_query', q)
+                          handleUpdateStepField('sql_limit', q.limit)
+                        }}
+                      />
+                    </div>
+                  ) : (
+                    <>
+                      <div className="form-group">
+                        <label className="form-label">SQL Query</label>
+                        <textarea className="form-textarea" rows={6} value={editingDef.sql_query || ''}
+                          onChange={(e) => handleUpdateStepField('sql_query', e.target.value)}
+                          placeholder="SELECT name, email FROM users WHERE status = 'active' ORDER BY name"
+                          style={{ fontFamily: 'monospace', fontSize: '0.85rem' }} />
+                        <small style={{ color: '#7f8c8d' }}>
+                          SELECT queries only. Use $input.field_name to reference data from previous steps.
+                        </small>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Row Limit</label>
+                        <input className="form-input" type="number" min={1} max={10000}
+                          value={editingDef.sql_limit || 100}
+                          onChange={(e) => handleUpdateStepField('sql_limit', parseInt(e.target.value) || 100)}
+                          style={{ maxWidth: '200px' }} />
+                      </div>
+                    </>
+                  )}
                 </>
               ) : (
                 <div className="form-group">
