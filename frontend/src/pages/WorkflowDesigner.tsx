@@ -14,7 +14,8 @@ import ReactFlow, {
   ReactFlowProvider,
   useUpdateNodeInternals
 } from 'react-flow-renderer'
-import { workflowApi, authApi, aiApi } from '../services/api'
+import { workflowApi, authApi, aiApi, dataQueryApi } from '../services/api'
+import { QueryBuilder, VisualQuery, TableInfo } from '../components/QueryBuilder'
 import axios from 'axios'
 import 'react-flow-renderer/dist/style.css'
 
@@ -113,7 +114,10 @@ function getNodeStyle(stepType: string) {
 function nodeLabel(stepType: string, data: any) {
   switch (stepType) {
     case 'apiCall': return `🌐 ${data.method || 'GET'} ${data.url || 'API Call'}`
-    case 'databaseQuery': return `🗄️ ${data.query_type || 'SELECT'} ${data.table || ''}`
+    case 'databaseQuery': {
+      const hasVisual = !!data.visual_query
+      return `🗄️ ${data.query_type || 'SELECT'} ${data.table || ''}${hasVisual ? ' (visual)' : ''}`
+    }
     case 'email': return `📧 To: ${data.to || 'N/A'}`
     case 'condition': {
       // P4.1: Show first route expression instead of legacy condition_expr
@@ -384,6 +388,26 @@ export const WorkflowDesigner: React.FC = () => {
     }
   })
 
+  // Tables for QueryBuilder in database_query steps
+  const { data: dbTables } = useQuery({
+    queryKey: ['data-tables'],
+    queryFn: async () => {
+      const res = await dataQueryApi.listTables()
+      return res.data as TableInfo[]
+    },
+  })
+
+  // Visual query state for database_query step editor
+  const [dbVisualMode, setDbVisualMode] = useState(false)
+  const [dbVisualQuery, setDbVisualQuery] = useState<VisualQuery>({
+    table: '',
+    filters: [{ id: 1, mode: 'native', column: '', rel_chain: [], operator: '=', value: '' }],
+    logic: 'AND',
+    sortBy: '',
+    sortOrder: 'desc',
+    limit: 100,
+  })
+
   // Initialize the draft from the loaded workflow
   useEffect(() => {
     if (workflow?.steps) {
@@ -562,6 +586,24 @@ export const WorkflowDesigner: React.FC = () => {
       setNodeAiResponse(null)
       setNodeAiError('')
       setNodeAiPrompt('')
+      // Initialize visual query mode for database_query steps
+      if (step.step_type === 'database_query') {
+        const def = step.definition || {}
+        if (def.visual_query) {
+          setDbVisualMode(true)
+          setDbVisualQuery(def.visual_query)
+        } else {
+          setDbVisualMode(false)
+          setDbVisualQuery({
+            table: def.table || '',
+            filters: [{ id: 1, mode: 'native', column: '', rel_chain: [], operator: '=', value: '' }],
+            logic: 'AND',
+            sortBy: '',
+            sortOrder: 'desc',
+            limit: 100,
+          })
+        }
+      }
     }
   }
 
@@ -1035,7 +1077,12 @@ export const WorkflowDesigner: React.FC = () => {
               <div className="form-group">
                 <label className="form-label">Query Type</label>
                 <select className="form-select" value={editingDef.query_type || 'select'}
-                  onChange={(e) => handleUpdateStepField('query_type', e.target.value)}>
+                  onChange={(e) => {
+                    handleUpdateStepField('query_type', e.target.value)
+                    if (e.target.value !== 'select') {
+                      setDbVisualMode(false)
+                    }
+                  }}>
                   <option value="select">SELECT</option>
                   <option value="insert">INSERT</option>
                   <option value="update">UPDATE</option>
@@ -1043,18 +1090,75 @@ export const WorkflowDesigner: React.FC = () => {
                   <option value="upsert">UPSERT</option>
                 </select>
               </div>
-              <div className="form-group">
-                <label className="form-label">Table</label>
-                <input className="form-input" type="text" value={editingDef.table || ''}
-                  onChange={(e) => handleUpdateStepField('table', e.target.value)}
-                  placeholder="users" />
-              </div>
-              <div className="form-group">
-                <label className="form-label">Query / Condition</label>
-                <textarea className="form-textarea" rows={3} value={editingDef.query || ''}
-                  onChange={(e) => handleUpdateStepField('query', e.target.value)}
-                  placeholder="WHERE status = 'active'" />
-              </div>
+
+              {editingDef.query_type === 'select' && (
+                <div className="form-group">
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={dbVisualMode}
+                      onChange={(e) => setDbVisualMode(e.target.checked)}
+                      style={{ width: '18px', height: '18px' }}
+                    />
+                    <span className="form-label" style={{ margin: 0 }}>Use Visual Query Builder</span>
+                  </label>
+                </div>
+              )}
+
+              {editingDef.query_type === 'select' && dbVisualMode ? (
+                <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+                  <QueryBuilder
+                    tables={dbTables || []}
+                    value={dbVisualQuery}
+                    onChange={(q) => {
+                      setDbVisualQuery(q)
+                      handleUpdateStepField('table', q.table)
+                      handleUpdateStepField('visual_query', q)
+                    }}
+                  />
+                </div>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Table</label>
+                    <input className="form-input" type="text" value={editingDef.table || ''}
+                      onChange={(e) => handleUpdateStepField('table', e.target.value)}
+                      placeholder="users" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Query / Condition</label>
+                    <textarea className="form-textarea" rows={3} value={editingDef.query || ''}
+                      onChange={(e) => handleUpdateStepField('query', e.target.value)}
+                      placeholder="WHERE status = 'active'" />
+                  </div>
+                </>
+              )}
+
+              {(editingDef.query_type === 'insert' || editingDef.query_type === 'update' || editingDef.query_type === 'upsert') && (
+                <div className="form-group">
+                  <label className="form-label">Data (JSON)</label>
+                  <textarea className="form-textarea" rows={4}
+                    value={typeof editingDef.data === 'object' ? JSON.stringify(editingDef.data, null, 2) : editingDef.data || ''}
+                    onChange={(e) => {
+                      try { handleUpdateStepField('data', JSON.parse(e.target.value)) }
+                      catch { handleUpdateStepField('data', e.target.value) }
+                    }}
+                    placeholder='{"name": "John", "email": "john@example.com"}' />
+                </div>
+              )}
+
+              {(editingDef.query_type === 'update' || editingDef.query_type === 'delete') && (
+                <div className="form-group">
+                  <label className="form-label">Conditions (JSON)</label>
+                  <textarea className="form-textarea" rows={3}
+                    value={typeof editingDef.conditions === 'object' ? JSON.stringify(editingDef.conditions, null, 2) : editingDef.conditions || ''}
+                    onChange={(e) => {
+                      try { handleUpdateStepField('conditions', JSON.parse(e.target.value)) }
+                      catch { handleUpdateStepField('conditions', e.target.value) }
+                    }}
+                    placeholder='{"id": 1}' />
+                </div>
+              )}
             </>
           )
         case 'email':

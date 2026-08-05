@@ -121,6 +121,7 @@ class DatabaseQueryExecutor(BaseExecutor):
     
     Supports: select, insert, update, delete, upsert.
     All user input is parameterized — never string-interpolated into SQL.
+    Also supports visual_query format from the QueryBuilder component.
     """
     
     ALLOWED_QUERY_TYPES = {"select", "insert", "update", "delete", "upsert"}
@@ -137,6 +138,11 @@ class DatabaseQueryExecutor(BaseExecutor):
         return value
     
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        # Check for visual_query format from QueryBuilder
+        visual_query = step_definition.get("visual_query")
+        if visual_query and isinstance(visual_query, dict):
+            return await self._execute_visual_query(input_data, step_definition, visual_query, db)
+        
         query_type = step_definition.get("type", "select").lower()
         
         if query_type not in self.ALLOWED_QUERY_TYPES:
@@ -243,6 +249,62 @@ class DatabaseQueryExecutor(BaseExecutor):
             "sql": sql,
             "params_count": len(params),
         }
+
+    async def _execute_visual_query(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], visual_query: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        """Execute a visual query built with the QueryBuilder component."""
+        from app.core.database import async_session_factory
+        from app.services.data_query_service import execute_visual_query as run_visual
+        
+        table = visual_query.get("table", step_definition.get("table", ""))
+        if not table:
+            raise ValueError("Visual query requires a 'table'")
+        
+        filters = visual_query.get("filters", [])
+        logic = visual_query.get("logic", "AND")
+        sort_by = visual_query.get("sortBy") or visual_query.get("sort_by")
+        sort_order = visual_query.get("sortOrder", "desc")
+        limit = min(visual_query.get("limit", 100), 10000)
+        
+        # Interpolate filter values with $input.* references
+        interpolated_filters = []
+        for f in filters:
+            interpolated_filters.append({
+                "field": f.get("column", ""),
+                "operator": f.get("operator", "="),
+                "value": self._interpolate_value(f.get("value", ""), input_data),
+                "is_custom": f.get("mode") == "custom",
+                "relationship_chain": f.get("rel_chain", []),
+            })
+        
+        session = db
+        if not session:
+            session = async_session_factory()
+            if hasattr(session, '__aenter__'):
+                session = await session.__aenter__()
+        
+        try:
+            result = await run_visual(
+                session,
+                table_name=table,
+                filters=interpolated_filters if interpolated_filters else None,
+                logic=logic,
+                sort_by=sort_by,
+                sort_order=sort_order,
+                limit=limit,
+                offset=0,
+            )
+            
+            return {
+                "query_type": "select",
+                "table": table,
+                "visual_query": True,
+                "rows": result.get("items", []),
+                "total": result.get("total", 0),
+                "executed_at": datetime.utcnow().isoformat(),
+            }
+        finally:
+            if not db and hasattr(session, 'close'):
+                await session.close()
 
 
 class EmailExecutor(BaseExecutor):
