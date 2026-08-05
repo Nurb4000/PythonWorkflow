@@ -142,6 +142,25 @@ async def upload_branding_logo(
         raise HTTPException(status_code=500, detail=str(e))
 
 
+@router.delete("/settings/branding/logo")
+async def remove_branding_logo(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Remove the branding logo (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    logo_filename = await get_setting(db, "branding_logo", "")
+    if logo_filename:
+        path = os.path.join(BRANDING_DIR, logo_filename)
+        if os.path.exists(path):
+            os.remove(path)
+        await set_setting(db, "branding_logo", "")
+
+    return {"message": "Logo removed"}
+
+
 @router.get("/settings")
 async def get_settings(
     current_user: User = Depends(get_current_user)

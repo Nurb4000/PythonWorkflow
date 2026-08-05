@@ -286,9 +286,6 @@ export const Portal: React.FC = () => {
                 {wf.description || 'No description provided'}
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                <span className={`badge ${wf.environment === 'production' ? 'badge-success' : 'badge-info'}`}>
-                  {wf.environment}
-                </span>
                 <button
                   className="btn btn-sm btn-primary"
                   style={{ marginLeft: 'auto' }}

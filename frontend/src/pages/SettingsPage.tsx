@@ -228,6 +228,21 @@ export const SettingsPage: React.FC = () => {
     }
   }
 
+  const handleLogoRemove = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      await axios.delete(`${API_URL}/settings/branding/logo`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      await refreshBranding()
+      setMessage('Logo removed successfully')
+      setMessageType('success')
+    } catch (error: any) {
+      setMessage(error.response?.data?.detail || 'Failed to remove logo')
+      setMessageType('error')
+    }
+  }
+
   const handleImapUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -402,8 +417,9 @@ export const SettingsPage: React.FC = () => {
         <div style={{ marginTop: '1rem' }}>
           <label className="form-label">Logo</label>
           {logoPreview && (
-            <div style={{ marginBottom: '0.5rem' }}>
+            <div style={{ marginBottom: '0.5rem', display: 'flex', alignItems: 'center', gap: '0.75rem' }}>
               <img src={logoPreview} alt="Logo preview" className="brand-logo" style={{ height: '48px' }} />
+              <button type="button" className="btn btn-sm btn-danger" onClick={handleLogoRemove}>Remove</button>
             </div>
           )}
           <input type="file" accept="image/*" className="form-input" onChange={handleLogoUpload} />
