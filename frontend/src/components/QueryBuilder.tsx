@@ -160,7 +160,7 @@ export const QueryBuilder: React.FC<QueryBuilderProps> = ({
 
         <div className="form-group">
           <label className="form-label">Sort Order</label>
-          <select className="form-select" value={value.sortOrder} onChange={(e) => update({ sortOrder: e.target.value })}>
+          <select className="form-select" value={value.sortOrder} onChange={(e) => update({ sortOrder: e.target.value as 'asc' | 'desc' })}>
             <option value="asc">Ascending</option>
             <option value="desc">Descending</option>
           </select>
