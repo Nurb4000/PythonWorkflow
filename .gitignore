@@ -56,3 +56,6 @@ frontend/dist/
 
 # AI
 knowledge-base/models/
+
+# Uploads
+backend/uploads/
