@@ -174,7 +174,7 @@ docker logs pythonworkflow-e2e
 1. **Test uses stale data**: Tests use in-memory SQLite, data doesn't persist between runs
 2. **Session conflicts**: Use `await session.refresh(obj)` to reload from DB
 3. **Async timing**: Add `await asyncio.sleep(0.1)` for background tasks
-4. **Port conflicts**: Ensure no other services on ports 5432, 6000, 3000
+4. **Port conflicts**: Ensure no other services on ports 5432, 6000, 9000
 
 ## Test Coverage Goals
 

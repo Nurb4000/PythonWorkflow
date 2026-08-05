@@ -487,7 +487,7 @@ sql_views
 docker compose up --build
 
 # Backend: http://localhost:6000
-# Frontend: http://localhost:3000
+# Frontend: http://localhost:9000
 # API Docs: http://localhost:6000/docs
 ```
 

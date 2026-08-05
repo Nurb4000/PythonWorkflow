@@ -21,6 +21,7 @@ from sqlalchemy import select
 from app.core.database import async_session_factory
 from app.models.email_trigger import EmailProcessingLog
 from app.models.schemas import Workflow, WorkflowRun
+from app.models.system_settings import SystemSetting
 from app.services.scheduler import scheduler_service
 from app.services.email_service import notify_admin
 
@@ -61,8 +62,6 @@ class EmailMonitorService:
                     "imap_trash_folder",
                     "imap_default_workflow_id",
                 ]
-                stmt = select(EmailProcessingLog.__table__.c.key)  # placeholder
-                from app.models.system_settings import SystemSetting
                 stmt = select(SystemSetting).where(SystemSetting.key.in_(keys))
                 result = await db.execute(stmt)
                 for row in result.scalars().all():

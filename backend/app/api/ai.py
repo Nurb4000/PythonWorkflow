@@ -1,11 +1,12 @@
 """
 API endpoints for AI-powered generation and assistance
 """
-from fastapi import APIRouter, HTTPException, Depends
+from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from app.services.ai_service import ai_service
 from app.api.auth import get_current_developer
+from app.models.auth import User
 
 router = APIRouter()
 
@@ -51,7 +52,7 @@ class ExplainErrorRequest(BaseModel):
 
 @router.post("/ai/generate-step")
 async def generate_step(
-    description: str = Field(..., description="Natural language description of the step"),
+    description: str = Query(..., description="Natural language description of the step"),
     context: Optional[dict] = None,
     user: Any = Depends(get_current_developer),
 ):
@@ -71,7 +72,7 @@ async def generate_step(
 
 @router.post("/ai/generate-workflow")
 async def generate_workflow(
-    description: str = Field(..., description="Natural language description of the workflow"),
+    description: str = Query(..., description="Natural language description of the workflow"),
     template_name: Optional[str] = None,
     user: Any = Depends(get_current_developer),
 ):
@@ -91,7 +92,7 @@ async def generate_workflow(
 
 @router.post("/ai/generate-form")
 async def generate_form(
-    description: str = Field(..., description="Natural language description of the form"),
+    description: str = Query(..., description="Natural language description of the form"),
     user: Any = Depends(get_current_developer),
 ):
     """Generate a form schema from natural language description"""
@@ -109,7 +110,7 @@ async def generate_form(
 
 
 @router.get("/ai/knowledge-base")
-async def get_knowledge_base(user: User = Depends(require_developer_role)):
+async def get_knowledge_base(user: User = Depends(get_current_developer)):
     """Get available knowledge base domains"""
     return {
         "domains": list(ai_service.kb.keys()),

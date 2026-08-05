@@ -27,7 +27,7 @@ docker compose down
 - REST API endpoints
 - Swagger docs at `http://localhost:6000/docs`
 
-### Frontend (`http://localhost:3000`)
+### Frontend (`http://localhost:9000`)
 - React application served via Nginx
 - Proxy API requests to backend
 
@@ -47,7 +47,7 @@ DATABASE_URL=postgresql://user:pass@postgres:5432/workflow_db
 LLAMA_CPP_URL=http://llama_cpp:8081
 SECRET_KEY=your-secret-key
 DEBUG=True
-CORS_ORIGINS=["http://localhost:3000"]
+CORS_ORIGINS=["http://localhost:9000"]
 ```
 
 ### Frontend (Nginx)
@@ -107,7 +107,7 @@ docker compose up -d
 curl http://localhost:8000/health
 
 # Check frontend
-curl http://localhost:3000
+curl http://localhost:9000
 
 # Access Swagger docs
 open http://localhost:8000/docs

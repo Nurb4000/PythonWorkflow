@@ -120,7 +120,7 @@ make test-e2e        # 10/10 passing
 ```
 
 Services:
-- Frontend: http://localhost:3000
+- Frontend: http://localhost:9000
 - Backend API: http://localhost:6000
 - API Docs: http://localhost:6000/docs
 - Default admin login (created on first run): `admin` / `admin123`
@@ -138,7 +138,7 @@ python run.py
 cd frontend
 npm install
 npm run dev
-# UI at http://localhost:3000
+# UI at http://localhost:9000
 ```
 
 ### Development
