@@ -1,4 +1,5 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import axios from 'axios'
 import { Link } from 'react-router-dom'
 import { portalApi } from '../services/api'
 import { getStatusBadgeClass, formatDuration } from './WorkflowRunsAdmin'
@@ -35,6 +36,13 @@ interface PortalTask {
   completed_at: string | null
 }
 
+interface PortalBanner {
+  enabled: boolean
+  title: string
+  message: string
+  color: string
+}
+
 export const Portal: React.FC = () => {
   const [workflows, setWorkflows] = useState<PortalWorkflow[]>([])
   const [myRuns, setMyRuns] = useState<PortalRun[]>([])
@@ -44,17 +52,22 @@ export const Portal: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null)
   const [entryFormWorkflow, setEntryFormWorkflow] = useState<PortalWorkflow | null>(null)
   const [entryFormData, setEntryFormData] = useState<Record<string, any>>({})
+  const [banner, setBanner] = useState<PortalBanner>({ enabled: false, title: '', message: '', color: '#f39c12' })
 
   const load = useCallback(async () => {
     try {
-      const [wfResponse, runsResponse, tasksResponse] = await Promise.all([
+      const [wfResponse, runsResponse, tasksResponse, bannerResponse] = await Promise.all([
         portalApi.listWorkflows(),
         portalApi.myRuns(),
-        portalApi.myTasks()
+        portalApi.myTasks(),
+        axios.get('/api/portal/banner')
       ])
       setWorkflows(wfResponse.data)
       setMyRuns(runsResponse.data)
       setMyTasks(tasksResponse.data || [])
+      if (bannerResponse.data.enabled) {
+        setBanner(bannerResponse.data)
+      }
     } catch (error) {
       console.error('Failed to load portal data:', error)
     } finally {
@@ -135,6 +148,26 @@ export const Portal: React.FC = () => {
           boxShadow: '0 2px 10px rgba(0,0,0,0.25)'
         }}>
           {toast}
+        </div>
+      )}
+
+      {banner.enabled && banner.message && (
+        <div style={{
+          backgroundColor: banner.color,
+          color: '#fff',
+          padding: '0.75rem 1rem',
+          borderRadius: '6px',
+          marginBottom: '1rem',
+          display: 'flex',
+          alignItems: 'flex-start',
+          gap: '0.75rem',
+          boxShadow: '0 1px 4px rgba(0,0,0,0.15)'
+        }}>
+          <span style={{ fontSize: '1.3rem', lineHeight: 1, flexShrink: 0 }}>⚠️</span>
+          <div style={{ flex: 1 }}>
+            {banner.title && <strong style={{ display: 'block', marginBottom: '0.25rem' }}>{banner.title}</strong>}
+            <span style={{ fontSize: '0.9rem', opacity: 0.95 }}>{banner.message}</span>
+          </div>
         </div>
       )}
 

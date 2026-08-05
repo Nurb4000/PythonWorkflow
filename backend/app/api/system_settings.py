@@ -374,3 +374,73 @@ async def poll_imap_now(
     await email_monitor.poll()
 
     return {"message": "IMAP poll completed"}
+
+
+# ------------------------------------------------------------------
+# Portal Banner Settings
+# ------------------------------------------------------------------
+
+BANNER_SETTING_KEYS = [
+    "banner_enabled",
+    "banner_title",
+    "banner_message",
+    "banner_color",
+]
+
+DEFAULT_BANNER_COLOR = "#f39c12"
+
+
+@router.get("/settings/banner")
+async def get_banner_settings(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get portal banner settings (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    enabled = await get_setting(db, "banner_enabled", "false")
+    return {
+        "banner_enabled": enabled.lower() == "true",
+        "banner_title": await get_setting(db, "banner_title", ""),
+        "banner_message": await get_setting(db, "banner_message", ""),
+        "banner_color": await get_setting(db, "banner_color", DEFAULT_BANNER_COLOR),
+    }
+
+
+@router.put("/settings/banner")
+async def update_banner_settings(
+    banner_enabled: bool = False,
+    banner_title: str = "",
+    banner_message: str = "",
+    banner_color: str = DEFAULT_BANNER_COLOR,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update portal banner settings (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    await set_setting(db, "banner_enabled", "true" if banner_enabled else "false")
+    await set_setting(db, "banner_title", banner_title)
+    await set_setting(db, "banner_message", banner_message)
+    await set_setting(db, "banner_color", banner_color)
+
+    return {"message": "Banner settings updated"}
+
+
+@router.get("/portal/banner")
+async def get_portal_banner(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get active portal banner (public, no auth required)"""
+    enabled = await get_setting(db, "banner_enabled", "false")
+    if enabled.lower() != "true":
+        return {"enabled": False}
+
+    return {
+        "enabled": True,
+        "title": await get_setting(db, "banner_title", ""),
+        "message": await get_setting(db, "banner_message", ""),
+        "color": await get_setting(db, "banner_color", DEFAULT_BANNER_COLOR),
+    }

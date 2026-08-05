@@ -52,10 +52,17 @@ export const SettingsPage: React.FC = () => {
   const [imapTestResult, setImapTestResult] = useState<any>(null)
   const [imapTesting, setImapTesting] = useState(false)
   const [imapPolling, setImapPolling] = useState(false)
+  const [bannerForm, setBannerForm] = useState({
+    banner_enabled: false,
+    banner_title: '',
+    banner_message: '',
+    banner_color: '#f39c12',
+  })
 
   useEffect(() => {
     loadSettings()
     loadImapSettings()
+    loadBannerSettings()
   }, [])
 
   useEffect(() => {
@@ -86,6 +93,43 @@ export const SettingsPage: React.FC = () => {
       setImapSettings(response.data)
     } catch (error) {
       console.error('Failed to load IMAP settings:', error)
+    }
+  }
+
+  const loadBannerSettings = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(`${API_URL}/settings/banner`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setBannerForm(response.data)
+    } catch (error) {
+      console.error('Failed to load banner settings:', error)
+    }
+  }
+
+  const handleBannerSave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const token = localStorage.getItem('token')
+      await axios.put(
+        `${API_URL}/settings/banner`,
+        null,
+        {
+          params: {
+            banner_enabled: bannerForm.banner_enabled,
+            banner_title: bannerForm.banner_title,
+            banner_message: bannerForm.banner_message,
+            banner_color: bannerForm.banner_color,
+          },
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+      setMessage('Banner settings updated successfully')
+      setMessageType('success')
+    } catch (error: any) {
+      setMessage(error.response?.data?.detail || 'Failed to update banner settings')
+      setMessageType('error')
     }
   }
 
@@ -365,6 +409,77 @@ export const SettingsPage: React.FC = () => {
           <input type="file" accept="image/*" className="form-input" onChange={handleLogoUpload} />
           <small style={{ color: '#7f8c8d' }}>PNG, JPG, SVG, GIF, or WebP. Shown in the navbar and login page.</small>
         </div>
+      </div>
+
+      <div className="card" style={{ marginTop: '1rem' }}>
+        <h3 className="card-title">Portal Banner</h3>
+        <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          Optional banner displayed at the top of the portal for important notices. Hidden when disabled.
+        </p>
+        <form onSubmit={handleBannerSave}>
+          <div className="form-group" style={{ marginBottom: '0.75rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={bannerForm.banner_enabled}
+                onChange={(e) => setBannerForm({ ...bannerForm, banner_enabled: e.target.checked })}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span className="form-label" style={{ margin: 0 }}>Show Banner on Portal</span>
+              {bannerForm.banner_enabled && (
+                <span className="badge badge-success" style={{ marginLeft: '0.5rem' }}>Visible</span>
+              )}
+            </label>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Title</label>
+            <input
+              type="text"
+              className="form-input"
+              value={bannerForm.banner_title}
+              onChange={(e) => setBannerForm({ ...bannerForm, banner_title: e.target.value })}
+              placeholder="Important Notice"
+              disabled={!bannerForm.banner_enabled}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Message</label>
+            <textarea
+              className="form-textarea"
+              value={bannerForm.banner_message}
+              onChange={(e) => setBannerForm({ ...bannerForm, banner_message: e.target.value })}
+              placeholder="System maintenance scheduled for..."
+              rows={3}
+              disabled={!bannerForm.banner_enabled}
+            />
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Banner Color</label>
+            <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+              <input
+                type="color"
+                value={bannerForm.banner_color}
+                onChange={(e) => setBannerForm({ ...bannerForm, banner_color: e.target.value })}
+                disabled={!bannerForm.banner_enabled}
+                style={{ width: '48px', height: '36px', border: 'none', cursor: 'pointer' }}
+              />
+              <input
+                type="text"
+                className="form-input"
+                value={bannerForm.banner_color}
+                onChange={(e) => setBannerForm({ ...bannerForm, banner_color: e.target.value })}
+                disabled={!bannerForm.banner_enabled}
+                style={{ maxWidth: '120px' }}
+              />
+              <div style={{ width: '100%', height: '4px', backgroundColor: bannerForm.banner_color, borderRadius: '2px' }} />
+            </div>
+          </div>
+
+          <button type="submit" className="btn btn-success">Save Banner Settings</button>
+        </form>
       </div>
 
       <div className="card" style={{ marginTop: '1rem' }}>
