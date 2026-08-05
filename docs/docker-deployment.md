@@ -8,16 +8,16 @@ This project includes Docker support for easy testing and production deployment.
 ### Start all services
 ```bash
 # Build and start all services
-docker-compose up --build
+docker compose up --build
 
 # Or run in background
-docker-compose up -d --build
+docker compose up -d --build
 
 # View logs
-docker-compose logs -f
+docker compose logs -f
 
 # Stop services
-docker-compose down
+docker compose down
 ```
 
 ## Services
@@ -58,24 +58,24 @@ Configured in `nginx.conf` to proxy `/api/` to backend.
 ### Common Operations
 ```bash
 # Start all services
-docker-compose up -d
+docker compose up -d
 
 # Restart backend only
-docker-compose restart backend
+docker compose restart backend
 
 # View logs
-docker-compose logs backend
-docker-compose logs frontend
+docker compose logs backend
+docker compose logs frontend
 
 # Execute commands in container
-docker-compose exec backend python -m pytest
-docker-compose exec backend bash
+docker compose exec backend python -m pytest
+docker compose exec backend bash
 
 # Stop all services
-docker-compose down
+docker compose down
 
 # Stop and remove volumes
-docker-compose down -v
+docker compose down -v
 ```
 
 
@@ -93,12 +93,12 @@ LLAMA_CPP_URL=http://llama_cpp:8081
 
 ### 2. Build Production Images
 ```bash
-docker-compose build
+docker compose build
 ```
 
 ### 3. Deploy
 ```bash
-docker-compose up -d
+docker compose up -d
 ```
 
 ### 4. Verify
@@ -122,7 +122,7 @@ open http://localhost:8000/docs
 
 ### Enable AI Profile
 ```bash
-docker-compose up --profile ai -d
+docker compose up --profile ai -d
 ```
 
 ### Test AI Integration
@@ -137,28 +137,28 @@ curl -X POST http://localhost:8000/api/ai/generate-step \
 ### Backend won't start
 ```bash
 # Check logs
-docker-compose logs backend
+docker compose logs backend
 
 # Verify database connection
-docker-compose exec backend python -c "from sqlalchemy import create_engine; print('OK')"
+docker compose exec backend python -c "from sqlalchemy import create_engine; print('OK')"
 ```
 
 ### Frontend shows 404
 ```bash
 # Rebuild frontend
-docker-compose build frontend
+docker compose build frontend
 
 # Check nginx config
-docker-compose exec frontend cat /etc/nginx/conf.d/default.conf
+docker compose exec frontend cat /etc/nginx/conf.d/default.conf
 ```
 
 ### Database migration fails
 ```bash
 # Check PostgreSQL is ready
-docker-compose exec postgres pg_isready
+docker compose exec postgres pg_isready
 
 # Verify credentials
-docker-compose exec backend env | grep DATABASE_URL
+docker compose exec backend env | grep DATABASE_URL
 ```
 
 ## Security Notes
@@ -180,7 +180,7 @@ docker inspect --format='{{.State.Health.Status}}' <container_id>
 ### Logs
 Centralized logging with:
 ```bash
-docker-compose logs -f --tail=100
+docker compose logs -f --tail=100
 ```
 
 ## Scaling
@@ -206,12 +206,12 @@ DATABASE_URL=postgresql+asyncpg://user:pass@postgres:5432/workflow_db
 
 ### Remove all containers and volumes
 ```bash
-docker-compose down -v
+docker compose down -v
 ```
 
 ### Remove images
 ```bash
-docker-compose down --rmi all
+docker compose down --rmi all
 ```
 
 ### Remove build cache

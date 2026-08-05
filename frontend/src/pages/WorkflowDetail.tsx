@@ -162,7 +162,7 @@ export const WorkflowDetail: React.FC = () => {
     mutationFn: () => workflowExportApi.duplicate(workflowId),
     onSuccess: (data) => {
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
-      window.location.href = `/workflows/${data.id}`
+      window.location.href = `/workflows/${data.data.id}`
     },
     onError: (err: any) => {
       alert(err.response?.data?.detail || 'Failed to duplicate workflow')

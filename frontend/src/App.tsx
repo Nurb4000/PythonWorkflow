@@ -87,6 +87,7 @@ const RoleAwareNav: React.FC = () => {
   const { user } = useAuth()
   const navigate = useNavigate()
   const location = useLocation()
+  if (!user) return null
 
   const handleFormsClick = (e: React.MouseEvent) => {
     e.preventDefault()

@@ -705,7 +705,7 @@ export const WorkflowDesigner: React.FC = () => {
     if (!nodeAiResponse) return
     const config = nodeAiResponse.config || nodeAiResponse.result?.fixed_config || nodeAiResponse.result?.optimized_config
     if (config && typeof config === 'object') {
-      setEditingDef(prev => ({ ...prev, ...config }))
+      setEditingDef((prev: any) => ({ ...prev, ...config }))
       setNodeAiPanelOpen(false)
       setNodeAiResponse(null)
     }

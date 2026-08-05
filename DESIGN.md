@@ -484,7 +484,7 @@ sql_views
 ### Docker (Recommended)
 ```bash
 # Start all services
-docker-compose up --build
+docker compose up --build
 
 # Backend: http://localhost:6000
 # Frontend: http://localhost:3000

@@ -44,7 +44,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Timeout & Retries**: Configurable run timeouts and per-step retry logic
 - **Failure Hooks**: HTTP callbacks on step/run failure
 
-### Executors (12 types)
+### Executors (13 types)
 | Type | Description |
 |------|-------------|
 | `api_call` | HTTP requests with SSRF protection |
@@ -66,6 +66,13 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Assignment**: By user ID or group (role-based)
 - **Portal Integration**: Pending tasks surfaced on portal home
 - **Resume**: Workflow continues from pause point after task completion
+
+### AI Assist
+- **Per-Node Assist**: Generate, explain, fix, or optimize any step config from natural language
+- **Query Builder AI**: Generate SQL, explain queries, fix errors, natural-language-to-filters
+- **Form Designer AI**: Suggest fields from a description with per-field accept/reject
+- **Error Diagnosis**: Explain run/step failures with root cause, suggested fixes, corrected config
+- **Hybrid KB Steering**: domain-specific knowledge-base files loaded per feature
 
 ### Security
 - **SSRF Protection**: Blocks private/loopback IPs in API calls
@@ -90,8 +97,8 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 ## Getting Started
 
 ### Prerequisites
-- Docker + Docker Compose
-- PostgreSQL 15 (or use provided docker-compose)
+- Docker + Docker Compose (v2, `docker compose` syntax)
+- PostgreSQL 15 (or use the provided `docker-compose.yml`)
 - Python 3.11+
 
 ### Quick Start
@@ -112,6 +119,28 @@ make test-backend    # 76/76 passing
 make test-e2e        # 10/10 passing
 ```
 
+Services:
+- Frontend: http://localhost:3000
+- Backend API: http://localhost:6000
+- API Docs: http://localhost:6000/docs
+- Default admin login (created on first run): `admin` / `admin123`
+
+### Local Development
+
+```bash
+# Backend
+cd backend
+pip install -r requirements.txt
+python run.py
+# API at http://localhost:8000, docs at http://localhost:8000/docs
+
+# Frontend
+cd frontend
+npm install
+npm run dev
+# UI at http://localhost:3000
+```
+
 ### Development
 
 ```bash
@@ -119,7 +148,7 @@ make test-e2e        # 10/10 passing
 docker compose up backend
 
 # Frontend
-cd frontend && npm install && npm start
+cd frontend && npm install && npm run dev
 
 # E2E tests
 make test-e2e
@@ -156,6 +185,8 @@ POST   /tasks/{id}/take              # Take ownership
 POST   /tasks/{id}/complete          # Complete with results
 POST   /tasks/{id}/close             # Close task
 POST   /tasks/{id}/reject            # Reject with reason
+PUT    /tasks/{id}                   # Update task (admin)
+DELETE /tasks/{id}                   # Delete task (admin)
 ```
 
 ### Portal
@@ -171,6 +202,25 @@ GET    /portal/my-tasks              # User's pending tasks
 POST   /webhook/{workflow_id}        # Trigger via webhook (requires secret)
 POST   /api/trigger/{workflow_id}    # External API trigger
 GET    /schedules/status             # Active schedule status
+```
+
+### Admin
+```
+GET    /admin/stats                  # Workflow statistics
+GET    /admin/runs                   # All workflow runs with node summary
+GET    /admin/schedules              # List schedules
+POST   /admin/schedules              # Create schedule
+PUT    /admin/schedules/:id          # Update schedule
+DELETE /admin/schedules/:id          # Delete schedule
+POST   /admin/schedules/:id/test     # Test schedule trigger
+```
+
+### AI Assist
+```
+POST   /ai/assist-node               # Generate/explain/fix/optimize a workflow node
+POST   /ai/assist-query              # Generate/explain/fix SQL for the query builder
+POST   /ai/assist-form               # Suggest form fields from a description
+POST   /ai/explain-error             # Diagnose workflow run failures
 ```
 
 ## Configuration
@@ -231,6 +281,7 @@ PythonWorkflow/
 - ✅ **Phase 4**: Designer & UI (Remove dead field, full node palette, Run monitor enhancements)
 - ✅ **Phase 5**: Feature gaps (Calculation, AI condition, Report/Form, Step templates, Programmable delay)
 - ✅ **Phase 6**: Hardening (SSRF protection, pagination, docs, dead-code sweep)
+- ✅ **AI Assist**: Hybrid KB steering, backend AI endpoints, per-node/query/form/error AI assist (all 6 phases)
 
 ## Next Steps
 
@@ -288,79 +339,6 @@ The portal provides a user-friendly interface for discovering and running workfl
 - **Run Button**: One-click workflow execution
 - **My Runs**: Track recently started workflows
 - **Group-Based Access**: Staff/users can only run workflows their groups have permission to access
-
-## API Endpoints
-
-### Task Endpoints
-
-```
-GET    /tasks                    # List tasks (role-filtered)
-GET    /tasks/:id                # Get task details
-POST   /tasks/:id/open           # Reopen closed task (admin)
-POST   /tasks/:id/review         # Move to review status
-POST   /tasks/:id/take           # Take ownership
-POST   /tasks/:id/complete       # Complete task with results
-POST   /tasks/:id/close          # Close completed task
-POST   /tasks/:id/reject         # Reject task with reason
-PUT    /tasks/:id                # Update task (admin)
-DELETE /tasks/:id                # Delete task (admin)
-```
-
-### Portal Endpoints
-
-```
-GET    /portal/workflows         # List available workflows
-POST   /portal/workflows/:id/run # Run a workflow
-GET    /portal/my-runs           # Get user's recent runs
-```
-
-### Admin Endpoints
-
-```
-GET    /admin/stats              # Workflow statistics
-GET    /admin/runs               # All workflow runs with node summary
-GET    /admin/schedules          # List schedules
-POST   /admin/schedules          # Create schedule
-PUT    /admin/schedules/:id      # Update schedule
-DELETE /admin/schedules/:id      # Delete schedule
-POST   /admin/schedules/:id/test # Test schedule trigger
-```
-
-## Getting Started
-
-### Option 1: Docker (Recommended)
-
-**Start all services:**
-```bash
-docker-compose up --build
-
-# Backend: http://localhost:6000
-# Frontend: http://localhost:3000
-# API Docs: http://localhost:6000/docs
-
-# Default admin login (created on first run):
-# Username: admin
-# Password: admin123
-```
-
-### Option 2: Local Development
-
-**Backend:**
-```bash
-cd backend
-pip install -r requirements.txt
-python run.py
-# API available at http://localhost:8000
-# Docs at http://localhost:8000/docs
-```
-
-**Frontend:**
-```bash
-cd frontend
-npm install
-npm run dev
-# UI available at http://localhost:3000
-```
 
 ## License
 
