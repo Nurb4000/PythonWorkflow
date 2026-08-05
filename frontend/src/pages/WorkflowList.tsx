@@ -40,10 +40,21 @@ export const WorkflowList: React.FC = () => {
   const [deleteForms, setDeleteForms] = useState(false)
   const queryClient = useQueryClient()
 
+  // Search, filter, sort state
+  const [searchTerm, setSearchTerm] = useState('')
+  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [sortBy, setSortBy] = useState<string>('name')
+  const [sortOrder, setSortOrder] = useState<string>('asc')
+
   const { data: workflows, isLoading } = useQuery({
-    queryKey: ['workflows'],
+    queryKey: ['workflows', searchTerm, statusFilter, sortBy, sortOrder],
     queryFn: async () => {
-      const response = await workflowApi.list()
+      const params: Record<string, string> = {}
+      if (searchTerm) params.search = searchTerm
+      if (statusFilter) params.status = statusFilter
+      if (sortBy) params.sort_by = sortBy
+      if (sortOrder) params.sort_order = sortOrder
+      const response = await workflowApi.list(params)
       return response.data
     }
   })
@@ -67,6 +78,8 @@ export const WorkflowList: React.FC = () => {
       setShowCreate(false)
       setNewWorkflow({ name: '', description: '' })
       setSelectedGroupIds([])
+      setSearchTerm('')
+      setStatusFilter('')
       setError('')
     },
     onError: (err: any) => {
@@ -82,6 +95,8 @@ export const WorkflowList: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       setDeleteConfirm(null)
       setDeleteForms(false)
+      setSearchTerm('')
+      setStatusFilter('')
     },
     onError: (err: any) => {
       setError(err.response?.data?.detail || 'Failed to delete workflow')
@@ -176,6 +191,73 @@ export const WorkflowList: React.FC = () => {
           </form>
         </div>
       )}
+
+      {/* Search, Filter, Sort controls */}
+      <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+          <div className="form-group" style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}>
+            <label className="form-label">Search</label>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Filter by name or description..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+            />
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Status</label>
+            <select
+              className="form-select"
+              value={statusFilter}
+              onChange={(e) => setStatusFilter(e.target.value)}
+              style={{ minWidth: '150px' }}
+            >
+              <option value="">All</option>
+              <option value="active">Active</option>
+              <option value="inactive">Inactive</option>
+              <option value="published">Published</option>
+              <option value="draft">Draft</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Sort By</label>
+            <select
+              className="form-select"
+              value={sortBy}
+              onChange={(e) => setSortBy(e.target.value)}
+              style={{ minWidth: '150px' }}
+            >
+              <option value="name">Name</option>
+              <option value="created_at">Created Date</option>
+              <option value="runs_count">Run Count</option>
+              <option value="steps_count">Step Count</option>
+              <option value="portal_order">Portal Order</option>
+            </select>
+          </div>
+          <div className="form-group" style={{ marginBottom: 0 }}>
+            <label className="form-label">Direction</label>
+            <select
+              className="form-select"
+              value={sortOrder}
+              onChange={(e) => setSortOrder(e.target.value)}
+              style={{ minWidth: '120px' }}
+            >
+              <option value="asc">Ascending</option>
+              <option value="desc">Descending</option>
+            </select>
+          </div>
+          {(searchTerm || statusFilter) && (
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={() => { setSearchTerm(''); setStatusFilter('') }}
+              style={{ marginBottom: 0 }}
+            >
+              Clear
+            </button>
+          )}
+        </div>
+      </div>
 
       {error && <div className="error" style={{ marginBottom: '1rem' }}>{error}</div>}
 

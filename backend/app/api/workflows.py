@@ -86,10 +86,17 @@ async def create_workflow(
 
 @router.get("/")
 async def list_workflows(
+    search: Optional[str] = Query(None, description="Search by name or description"),
+    status: Optional[str] = Query(None, description="Filter by status: active, inactive, published, draft"),
+    sort_by: Optional[str] = Query("name", description="Sort field: name, created_at, runs_count, steps_count, portal_order"),
+    sort_order: Optional[str] = Query("asc", description="Sort direction: asc, desc"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List workflows with counts (restricted by group permissions unless admin/developer)"""
+    """List workflows with counts (restricted by group permissions unless admin/developer).
+
+    Supports search, filter, and sort query parameters.
+    """
     stmt = (
         select(Workflow.id, Workflow.name, Workflow.description, Workflow.is_active, Workflow.created_at,
                Workflow.is_published, Workflow.environment,
@@ -100,6 +107,26 @@ async def list_workflows(
         .outerjoin(WorkflowRun, WorkflowRun.workflow_id == Workflow.id)
         .group_by(Workflow.id)
     )
+
+    # Search filter
+    if search:
+        search_pattern = f"%{search}%"
+        stmt = stmt.where(
+            (Workflow.name.ilike(search_pattern)) |
+            (Workflow.description.ilike(search_pattern))
+        )
+
+    # Status filter
+    if status:
+        status_lower = status.lower()
+        if status_lower == "active":
+            stmt = stmt.where(Workflow.is_active == True)
+        elif status_lower == "inactive":
+            stmt = stmt.where(Workflow.is_active == False)
+        elif status_lower == "published":
+            stmt = stmt.where(Workflow.is_published == True)
+        elif status_lower == "draft":
+            stmt = stmt.where(Workflow.is_published == False)
 
     # Non-admin/developer users only see workflows permitted to their groups
     if current_user.role not in ("admin", "developer"):
@@ -113,6 +140,17 @@ async def list_workflows(
         if not permitted_ids:
             return []
         stmt = stmt.where(Workflow.id.in_(permitted_ids))
+
+    # Sorting
+    valid_sort_fields = {
+        "name": Workflow.name,
+        "created_at": Workflow.created_at,
+        "runs_count": func.count(WorkflowRun.id),
+        "steps_count": func.count(WorkflowStep.id),
+        "portal_order": Workflow.portal_order,
+    }
+    sort_col = valid_sort_fields.get(sort_by or "name", Workflow.name)
+    stmt = stmt.order_by(sort_col.desc() if sort_order == "desc" else sort_col.asc())
 
     result = await db.execute(stmt)
     rows = result.all()

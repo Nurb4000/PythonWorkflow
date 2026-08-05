@@ -37,7 +37,7 @@ api.interceptors.response.use((response) => response, handleUnauthorized)
 
 // Workflow APIs
 export const workflowApi = {
-  list: () => api.get('/workflows/'),
+  list: (params?: Record<string, string>) => api.get('/workflows/', { params }),
   get: (id: number) => api.get(`/workflows/${id}`),
   create: (data: any) => api.post('/workflows/', data),
   update: (id: number, data: any) => api.put(`/workflows/${id}`, data),
