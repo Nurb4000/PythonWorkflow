@@ -64,12 +64,12 @@ ALLOWED_FIELD_TYPES = [
 def get_native_columns(model: Any) -> List[Dict[str, str]]:
     """Return list of {name, type} for native columns on a model."""
     cols = []
+    pk_cols = set(c.name for c in model.__table__.primary_key.columns)
     for col in model.__table__.columns:
         cols.append({
             "name": col.name,
             "type": str(col.type),
-            "is_pk": any(k.constraint and k.constraint.name == model.__table__.primary_key.name and k.column is col
-                         for k in model.__table__.primary_key.keys) or col.primary_key,
+            "is_pk": col.primary_key or col.name in pk_cols,
         })
     return cols
 
@@ -95,17 +95,20 @@ async def list_tables_with_fields(db: AsyncSession) -> List[Dict[str, Any]]:
     """List all queryable tables with their native columns and custom field definitions."""
     result = []
     for table_name, (model, display_name) in QUERYABLE_TABLES.items():
+        errors = []
         try:
             native_cols = get_native_columns(model)
         except Exception as e:
             logger.error(f"Failed to get native columns for {table_name}: {e}")
             native_cols = []
+            errors.append(f"native_columns: {e}")
 
         try:
             rel_cols = get_relationship_columns(table_name)
         except Exception as e:
             logger.error(f"Failed to get relationship columns for {table_name}: {e}")
             rel_cols = []
+            errors.append(f"relationship_columns: {e}")
 
         # Get active custom fields for this table
         try:
@@ -130,14 +133,18 @@ async def list_tables_with_fields(db: AsyncSession) -> List[Dict[str, Any]]:
         except Exception as e:
             logger.error(f"Failed to get custom fields for {table_name}: {e}")
             cf_list = []
+            errors.append(f"custom_fields: {e}")
 
-        result.append({
+        entry: Dict[str, Any] = {
             "table": table_name,
             "display_name": display_name,
             "native_columns": native_cols,
             "relationship_columns": rel_cols,
             "custom_fields": cf_list,
-        })
+        }
+        if errors:
+            entry["error"] = "; ".join(errors)
+        result.append(entry)
     return result
 
 

@@ -1,16 +1,17 @@
 import React, { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { dataQueryApi, dataExportApi, aiApi } from '../services/api'
 
 interface TableInfo {
   table: string
   display_name: string
-  native_columns: Array<{ name: string; type: string }>
+  native_columns: Array<{ name: string; type: string; is_pk?: boolean }>
   relationship_columns: Array<{
     fk_column: string
     target_table: string
     target_display: string
-    available_columns: Array<{ name: string; type: string }>
+    available_columns: Array<{ name: string; type: string; is_pk?: boolean }>
   }>
   custom_fields: Array<{
     id: number
@@ -21,6 +22,7 @@ interface TableInfo {
     scope_id: number | null
     config: any
   }>
+  error?: string
 }
 
 interface FilterRow {
@@ -318,7 +320,10 @@ export const DataExplorer: React.FC = () => {
   return (
     <div>
       <div className="card-header">
-        <h2>Data Explorer</h2>
+        <h2 style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <Link to="/admin" className="btn btn-sm btn-secondary" style={{ fontSize: '0.85rem' }}>← Back</Link>
+          Data Explorer
+        </h2>
         <div style={{ display: 'flex', gap: '0.5rem' }}>
           {selectedTable && !tablesError && (
             <>
@@ -377,6 +382,16 @@ export const DataExplorer: React.FC = () => {
 
             {selectedTable && (
               <>
+                {currentTable?.error && (
+                  <div className="error" style={{ gridColumn: '1 / -1', marginBottom: '0.5rem' }}>
+                    Error loading "{currentTable.display_name}": {currentTable.error}
+                  </div>
+                )}
+                {!currentTable?.error && currentTable && currentTable.native_columns.length === 0 && (
+                  <div style={{ gridColumn: '1 / -1', padding: '0.5rem', background: '#fff3cd', borderRadius: '4px', fontSize: '0.875rem' }}>
+                    No columns found for "{currentTable.display_name}". The table may not exist or has no accessible fields.
+                  </div>
+                )}
                 <div className="form-group">
                   <label className="form-label">Sort By</label>
                   <select
