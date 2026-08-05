@@ -20,20 +20,19 @@ Extract the visual filter builder from `DataExplorer.tsx` into a reusable compon
 
 ## Phase 1 — Extract QueryBuilder Component
 
-**Status:** Not started
+**Status:** ✅ Complete (commit `975d98f`)
 
-Extract the visual filter builder from `DataExplorer.tsx` into `frontend/src/components/QueryBuilder.tsx`.
+Extracted the visual filter builder from `DataExplorer.tsx` into `frontend/src/components/QueryBuilder.tsx`.
 
 ### Interface
 
 ```tsx
 interface QueryBuilderProps {
   tables: TableInfo[]              // from GET /api/data-query/tables
-  value: VisualQuery | null        // current query state
+  value: VisualQuery               // current query state
   onChange: (query: VisualQuery) => void
-  mode?: 'select' | 'full'         // 'select' = read-only filter builder; 'full' = includes INSERT/UPDATE/DELETE
-  includeSqlPreview?: boolean      // show generated SQL preview
-  disabled?: boolean
+  onRun?: () => void               // optional callback for "Run Query" button
+  showRunButton?: boolean          // whether to show the run button
 }
 
 interface VisualQuery {
@@ -46,7 +45,7 @@ interface VisualQuery {
 }
 ```
 
-### What moves into QueryBuilder.tsx
+### What moved into QueryBuilder.tsx
 
 - Table selector dropdown
 - Sort by / sort order / limit controls
@@ -54,7 +53,7 @@ interface VisualQuery {
 - Add/remove filter buttons
 - AND/OR logic toggle
 - Relationship chain builder
-- SQL preview panel (if enabled) — calls `POST /api/data-query/build` with `limit: 0` to get generated query
+- Per-table error display
 
 ### What stays in DataExplorer.tsx
 
@@ -62,13 +61,13 @@ interface VisualQuery {
 - Results table rendering
 - Pagination controls
 - Export buttons
-- AI Query Assist panel
+- AI Query Assist panel (both "AI to Filters" and SQL editor AI)
 
-### Files to modify
+### Files modified
 
-1. **Create:** `frontend/src/components/QueryBuilder.tsx` — extracted component + shared types
-2. **Modify:** `frontend/src/pages/DataExplorer.tsx` — replace inline builder with `<QueryBuilder />`
-3. **Modify:** `frontend/src/services/api.ts` — add `dataQueryApi.previewSql()` if needed
+1. **Created:** `frontend/src/components/QueryBuilder.tsx` — reusable component + shared types (`TableInfo`, `FilterRow`, `VisualQuery`, `OPERATORS`)
+2. **Modified:** `frontend/src/pages/DataExplorer.tsx` — replaced ~200 lines of inline builder with `<QueryBuilder />`, lifted state to parent
+3. **Created:** `docs/QUERY_BUILDER_PLAN.md` — this plan document
 
 ---
 
