@@ -87,10 +87,18 @@ form_submissions
 
 ### Workflows
 - `POST /api/workflows` - Create workflow
-- `GET /api/workflows` - List workflows
+- `GET /api/workflows` - List workflows (supports `search`, `status`, `sort_by`, `sort_order` query params)
 - `GET /api/workflows/{id}` - Get workflow details
 - `PUT /api/workflows/{id}` - Update workflow
 - `DELETE /api/workflows/{id}` - Delete workflow
+
+**Workflow list filters:**
+| Param | Values | Description |
+|-------|--------|-------------|
+| `search` | any string | Case-insensitive ILIKE on name and description |
+| `status` | `active`, `inactive`, `published`, `draft` | Filter by workflow state |
+| `sort_by` | `name`, `created_at`, `runs_count`, `steps_count`, `portal_order` | Sort field (default: `name`) |
+| `sort_order` | `asc`, `desc` | Sort direction (default: `asc`) |
 
 ### Workflow Runs
 - `POST /api/workflows/{id}/run` - Trigger workflow
@@ -320,7 +328,7 @@ PythonWorkflow/
 - [x] React + Vite + TypeScript setup
 - [x] React Flow for visual workflow designer
 - [x] API service layer (axios)
-- [x] Workflow list page with CRUD
+- [x] Workflow list page with CRUD, search, filter (status), and sort controls
 - [x] Workflow detail page with run history
 - [x] Visual workflow designer (React Flow)
 - [x] Run monitor with step instances

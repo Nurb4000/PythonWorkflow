@@ -29,6 +29,20 @@ Reusable component that renders custom fields dynamically on any admin/developer
 
 **How to add to other admin pages:** Drop `<CustomFieldsEditor targetTable="table_name" existingData={data} onChange={setHandler} />` into any create/edit form. The component handles fetching, rendering, and value changes automatically.
 
+#### Workflow List Search, Filter & Sort
+The workflow list page now supports client-side controls backed by server-side filtering and sorting for efficient navigation across many workflows.
+
+- **Search** — text input filters workflows by name or description (case-insensitive ILIKE on the backend)
+- **Status filter** — dropdown: All / Active / Inactive / Published / Draft
+- **Sort** — choose field (Name, Created Date, Run Count, Step Count, Portal Order) and direction (Ascending/Descending)
+- **Clear button** — resets search and status filters when either is active
+- Filters reset automatically after creating or deleting a workflow
+
+**Backend:** `GET /api/workflows/` now accepts optional query params: `search`, `status`, `sort_by`, `sort_order`
+
+**Frontend files:** `frontend/src/pages/WorkflowList.tsx`, `frontend/src/services/api.ts`
+**Backend file:** `backend/app/api/workflows.py`
+
 #### Workflow Import/Export
 Complete workflow portability between system instances for backup, development-to-production promotion, and demo/training distribution.
 
@@ -74,6 +88,14 @@ Complete workflow portability between system instances for backup, development-t
 | POST | `/workflows/{id}/duplicate` | Admin/Dev | Duplicate workflow within system |
 | GET | `/workflows/demo-list` | Authenticated | List available demo workflows |
 | GET | `/workflows/demo/{filename}` | Authenticated | Download demo workflow file |
+
+**Workflow list query params (GET /api/workflows/):**
+| Param | Type | Description |
+|-------|------|-------------|
+| `search` | string | Case-insensitive filter on name and description |
+| `status` | string | Filter: `active`, `inactive`, `published`, `draft` |
+| `sort_by` | string | Sort field: `name`, `created_at`, `runs_count`, `steps_count`, `portal_order` (default: `name`) |
+| `sort_order` | string | Sort direction: `asc`, `desc` (default: `asc`) |
 
 #### SQL View Manager
 Admins and developers can create named SQL views to simplify complex queries for report nodes and Data Explorer.
