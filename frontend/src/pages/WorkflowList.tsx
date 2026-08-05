@@ -183,6 +183,7 @@ export const WorkflowList: React.FC = () => {
         <table className="table">
           <thead>
             <tr>
+              <th>ID</th>
               <th>Name</th>
               <th>Description</th>
               <th>Steps</th>
@@ -198,6 +199,7 @@ export const WorkflowList: React.FC = () => {
           <tbody>
             {workflows?.map((workflow: Workflow) => (
               <tr key={workflow.id}>
+                <td style={{ color: '#7f8c8d', fontSize: '0.85rem' }}>#{workflow.id}</td>
                 <td>
                   <Link to={`/workflows/${workflow.id}`} style={{ fontWeight: 600 }}>
                     {workflow.portal_icon ? `${workflow.portal_icon} ` : ''}{workflow.name}
