@@ -73,29 +73,31 @@ interface VisualQuery {
 
 ## Phase 2 — Database Query Node Integration
 
-**Status:** Not started (depends on Phase 1)
+**Status:** ✅ Complete (commit `907ee25`)
 
-Replace the bare "Query / Condition" textarea in the WorkflowDesigner's database_query step config with `<QueryBuilder />`.
+Integrated `<QueryBuilder />` into the WorkflowDesigner's database_query step config panel.
 
 ### Changes to WorkflowDesigner.tsx
 
-In the `case 'database_query':` config panel (~line 1032):
+In the `case 'database_query':` config panel:
 
-- Keep: Query Type selector (SELECT/INSERT/UPDATE/DELETE/UPSERT), Table input
-- Replace: "Query / Condition" textarea → `<QueryBuilder mode="select" />` for SELECT, or keep textarea for write operations
-- Store: filter payload in `step.definition.visual_query` instead of `step.definition.query`
+- Added: "Use Visual Query Builder" checkbox toggle for SELECT queries
+- Visual mode: renders `<QueryBuilder />` with tables loaded from `dataQueryApi.listTables()`
+- Raw mode: keeps existing Table input + Query/Condition textarea (backward compatible)
+- Non-SELECT queries (INSERT/UPDATE/DELETE/UPSERT): show raw JSON inputs for data/conditions
+- Node label appends "(visual)" when visual_query is present
 
 ### Changes to DatabaseQueryExecutor
 
 In `backend/app/services/step_executors.py`:
 
-- Detect if `step_definition` has `visual_query` key
-- If yes, delegate to `data_query_service.execute_visual_query()` instead of building raw SQL
-- If no, fall back to existing parameterized SQL builder (backward compatible)
+- Added `_execute_visual_query()` method that delegates to `data_query_service.execute_visual_query()`
+- Interpolates `$input.*` references in filter values before execution
+- Falls back to existing parameterized SQL builder when no `visual_query` present
 
 ### Backward compatibility
 
-Existing workflows with `definition.query` strings continue to work. New workflows use `definition.visual_query`.
+Existing workflows with `definition.query` strings continue to work. New workflows can use `definition.visual_query`.
 
 ---
 
