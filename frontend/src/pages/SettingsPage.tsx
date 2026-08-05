@@ -47,7 +47,7 @@ export const SettingsPage: React.FC = () => {
   const [message, setMessage] = useState('')
   const [messageType, setMessageType] = useState<'success' | 'error'>('success')
   const { branding, refresh: refreshBranding, ready: brandingReady } = useBranding()
-  const [brandingForm, setBrandingForm] = useState({ system_name: '', portal_name: '' })
+  const [brandingForm, setBrandingForm] = useState({ system_name: '' })
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [imapTestResult, setImapTestResult] = useState<any>(null)
   const [imapTesting, setImapTesting] = useState(false)
@@ -59,7 +59,7 @@ export const SettingsPage: React.FC = () => {
   }, [])
 
   useEffect(() => {
-    setBrandingForm({ system_name: branding.system_name || '', portal_name: branding.portal_name || '' })
+    setBrandingForm({ system_name: branding.system_name || '' })
     setLogoPreview(branding.logo_url)
   }, [branding])
 
@@ -148,7 +148,7 @@ export const SettingsPage: React.FC = () => {
         `${API_URL}/settings/branding`,
         null,
         {
-          params: { system_name: brandingForm.system_name, portal_name: brandingForm.portal_name },
+          params: { system_name: brandingForm.system_name },
           headers: { Authorization: `Bearer ${token}` }
         }
       )
@@ -342,27 +342,15 @@ export const SettingsPage: React.FC = () => {
       <div className="card" style={{ marginTop: '1rem' }}>
         <h3 className="card-title">Branding</h3>
         <form onSubmit={handleBrandingSave}>
-          <div className="grid grid-2">
-            <div className="form-group">
-              <label className="form-label">System Name</label>
-              <input
-                type="text"
-                className="form-input"
-                value={brandingForm.system_name}
-                onChange={(e) => setBrandingForm({...brandingForm, system_name: e.target.value})}
-                placeholder="Workflow System"
-              />
-            </div>
-            <div className="form-group">
-              <label className="form-label">Submission Portal Name</label>
-              <input
-                type="text"
-                className="form-input"
-                value={brandingForm.portal_name}
-                onChange={(e) => setBrandingForm({...brandingForm, portal_name: e.target.value})}
-                placeholder="Submission Portal"
-              />
-            </div>
+          <div className="form-group">
+            <label className="form-label">System Name</label>
+            <input
+              type="text"
+              className="form-input"
+              value={brandingForm.system_name}
+              onChange={(e) => setBrandingForm({...brandingForm, system_name: e.target.value})}
+              placeholder="Workflow System"
+            />
           </div>
           <button type="submit" className="btn btn-success">Save Branding</button>
         </form>

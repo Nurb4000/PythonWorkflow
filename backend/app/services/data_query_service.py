@@ -95,23 +95,27 @@ async def list_tables_with_fields(db: AsyncSession) -> List[Dict[str, Any]]:
     """List all queryable tables with their native columns and custom field definitions."""
     result = []
     for table_name, (model, display_name) in QUERYABLE_TABLES.items():
-        native_cols = get_native_columns(model)
-        rel_cols = get_relationship_columns(table_name)
+        try:
+            native_cols = get_native_columns(model)
+        except Exception as e:
+            logger.error(f"Failed to get native columns for {table_name}: {e}")
+            native_cols = []
+
+        try:
+            rel_cols = get_relationship_columns(table_name)
+        except Exception as e:
+            logger.error(f"Failed to get relationship columns for {table_name}: {e}")
+            rel_cols = []
 
         # Get active custom fields for this table
-        stmt = select(CustomFieldDefinition).where(
-            CustomFieldDefinition.target_table == table_name,
-            CustomFieldDefinition.is_active == True
-        )
-        cf_result = await db.execute(stmt)
-        custom_fields = cf_result.scalars().all()
-
-        result.append({
-            "table": table_name,
-            "display_name": display_name,
-            "native_columns": native_cols,
-            "relationship_columns": rel_cols,
-            "custom_fields": [
+        try:
+            stmt = select(CustomFieldDefinition).where(
+                CustomFieldDefinition.target_table == table_name,
+                CustomFieldDefinition.is_active == True
+            )
+            cf_result = await db.execute(stmt)
+            custom_fields = cf_result.scalars().all()
+            cf_list = [
                 {
                     "id": cf.id,
                     "field_key": cf.field_key,
@@ -122,7 +126,17 @@ async def list_tables_with_fields(db: AsyncSession) -> List[Dict[str, Any]]:
                     "config": cf.config or {},
                 }
                 for cf in custom_fields
-            ],
+            ]
+        except Exception as e:
+            logger.error(f"Failed to get custom fields for {table_name}: {e}")
+            cf_list = []
+
+        result.append({
+            "table": table_name,
+            "display_name": display_name,
+            "native_columns": native_cols,
+            "relationship_columns": rel_cols,
+            "custom_fields": cf_list,
         })
     return result
 

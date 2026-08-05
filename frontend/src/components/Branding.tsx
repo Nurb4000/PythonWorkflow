@@ -5,13 +5,11 @@ const API_URL = '/api'
 
 export interface Branding {
   system_name: string
-  portal_name: string
   logo_url: string | null
 }
 
 const DEFAULT_BRANDING: Branding = {
   system_name: 'Workflow System',
-  portal_name: 'Submission Portal',
   logo_url: null
 }
 

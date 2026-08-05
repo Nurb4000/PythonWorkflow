@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List, Dict, Any
@@ -16,6 +17,7 @@ from app.services.data_query_service import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/tables")
@@ -24,7 +26,11 @@ async def list_tables(
     db: AsyncSession = Depends(get_db),
 ):
     """List all queryable tables with their columns and custom fields."""
-    return await list_tables_with_fields(db)
+    try:
+        return await list_tables_with_fields(db)
+    except Exception as e:
+        logger.error(f"Failed to list tables: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail=f"Failed to load tables: {str(e)}")
 
 
 @router.post("/build")

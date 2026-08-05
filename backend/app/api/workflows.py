@@ -1,15 +1,16 @@
 """
 API endpoints for workflow management
 """
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
-from typing import List
+from typing import List, Optional
 
 from app.core.database import get_db
 from app.models.auth import User, Group
-from app.models.schemas import Workflow, WorkflowStep, WorkflowRun
+from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, Task
+from app.models.forms import Form, FormSubmission
 from app.api.auth import get_current_user, get_current_developer, user_can_access_workflow
 from app.schemas.workflow import (
     WorkflowCreate,
@@ -188,17 +189,142 @@ async def update_workflow(
     return _workflow_to_response(result.scalar_one())
 
 
-@router.delete("/{workflow_id}")
-async def delete_workflow(
+@router.get("/{workflow_id}/associated-forms")
+async def get_workflow_associated_forms(
     workflow_id: int,
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a workflow (admin/developer only)"""
-    success = await engine.delete_workflow(db, workflow_id)
-    if not success:
+    """Get forms associated with a workflow (entry form, step forms, task forms)."""
+    stmt = select(Workflow).where(Workflow.id == workflow_id).options(
+        selectinload(Workflow.steps)
+    )
+    result = await db.execute(stmt)
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    return {"message": "Workflow deleted successfully"}
+
+    form_ids = set()
+
+    # Entry form
+    if workflow.entry_form_id:
+        form_ids.add(workflow.entry_form_id)
+
+    # Forms referenced in step definitions (form and readonly_form steps)
+    for step in workflow.steps:
+        defn = step.definition or {}
+        if step.step_type in ("form", "readonly_form") and defn.get("form_id"):
+            form_ids.add(defn["form_id"])
+        # Human task / approval steps may reference forms
+        if step.step_type in ("human_task", "approval") and defn.get("form_id"):
+            form_ids.add(defn["form_id"])
+
+    # Forms referenced in tasks created by this workflow's runs
+    if form_ids:
+        task_stmt = select(Task.form_id).where(
+            Task.workflow_run_id.in_(
+                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
+            ),
+            Task.form_id.isnot(None),
+            Task.form_id.notin_(form_ids)
+        )
+    else:
+        task_stmt = select(Task.form_id).where(
+            Task.workflow_run_id.in_(
+                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
+            ),
+            Task.form_id.isnot(None)
+        )
+    task_result = await db.execute(task_stmt)
+    for row in task_result.scalars().all():
+        if row:
+            form_ids.add(row)
+
+    # Load form details
+    forms = []
+    if form_ids:
+        form_stmt = select(Form).where(Form.id.in_(form_ids))
+        form_result = await db.execute(form_stmt)
+        for f in form_result.scalars().all():
+            forms.append({
+                "id": f.id,
+                "name": f.name,
+                "description": f.description or "",
+            })
+
+    return {
+        "workflow_id": workflow_id,
+        "forms": forms,
+        "form_count": len(forms),
+    }
+
+
+@router.delete("/{workflow_id}")
+async def delete_workflow(
+    workflow_id: int,
+    delete_forms: bool = Query(False),
+    developer: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db)
+):
+    """Delete a workflow (admin/developer only). Set delete_forms=true to also remove associated forms."""
+    stmt = select(Workflow).where(Workflow.id == workflow_id).options(
+        selectinload(Workflow.steps)
+    )
+    result = await db.execute(stmt)
+    workflow = result.scalar_one_or_none()
+
+    if not workflow:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+
+    # Collect associated form IDs
+    form_ids = set()
+    if workflow.entry_form_id:
+        form_ids.add(workflow.entry_form_id)
+    for step in workflow.steps:
+        defn = step.definition or {}
+        if defn.get("form_id"):
+            form_ids.add(defn["form_id"])
+
+    # Also check tasks from workflow runs
+    if form_ids:
+        task_stmt = select(Task.form_id).where(
+            Task.workflow_run_id.in_(
+                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
+            ),
+            Task.form_id.isnot(None),
+            Task.form_id.notin_(form_ids)
+        )
+    else:
+        task_stmt = select(Task.form_id).where(
+            Task.workflow_run_id.in_(
+                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
+            ),
+            Task.form_id.isnot(None)
+        )
+    task_result = await db.execute(task_stmt)
+    for row in task_result.scalars().all():
+        if row:
+            form_ids.add(row)
+
+    # Delete the workflow (cascade handles steps, runs, tasks, etc.)
+    await db.delete(workflow)
+    await db.commit()
+
+    # Optionally delete associated forms
+    deleted_form_count = 0
+    if delete_forms and form_ids:
+        from sqlalchemy import delete as sa_delete
+        for fid in form_ids:
+            await db.execute(sa_delete(FormSubmission).where(FormSubmission.form_id == fid))
+            result = await db.execute(sa_delete(Form).where(Form.id == fid))
+            deleted_form_count += result.rowcount
+        await db.commit()
+
+    return {
+        "message": "Workflow deleted successfully",
+        "forms_deleted": deleted_form_count,
+    }
 
 
 @router.put("/{workflow_id}/permissions")

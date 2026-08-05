@@ -41,7 +41,8 @@ export const workflowApi = {
   get: (id: number) => api.get(`/workflows/${id}`),
   create: (data: any) => api.post('/workflows/', data),
   update: (id: number, data: any) => api.put(`/workflows/${id}`, data),
-  delete: (id: number) => api.delete(`/workflows/${id}`),
+  delete: (id: number, deleteForms?: boolean) => api.delete(`/workflows/${id}`, { params: { delete_forms: deleteForms } }),
+  getAssociatedForms: (id: number) => api.get(`/workflows/${id}/associated-forms`),
   setPermissions: (id: number, groupIds: number[]) =>
     api.put(`/workflows/${id}/permissions`, groupIds),
   addStep: (workflowId: number, stepData: any) => 

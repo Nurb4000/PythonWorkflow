@@ -42,7 +42,6 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
 
 
 DEFAULT_SYSTEM_NAME = "Workflow System"
-DEFAULT_PORTAL_NAME = "Submission Portal"
 
 
 class Settings:
@@ -65,12 +64,10 @@ async def get_branding(
 ):
     """Get public branding settings (no auth required)"""
     system_name = await get_setting(db, "branding_system_name", DEFAULT_SYSTEM_NAME)
-    portal_name = await get_setting(db, "branding_portal_name", DEFAULT_PORTAL_NAME)
     logo_filename = await get_setting(db, "branding_logo", "")
 
     return {
         "system_name": system_name,
-        "portal_name": portal_name,
         "logo_url": "/api/branding/logo" if logo_filename else None
     }
 
@@ -94,7 +91,6 @@ async def get_branding_logo(
 @router.put("/settings/branding")
 async def update_branding(
     system_name: Optional[str] = None,
-    portal_name: Optional[str] = None,
     request: Request = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
@@ -107,12 +103,9 @@ async def update_branding(
     if request and request.headers.get("content-type") == "application/json":
         body = await request.json()
         system_name = system_name or body.get("system_name")
-        portal_name = portal_name or body.get("portal_name")
 
     if system_name is not None and system_name.strip():
         await set_setting(db, "branding_system_name", system_name.strip())
-    if portal_name is not None and portal_name.strip():
-        await set_setting(db, "branding_portal_name", portal_name.strip())
 
     return {"message": "Branding updated"}
 
