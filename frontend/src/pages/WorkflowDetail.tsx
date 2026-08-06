@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { workflowApi, runApi, authApi, workflowExportApi } from '../services/api'
+import { workflowApi, runApi, authApi, workflowExportApi, marketplaceApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
 interface Workflow {
@@ -49,6 +49,16 @@ export const WorkflowDetail: React.FC = () => {
   const [editDescription, setEditDescription] = useState('')
   const [versionIncremented, setVersionIncremented] = useState(false)
   const [showExportMenu, setShowExportMenu] = useState(false)
+  const [showPublishModal, setShowPublishModal] = useState(false)
+  const [publishForm, setPublishForm] = useState({
+    name: '',
+    description: '',
+    category: 'General',
+    tags: '',
+    status: 'published',
+  })
+  const [publishError, setPublishError] = useState('')
+  const [publishSuccess, setPublishSuccess] = useState(false)
 
   const { data: workflow, isLoading } = useQuery({
     queryKey: ['workflow', workflowId],
@@ -169,6 +179,53 @@ export const WorkflowDetail: React.FC = () => {
     }
   })
 
+  const publishToMarketplaceMutation = useMutation({
+    mutationFn: async () => {
+      setPublishError('')
+      setPublishSuccess(false)
+      // First, export the workflow as JSON
+      const token = localStorage.getItem('token')
+      const exportRes = await fetch(`/api/workflows/${workflowId}/export?fmt=json`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      if (!exportRes.ok) throw new Error('Export failed')
+      const content = await exportRes.text()
+
+      // Then publish to marketplace
+      const tagsArray = publishForm.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
+      return marketplaceApi.createItem({
+        item_type: 'workflow',
+        name: publishForm.name || workflow?.name,
+        description: publishForm.description || workflow?.description || '',
+        category: publishForm.category,
+        tags: tagsArray,
+        content,
+        content_format: 'json',
+        status: publishForm.status,
+      })
+    },
+    onSuccess: () => {
+      setPublishSuccess(true)
+      queryClient.invalidateQueries({ queryKey: ['marketplace-items'] })
+    },
+    onError: (err: any) => {
+      setPublishError(err.response?.data?.detail || err.message || 'Failed to publish')
+    },
+  })
+
+  const handleOpenPublishModal = () => {
+    setPublishForm({
+      name: workflow?.name || '',
+      description: workflow?.description || '',
+      category: 'General',
+      tags: '',
+      status: 'published',
+    })
+    setPublishError('')
+    setPublishSuccess(false)
+    setShowPublishModal(true)
+  }
+
   const handleExport = (format: string) => {
     const token = localStorage.getItem('token')
     fetch(`/api/workflows/${workflowId}/export?fmt=${format}`, {
@@ -286,6 +343,13 @@ export const WorkflowDetail: React.FC = () => {
                   title="Duplicate this workflow"
                 >
                   {duplicateMutation.isPending ? 'Copying...' : '⧉ Duplicate'}
+                </button>
+                <button
+                  className="btn btn-info"
+                  onClick={handleOpenPublishModal}
+                  title="Publish this workflow to the marketplace"
+                >
+                  ⊕ Publish to Marketplace
                 </button>
                 <div style={{ position: 'relative', display: 'inline-block' }}>
                   <button className="btn btn-secondary" onClick={() => setShowExportMenu(!showExportMenu)} title="Export workflow">↓ Export</button>
@@ -520,6 +584,136 @@ export const WorkflowDetail: React.FC = () => {
           <p style={{ color: '#7f8c8d', padding: '1rem' }}>No runs yet. Click "Run Now" to execute.</p>
         )}
       </div>
+
+      {/* Publish to Marketplace Modal */}
+      {showPublishModal && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1000
+          }}
+          onClick={() => setShowPublishModal(false)}
+        >
+          <div
+            className="card"
+            style={{ maxWidth: '550px', width: '90%', maxHeight: '85vh', overflow: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 className="card-title" style={{ margin: 0 }}>Publish to Marketplace</h3>
+              <button onClick={() => setShowPublishModal(false)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#999' }}>&times;</button>
+            </div>
+
+            {publishSuccess && (
+              <div style={{ padding: '0.75rem', background: '#f0fff4', borderRadius: '6px', marginBottom: '1rem', color: '#27ae60' }}>
+                Workflow published to marketplace successfully!
+              </div>
+            )}
+
+            {publishError && (
+              <div style={{ padding: '0.75rem', background: '#fdf2f2', borderRadius: '6px', marginBottom: '1rem', color: '#e74c3c' }}>
+                {publishError}
+              </div>
+            )}
+
+            {!publishSuccess && (
+              <>
+                <p style={{ color: '#666', fontSize: '0.9rem', marginBottom: '1rem' }}>
+                  This will export the current workflow and publish it to the marketplace so others can discover and install it.
+                </p>
+
+                <div className="form-group">
+                  <label className="form-label">Name</label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={publishForm.name}
+                    onChange={(e) => setPublishForm({ ...publishForm, name: e.target.value })}
+                    placeholder="Marketplace listing name"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={3}
+                    value={publishForm.description}
+                    onChange={(e) => setPublishForm({ ...publishForm, description: e.target.value })}
+                    placeholder="Describe what this workflow does..."
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Category</label>
+                  <select
+                    className="form-select"
+                    value={publishForm.category}
+                    onChange={(e) => setPublishForm({ ...publishForm, category: e.target.value })}
+                  >
+                    <option value="Data / ETL">Data / ETL</option>
+                    <option value="Notifications">Notifications</option>
+                    <option value="Approvals & Tasks">Approvals & Tasks</option>
+                    <option value="Reporting">Reporting</option>
+                    <option value="Integrations">Integrations</option>
+                    <option value="Schedules & Maintenance">Schedules & Maintenance</option>
+                    <option value="Onboarding">Onboarding</option>
+                    <option value="General">General</option>
+                  </select>
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Tags (comma-separated)</label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={publishForm.tags}
+                    onChange={(e) => setPublishForm({ ...publishForm, tags: e.target.value })}
+                    placeholder="e.g., etl, data, automated"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Status</label>
+                  <select
+                    className="form-select"
+                    value={publishForm.status}
+                    onChange={(e) => setPublishForm({ ...publishForm, status: e.target.value })}
+                  >
+                    <option value="published">Published (visible to all)</option>
+                    <option value="draft">Draft (only visible to you)</option>
+                  </select>
+                </div>
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                  <button
+                    className="btn btn-success"
+                    onClick={() => publishToMarketplaceMutation.mutate()}
+                    disabled={publishToMarketplaceMutation.isPending}
+                  >
+                    {publishToMarketplaceMutation.isPending ? 'Publishing...' : 'Publish to Marketplace'}
+                  </button>
+                  <button
+                    className="btn btn-secondary"
+                    onClick={() => setShowPublishModal(false)}
+                    disabled={publishToMarketplaceMutation.isPending}
+                  >
+                    Cancel
+                  </button>
+                </div>
+              </>
+            )}
+
+            {publishSuccess && (
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <Link to="/marketplace" className="btn btn-primary">View Marketplace</Link>
+                <button className="btn btn-secondary" onClick={() => setShowPublishModal(false)}>Close</button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

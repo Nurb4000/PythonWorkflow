@@ -14,7 +14,7 @@ import ReactFlow, {
   ReactFlowProvider,
   useUpdateNodeInternals
 } from 'react-flow-renderer'
-import { workflowApi, authApi, aiApi, dataQueryApi } from '../services/api'
+import { workflowApi, authApi, aiApi, dataQueryApi, marketplaceApi } from '../services/api'
 import { QueryBuilder, VisualQuery, TableInfo } from '../components/QueryBuilder'
 import axios from 'axios'
 import 'react-flow-renderer/dist/style.css'
@@ -31,6 +31,9 @@ interface WorkflowStep {
   is_enabled: boolean
   title?: string
   description?: string
+  max_retries?: number
+  retry_delay_seconds?: number
+  failure_hook_url?: string
 }
 
 interface Workflow {
@@ -262,6 +265,58 @@ const edgeBase = { style: { strokeWidth: 4 }, markerEnd: { type: MarkerType.Arro
 // Sentinel value used in a step's connection targets to mean "this path ends here"
 const END_TARGET = -1
 
+// My Nodes Library component — fetches and displays saved node templates
+const MyNodesList: React.FC<{ onSelect: (node: any) => void }> = ({ onSelect }) => {
+  const [nodes, setNodes] = useState<any[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState('')
+
+  useEffect(() => {
+    marketplaceApi.listMyNodes()
+      .then(res => setNodes(res.data))
+      .catch(() => setError('Failed to load My Nodes'))
+      .finally(() => setLoading(false))
+  }, [])
+
+  if (loading) return <div style={{ textAlign: 'center', padding: '1rem', color: '#95a5a6' }}>Loading...</div>
+  if (error) return <div style={{ textAlign: 'center', padding: '1rem', color: '#e74c3c' }}>{error}</div>
+  if (nodes.length === 0) return <div style={{ textAlign: 'center', padding: '1rem', color: '#95a5a6' }}>No saved nodes yet. Save a node from the step editor.</div>
+
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.75rem' }}>
+      {nodes.map(node => (
+        <div
+          key={node.id}
+          style={{
+            padding: '0.75rem', border: '1px solid #ddd', borderRadius: '6px', background: '#fafafa',
+            cursor: 'pointer', transition: 'border-color 0.2s, box-shadow 0.2s'
+          }}
+          onClick={() => onSelect(node)}
+          onMouseEnter={(e: React.MouseEvent<HTMLDivElement>) => {
+            e.currentTarget.style.borderColor = '#3498db'
+            e.currentTarget.style.boxShadow = '0 2px 8px rgba(0,0,0,0.1)'
+          }}
+          onMouseLeave={(e: React.MouseEvent<HTMLDivElement>) => {
+            e.currentTarget.style.borderColor = '#ddd'
+            e.currentTarget.style.boxShadow = 'none'
+          }}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.35rem' }}>
+            <strong style={{ fontSize: '0.9rem' }}>{node.title}</strong>
+            <span className="badge badge-info" style={{ fontSize: '0.7rem' }}>{node.step_type}</span>
+          </div>
+          {node.description && (
+            <p style={{ color: '#666', fontSize: '0.8rem', margin: '0.25rem 0', lineHeight: 1.3 }}>
+              {node.description.length > 80 ? node.description.substring(0, 80) + '...' : node.description}
+            </p>
+          )}
+          <small style={{ color: '#95a5a6' }}>Click to insert into workflow</small>
+        </div>
+      ))}
+    </div>
+  )
+}
+
 const edgeColor = (color: string) => ({
   ...edgeBase,
   style: { ...edgeBase.style, stroke: color },
@@ -436,6 +491,19 @@ export const WorkflowDesigner: React.FC = () => {
 
   const [showStartConfig, setShowStartConfig] = useState(false)
   const [startStepIds, setStartStepIds] = useState<number[]>([])
+
+  // Marketplace / My Nodes state
+  const [showSaveNodeModal, setShowSaveNodeModal] = useState<'marketplace' | 'my-nodes' | null>(null)
+  const [saveNodeForm, setSaveNodeForm] = useState({
+    name: '',
+    description: '',
+    category: 'General',
+    tags: '',
+    title: '',
+  })
+  const [saveNodeError, setSaveNodeError] = useState('')
+  const [saveNodeSuccess, setSaveNodeSuccess] = useState(false)
+  const [showMyNodesPanel, setShowMyNodesPanel] = useState(false)
 
   const buildGraph = useCallback(() => {
     const steps = draftSteps
@@ -643,6 +711,89 @@ export const WorkflowDesigner: React.FC = () => {
     setConfigDraft((prev: any) => ({ ...(prev || {}), start_step_ids: startStepIds }))
     setShowStartConfig(false)
     setIsDirty(true)
+  }
+
+  // Save node to My Nodes library
+  const handleSaveToMyNodes = async () => {
+    if (!selectedStep) return
+    setSaveNodeError('')
+    setSaveNodeSuccess(false)
+    try {
+      await marketplaceApi.saveNode({
+        step_type: selectedStep.step_type,
+        title: saveNodeForm.title || selectedStep.title || `${selectedStep.step_type} node`,
+        description: saveNodeForm.description || selectedStep.description || '',
+        definition: editingDef,
+        condition_expr: selectedStep.condition_expr || '',
+        is_enabled: selectedStep.is_enabled,
+        max_retries: selectedStep.max_retries || 0,
+        retry_delay_seconds: selectedStep.retry_delay_seconds || 0,
+        failure_hook_url: selectedStep.failure_hook_url || '',
+      })
+      setSaveNodeSuccess(true)
+    } catch (err: any) {
+      setSaveNodeError(err.response?.data?.detail || 'Failed to save node')
+    }
+  }
+
+  // Save node to Marketplace
+  const handleSaveToMarketplace = async () => {
+    if (!selectedStep) return
+    setSaveNodeError('')
+    setSaveNodeSuccess(false)
+    try {
+      const nodeContent = JSON.stringify({
+        step_type: selectedStep.step_type,
+        title: saveNodeForm.title || selectedStep.title || `${selectedStep.step_type} node`,
+        description: saveNodeForm.description || selectedStep.description || '',
+        definition: editingDef,
+        condition_expr: selectedStep.condition_expr || '',
+        is_enabled: selectedStep.is_enabled,
+        max_retries: selectedStep.max_retries || 0,
+        retry_delay_seconds: selectedStep.retry_delay_seconds || 0,
+        failure_hook_url: selectedStep.failure_hook_url || '',
+      })
+      const tagsArray = saveNodeForm.tags.split(',').map((t: string) => t.trim()).filter(Boolean)
+      await marketplaceApi.createItem({
+        item_type: 'node',
+        name: saveNodeForm.name || saveNodeForm.title || selectedStep.title || `${selectedStep.step_type} node`,
+        description: saveNodeForm.description || '',
+        category: saveNodeForm.category,
+        tags: tagsArray,
+        content: nodeContent,
+        content_format: 'json',
+        node_type: selectedStep.step_type,
+        status: 'published',
+      })
+      setSaveNodeSuccess(true)
+    } catch (err: any) {
+      setSaveNodeError(err.response?.data?.detail || 'Failed to publish node')
+    }
+  }
+
+  // Insert a saved node from My Nodes into the workflow
+  const handleInsertMyNode = (node: any) => {
+    const tempId = -Date.now() - Math.floor(Math.random() * 100000)
+    const newStep: WorkflowStep = {
+      id: tempId,
+      workflow_id: workflowId,
+      step_type: node.step_type,
+      definition: { ...node.definition },
+      position: draftSteps.length,
+      condition_expr: node.condition_expr || '',
+      is_enabled: node.is_enabled !== false,
+      title: node.title || '',
+      description: node.description || '',
+      max_retries: node.max_retries || 0,
+      retry_delay_seconds: node.retry_delay_seconds || 0,
+      failure_hook_url: node.failure_hook_url || '',
+    }
+    setDraftSteps(prev => [...prev, newStep])
+    setShowMyNodesPanel(false)
+    setIsDirty(true)
+    requestAnimationFrame(() => {
+      reactFlowInstance.current?.fitView({ padding: 1.5 })
+    })
   }
 
   const handleAddStep = (stepType: string, definition: any) => {
@@ -1530,6 +1681,42 @@ export const WorkflowDesigner: React.FC = () => {
               >
                 AI Assist
               </button>
+              <button
+                className="btn btn-sm btn-info"
+                onClick={() => {
+                  setSaveNodeForm({
+                    name: selectedStep.title || `${selectedStep.step_type} node`,
+                    description: selectedStep.description || '',
+                    category: 'General',
+                    tags: '',
+                    title: selectedStep.title || '',
+                  })
+                  setSaveNodeError('')
+                  setSaveNodeSuccess(false)
+                  setShowSaveNodeModal('my-nodes')
+                }}
+                title="Save this node config to your personal library"
+              >
+                Save to My Nodes
+              </button>
+              <button
+                className="btn btn-sm btn-success"
+                onClick={() => {
+                  setSaveNodeForm({
+                    name: selectedStep.title || `${selectedStep.step_type} node`,
+                    description: selectedStep.description || '',
+                    category: 'General',
+                    tags: '',
+                    title: selectedStep.title || '',
+                  })
+                  setSaveNodeError('')
+                  setSaveNodeSuccess(false)
+                  setShowSaveNodeModal('marketplace')
+                }}
+                title="Publish this node config to the marketplace"
+              >
+                ⊕ Marketplace
+              </button>
               <button className="btn btn-sm btn-danger" onClick={handleDeleteStep}>
                 Delete Step
               </button>
@@ -1651,6 +1838,9 @@ export const WorkflowDesigner: React.FC = () => {
           <button className="btn btn-primary" onClick={() => setShowAddStep(!showAddStep)}>
             + Add Step
           </button>
+          <button className="btn btn-info" onClick={() => setShowMyNodesPanel(!showMyNodesPanel)}>
+            {showMyNodesPanel ? 'Hide' : 'My'} Nodes Library
+          </button>
           <button className="btn btn-success" onClick={handleSave} disabled={saving || !isDirty}>
             {saving ? 'Saving...' : 'Save Workflow'}
           </button>
@@ -1735,6 +1925,141 @@ export const WorkflowDesigner: React.FC = () => {
 
       {renderStepEditor()}
       {renderStartConfig()}
+
+      {/* My Nodes Library Panel */}
+      {showMyNodesPanel && (
+        <div className="card" style={{ marginTop: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>My Nodes Library</h3>
+            <button className="btn btn-sm btn-secondary" onClick={() => setShowMyNodesPanel(false)}>✕ Close</button>
+          </div>
+          <p style={{ color: '#666', fontSize: '0.85rem', marginBottom: '1rem' }}>
+            Click a node to insert it into the current workflow.
+          </p>
+          <MyNodesList onSelect={handleInsertMyNode} />
+        </div>
+      )}
+
+      {/* Save Node Modal (My Nodes or Marketplace) */}
+      {showSaveNodeModal && (
+        <div
+          style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+            zIndex: 1100
+          }}
+          onClick={() => setShowSaveNodeModal(null)}
+        >
+          <div
+            className="card"
+            style={{ maxWidth: '500px', width: '90%', maxHeight: '85vh', overflow: 'auto' }}
+            onClick={(e) => e.stopPropagation()}
+          >
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
+              <h3 className="card-title" style={{ margin: 0 }}>
+                {showSaveNodeModal === 'marketplace' ? 'Publish Node to Marketplace' : 'Save to My Nodes'}
+              </h3>
+              <button onClick={() => setShowSaveNodeModal(null)} style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#999' }}>&times;</button>
+            </div>
+
+            {saveNodeSuccess && (
+              <div style={{ padding: '0.75rem', background: '#f0fff4', borderRadius: '6px', marginBottom: '1rem', color: '#27ae60' }}>
+                {showSaveNodeModal === 'marketplace' ? 'Node published to marketplace!' : 'Node saved to your library!'}
+              </div>
+            )}
+
+            {saveNodeError && (
+              <div style={{ padding: '0.75rem', background: '#fdf2f2', borderRadius: '6px', marginBottom: '1rem', color: '#e74c3c' }}>
+                {saveNodeError}
+              </div>
+            )}
+
+            {!saveNodeSuccess && (
+              <>
+                <div className="form-group">
+                  <label className="form-label">Title</label>
+                  <input
+                    className="form-input"
+                    type="text"
+                    value={saveNodeForm.title}
+                    onChange={(e) => setSaveNodeForm({ ...saveNodeForm, title: e.target.value })}
+                    placeholder="Node display name"
+                  />
+                </div>
+
+                <div className="form-group">
+                  <label className="form-label">Description</label>
+                  <textarea
+                    className="form-textarea"
+                    rows={2}
+                    value={saveNodeForm.description}
+                    onChange={(e) => setSaveNodeForm({ ...saveNodeForm, description: e.target.value })}
+                    placeholder="What this node does..."
+                  />
+                </div>
+
+                {showSaveNodeModal === 'marketplace' && (
+                  <>
+                    <div className="form-group">
+                      <label className="form-label">Marketplace Name</label>
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={saveNodeForm.name}
+                        onChange={(e) => setSaveNodeForm({ ...saveNodeForm, name: e.target.value })}
+                        placeholder="Public listing name"
+                      />
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Category</label>
+                      <select
+                        className="form-select"
+                        value={saveNodeForm.category}
+                        onChange={(e) => setSaveNodeForm({ ...saveNodeForm, category: e.target.value })}
+                      >
+                        <option value="Data / ETL">Data / ETL</option>
+                        <option value="Notifications">Notifications</option>
+                        <option value="Approvals & Tasks">Approvals & Tasks</option>
+                        <option value="Reporting">Reporting</option>
+                        <option value="Integrations">Integrations</option>
+                        <option value="Schedules & Maintenance">Schedules & Maintenance</option>
+                        <option value="Onboarding">Onboarding</option>
+                        <option value="General">General</option>
+                      </select>
+                    </div>
+
+                    <div className="form-group">
+                      <label className="form-label">Tags (comma-separated)</label>
+                      <input
+                        className="form-input"
+                        type="text"
+                        value={saveNodeForm.tags}
+                        onChange={(e) => setSaveNodeForm({ ...saveNodeForm, tags: e.target.value })}
+                        placeholder="e.g., api, http, data"
+                      />
+                    </div>
+                  </>
+                )}
+
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem' }}>
+                  <button
+                    className="btn btn-success"
+                    onClick={showSaveNodeModal === 'marketplace' ? handleSaveToMarketplace : handleSaveToMyNodes}
+                  >
+                    {showSaveNodeModal === 'marketplace' ? 'Publish to Marketplace' : 'Save to My Nodes'}
+                  </button>
+                  <button className="btn btn-secondary" onClick={() => setShowSaveNodeModal(null)}>Cancel</button>
+                </div>
+              </>
+            )}
+
+            {saveNodeSuccess && (
+              <button className="btn btn-secondary" onClick={() => setShowSaveNodeModal(null)}>Close</button>
+            )}
+          </div>
+        </div>
+      )}
       </div>
     </ReactFlowProvider>
   )

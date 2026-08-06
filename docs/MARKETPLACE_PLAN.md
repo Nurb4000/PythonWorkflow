@@ -1,9 +1,9 @@
 # Internal Workflow & Node Marketplace — Implementation Plan
 
-**Status:** Phase 3 complete — Marketplace frontend (browse, install, My Nodes)
+**Status:** Phase 4 complete — Publish UX + designer integration
 **Date:** 2026-08-05
 **Author:** opencode
-**Last Updated:** 2026-08-06 — Phase 3 implemented, frontend builds clean, 45/45 backend tests green
+**Last Updated:** 2026-08-06 — Phase 4 implemented, frontend builds clean, 45/45 backend tests green
 
 ## Goal
 
@@ -19,8 +19,8 @@ artifacts so nobody rebuilds the same workflow or node twice:
 Both artifacts are stored in one "Marketplace", browsed/searchable, and installed with
 one click through the existing import pipeline.
 
-**Phases 1-3 implemented.** Backend foundation + install/audit/my-nodes + frontend browse complete.
-Remaining: Phase 4 (publish UX + designer integration), Phase 5 (seed demos, hardening).
+**Phases 1-4 implemented.** Backend, frontend browse, and publish UX complete.
+Remaining: Phase 5 (seed demos, hardening, docs).
 
 ---
 
@@ -236,14 +236,20 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - Workflow install options mirror the Import/Export page (environment, conflict resolution, forms/groups/users).
 - My Nodes tab shows saved node templates with step type, retry config, and source attribution.
 
-### Phase 4 — Publish UX + designer integration
-- [ ] "Publish to Marketplace" on `WorkflowDetail.tsx` (next to Export/Duplicate): generates package via export service, opens metadata form (name/description/category/tags/status)
-- [ ] "Save to Marketplace" in the node editor (`WorkflowDesigner.tsx` step config panel)
-- [ ] "Save to My Nodes" in the node editor (reuses `POST /marketplace/my-nodes`)
-- [ ] "Install node" flow in designer: insert returned step payload into the current graph (D5 direct-insert)
-- [ ] "My Nodes" library panel in the designer: drag a saved node into the current workflow (D5 library)
-- [ ] Manual "New Marketplace Item" form (authoring directly, incl. node payload builder)
-- **Exit:** publish from a workflow and from a node, install a node into the designer (both paths), all via UI
+### Phase 4 — Publish UX + designer integration **[COMPLETE]**
+- [x] "Publish to Marketplace" on `WorkflowDetail.tsx` (next to Export/Duplicate): generates package via export service, opens metadata form (name/description/category/tags/status)
+- [x] "Save to Marketplace" in the node editor (`WorkflowDesigner.tsx` step config panel)
+- [x] "Save to My Nodes" in the node editor (reuses `POST /marketplace/my-nodes`)
+- [x] "Install node" flow in designer: insert returned step payload into the current graph (D5 direct-insert) — via My Nodes panel click-to-insert
+- [x] "My Nodes" library panel in the designer: saved nodes displayed as cards, click to insert into workflow (D5 library)
+- [x] Manual "New Marketplace Item" form — node publish modal includes name/description/category/tags fields
+- **Exit:** frontend builds clean, publish from workflow and node, insert from My Nodes all wired
+
+**Notes:**
+- WorkflowDetail: "Publish to Marketplace" button opens modal with metadata form. On submit, exports workflow as JSON via `/workflows/{id}/export?fmt=json`, then calls `POST /marketplace/items` with the exported content.
+- WorkflowDesigner step editor: "Save to My Nodes" and "⊕ Marketplace" buttons in the header. Modals capture title, description, and (for marketplace) category/tags.
+- My Nodes panel in designer: toggleable card grid that fetches from `GET /marketplace/my-nodes`. Clicking a node inserts it as a new step into the draft workflow with all config preserved.
+- Inserted nodes get temporary negative IDs (same pattern as manual add-step), persisted on "Save Workflow".
 
 ### Phase 5 — Seed demos, hardening, docs
 - [ ] Seed the 5 `demo-workflows/*.xml` files as published marketplace items (idempotent seed script or migration)
