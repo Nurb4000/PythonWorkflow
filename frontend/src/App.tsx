@@ -20,6 +20,7 @@ import { FieldManager } from './pages/FieldManager'
 import { DataExplorer } from './pages/DataExplorer'
 import { WorkflowImportExport } from './pages/WorkflowImportExport'
 import { SQLViewManager } from './pages/SQLViewManager'
+import { Marketplace } from './pages/Marketplace'
 
 const API_URL = '/api'
 
@@ -115,6 +116,7 @@ const RoleAwareNav: React.FC = () => {
 {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/data">Data Explorer</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/views">SQL Views</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/workflows/import">Import/Export</Link>}
+      {(user.role === 'admin' || user.role === 'developer') && <Link to="/marketplace">Marketplace</Link>}
 {user.role === 'admin' && <Link to="/admin/fields">Field Manager</Link>}
     </>
   )
@@ -209,6 +211,7 @@ const AppContent: React.FC = () => {
 <Route path="/admin/data" element={<RoleRoute roles={['admin', 'developer']}><DataExplorer /></RoleRoute>} />
           <Route path="/admin/views" element={<RoleRoute roles={['admin', 'developer']}><SQLViewManager /></RoleRoute>} />
 <Route path="/admin/fields" element={<RoleRoute roles={['admin']}><FieldManager /></RoleRoute>} />
+          <Route path="/marketplace" element={<RoleRoute roles={['admin', 'developer']}><Marketplace /></RoleRoute>} />
           <Route path="/login" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
           <Route path="*" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
         </Routes>

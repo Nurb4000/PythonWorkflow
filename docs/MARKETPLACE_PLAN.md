@@ -1,9 +1,9 @@
 # Internal Workflow & Node Marketplace — Implementation Plan
 
-**Status:** Phase 2 complete — install, audit preview, my-nodes (backend)
+**Status:** Phase 3 complete — Marketplace frontend (browse, install, My Nodes)
 **Date:** 2026-08-05
 **Author:** opencode
-**Last Updated:** 2026-08-06 — Phase 2 implemented and tested (45/45 green)
+**Last Updated:** 2026-08-06 — Phase 3 implemented, frontend builds clean, 45/45 backend tests green
 
 ## Goal
 
@@ -19,8 +19,8 @@ artifacts so nobody rebuilds the same workflow or node twice:
 Both artifacts are stored in one "Marketplace", browsed/searchable, and installed with
 one click through the existing import pipeline.
 
-**Phases 1 and 2 implemented.** Backend foundation + install/audit/my-nodes complete.
-Remaining: Phase 3 (frontend browse), Phase 4 (publish UX + designer integration), Phase 5 (seed demos, hardening).
+**Phases 1-3 implemented.** Backend foundation + install/audit/my-nodes + frontend browse complete.
+Remaining: Phase 4 (publish UX + designer integration), Phase 5 (seed demos, hardening).
 
 ---
 
@@ -219,13 +219,22 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - Preview/audit extracts: step types, external URLs (recursive), custom_code presence, SQL queries, email recipients, forms/groups references. Works for both JSON and XML workflow packages.
 - Audit warns on custom code and database query presence for review-before-install UX.
 
-### Phase 3 — Marketplace frontend (browse)
-- [ ] `frontend/src/services/api.ts` — `marketplaceApi` client (items + my-nodes)
-- [ ] `frontend/src/pages/Marketplace.tsx` — tabs (Workflows/Nodes), search, category/tag filter, sort, card grid, item detail modal with audit + Install button
-- [ ] Route `/marketplace` + nav link in `App.tsx` (admin/developer)
-- [ ] Install workflow flow: call install endpoint, render existing `ImportResult` summary (mirrors `WorkflowImportExport.tsx`)
-- [ ] "My Nodes" library page/panel (list, delete saved nodes)
-- **Exit:** browse + install a seeded/demo item works end-to-end in UI
+### Phase 3 — Marketplace frontend (browse) **[COMPLETE]**
+- [x] `frontend/src/services/api.ts` — `marketplaceApi` client (items, install, preview, my-nodes, categories)
+- [x] `frontend/src/pages/Marketplace.tsx` — tabs (Workflows/Nodes/My Nodes), search, category/tag filter, sort, card grid, item detail modal with audit + Install button
+- [x] Route `/marketplace` + nav link in `App.tsx` (admin/developer only)
+- [x] Install workflow flow: review-before-install confirmation, configurable import options, renders `ImportResult` summary
+- [x] Install node flow: saves to My Nodes library, shows confirmation with node details
+- [x] "My Nodes" library tab: list saved nodes, delete with confirmation
+- [x] Security audit panel in detail modal: step types, external URLs, custom code, SQL queries, email recipients, warnings
+- [x] Tag cloud, pagination, category filter
+- **Exit:** frontend builds clean (vite/tsc), browse + install flow wired end-to-end
+
+**Notes:**
+- Uses react-query for data fetching with proper cache invalidation on install.
+- Install requires two-step confirmation: "Review & Install" → audit displayed → "Yes, Install" to proceed.
+- Workflow install options mirror the Import/Export page (environment, conflict resolution, forms/groups/users).
+- My Nodes tab shows saved node templates with step type, retry config, and source attribution.
 
 ### Phase 4 — Publish UX + designer integration
 - [ ] "Publish to Marketplace" on `WorkflowDetail.tsx` (next to Export/Duplicate): generates package via export service, opens metadata form (name/description/category/tags/status)

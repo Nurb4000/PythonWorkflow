@@ -191,4 +191,27 @@ export const workflowExportApi = {
     api.get(`/workflows/demo/${filename}`, { responseType: 'blob' }),
 }
 
+// Marketplace APIs
+export const marketplaceApi = {
+  // Items
+  listItems: (params?: any) => api.get('/marketplace/items', { params }),
+  getItem: (id: number) => api.get(`/marketplace/items/${id}`),
+  createItem: (data: any) => api.post('/marketplace/items', null, { params: data }),
+  updateItem: (id: number, data: any) => api.put(`/marketplace/items/${id}`, null, { params: data }),
+  deleteItem: (id: number, archive?: boolean) => api.delete(`/marketplace/items/${id}`, { params: { archive } }),
+  // Install (dispatches to workflow or node based on item type in DB)
+  installItem: (id: number, options?: any) =>
+    api.post(`/marketplace/items/${id}/install`, {}, { params: options || {} }),
+  // Preview / audit
+  previewItem: (id: number) => api.post(`/marketplace/items/${id}/preview`),
+  // Package download
+  getPackage: (id: number) => api.get(`/marketplace/items/${id}/package`),
+  // My Nodes
+  listMyNodes: () => api.get('/marketplace/my-nodes'),
+  saveNode: (data: any) => api.post('/marketplace/my-nodes', null, { params: data }),
+  deleteMyNode: (id: number) => api.delete(`/marketplace/my-nodes/${id}`),
+  // Categories
+  getCategories: () => api.get('/marketplace/categories'),
+}
+
 export default api
