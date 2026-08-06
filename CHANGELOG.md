@@ -4,6 +4,63 @@ All notable changes to the Python Workflow System.
 
 ---
 
+## [Unreleased] — 2026-08-06
+
+### New Features
+
+#### Internal Workflow & Node Marketplace (Phases 1-5)
+In-app marketplace for publishing, discovering, and installing reusable workflow packages and node templates. Replaces the standalone demo-workflows area with a unified, DB-backed system.
+
+- **Browse & Search** — `/marketplace` page with tabs (Workflows/Nodes/My Nodes), full-text search, category filter, tag cloud, sort, pagination
+- **Publish Workflows** — "Publish to Marketplace" button on workflow detail page; exports workflow as JSON and creates marketplace listing with metadata form (name, description, category, tags, status)
+- **Publish Nodes** — "Save to Marketplace" and "Save to My Nodes" buttons in the designer step editor; captures node config with title, description, category, tags
+- **Install Workflows** — one-click install from marketplace; delegates to existing import service with configurable options (environment, conflict resolution, forms/groups/users); review-before-install security audit
+- **Install Nodes** — returns step payload for direct designer insert AND saves copy to installer's My Nodes library
+- **My Nodes Library** — personal collection of saved node templates; visible in marketplace tab and designer panel; click-to-insert into current workflow
+- **Security Audit** — preview panel extracts step types, external URLs, custom code presence, SQL queries, email recipients, forms/groups references; two-step confirmation required before install
+- **Downloads Counter** — increments on each successful install
+- **Demo Migration** — 5 demo workflows seeded as marketplace items; old `/workflows/demo-list` and `/workflows/demo/{filename}` endpoints retired
+
+**Backend files:**
+| File | Purpose |
+|------|---------|
+| `backend/app/models/marketplace.py` | MarketplaceItem + SavedNodeTemplate ORM models |
+| `backend/app/services/marketplace_service.py` | CRUD, search, install, audit, validation, secrets scan |
+| `backend/app/api/marketplace.py` | REST router (`/marketplace`) |
+| `backend/alembic/versions/c3d4e5f6a7b8_add_marketplace_tables.py` | Migration (both tables) |
+| `scripts/seed_marketplace_demos.py` | Idempotent seed script for demo workflows |
+
+**Frontend files:**
+| File | Purpose |
+|------|---------|
+| `frontend/src/pages/Marketplace.tsx` | Browse, search, install, My Nodes, audit modal |
+| `frontend/src/pages/WorkflowDetail.tsx` | "Publish to Marketplace" button + modal |
+| `frontend/src/pages/WorkflowDesigner.tsx` | "Save to My Nodes", "⊕ Marketplace", My Nodes panel |
+| `frontend/src/pages/WorkflowImportExport.tsx` | Demo section replaced with marketplace link |
+| `frontend/src/services/api.ts` | `marketplaceApi` client |
+
+**API Endpoints:**
+| Method | Endpoint | Auth | Description |
+|--------|----------|------|-------------|
+| GET | `/marketplace/items` | Any authenticated | List items (filter: type, search, category, tag, sort, paginate) |
+| GET | `/marketplace/items/{id}` | Any authenticated | Item detail with author name |
+| POST | `/marketplace/items` | Admin/Dev | Publish workflow or node |
+| PUT | `/marketplace/items/{id}` | Author/Admin | Update metadata/version |
+| DELETE | `/marketplace/items/{id}` | Author/Admin | Delete or archive |
+| POST | `/marketplace/items/{id}/install` | Admin/Dev | Install (workflow → import; node → payload + My Nodes) |
+| GET | `/marketplace/items/{id}/package` | Admin/Dev | Raw package content download |
+| POST | `/marketplace/items/{id}/preview` | Any authenticated | Security audit summary |
+| GET | `/marketplace/my-nodes` | Admin/Dev | List personal node templates |
+| POST | `/marketplace/my-nodes` | Admin/Dev | Save node to personal library |
+| DELETE | `/marketplace/my-nodes/{id}` | Owner | Remove from personal library |
+| GET | `/marketplace/categories` | Any authenticated | Category catalog + tag cloud |
+
+**Removed endpoints:**
+- `GET /workflows/demo-list` — replaced by marketplace browse
+- `GET /workflows/demo/{filename}` — replaced by marketplace install
+
+---
+
 ## [Unreleased] — 2026-08-03
 
 ### New Features

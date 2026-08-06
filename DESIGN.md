@@ -424,9 +424,23 @@ PythonWorkflow/
 - [x] Export workflow + dependencies as XML or JSON
 - [x] Import with conflict resolution (copy/skip/overwrite)
 - [x] Duplicate workflow within same system
-- [x] Demo/training workflow packages (5 examples)
+- [x] Demo/training workflow packages (5 examples, now migrated to marketplace)
 - [x] ID remapping with symbolic refIds
 - [x] User matching by email on import
+
+### Phase 10: Internal Marketplace ✅ COMPLETE
+- [x] DB-backed marketplace for publishing, discovering, and installing workflows and node templates
+- [x] Browse/search/filter/sort/paginate marketplace items
+- [x] Publish workflows from detail page (exports + creates listing)
+- [x] Publish nodes from designer step editor
+- [x] Install workflows via existing import pipeline with configurable options
+- [x] Install nodes: returns step payload + saves to My Nodes library
+- [x] My Nodes personal library: save, list, delete, insert into designer
+- [x] Security audit preview: step types, URLs, custom code, SQL, email recipients
+- [x] Two-step review-before-install confirmation
+- [x] Downloads counter
+- [x] Category catalog + tag cloud
+- [x] Demo migration: 5 demo workflows seeded as marketplace items; old demo endpoints retired
 
 ## Database Schema (Core Tables)
 
@@ -485,6 +499,16 @@ system_settings (key-value store for branding)
 
 sql_views
   - id, name, description, definition_sql, is_active, created_by, created_at, updated_at
+
+marketplace_items
+  - id, item_type (workflow/node), name, description, category, tags (JSON), author_id,
+    version, content (TEXT), content_format (xml/json), node_type, status (published/draft/archived),
+    is_active, downloads_count, created_at, updated_at
+
+saved_node_templates
+  - id, user_id, step_type, title, description, definition (JSON), condition_expr,
+    is_enabled, max_retries, retry_delay_seconds, failure_hook_url,
+    source_marketplace_item_id, created_at
 ```
 
 ## Deployment

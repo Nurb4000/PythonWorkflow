@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowExportApi } from '../services/api'
+import { Link } from 'react-router-dom'
 
 interface ImportOptions {
   environment: string
@@ -56,28 +57,6 @@ export const WorkflowImportExport: React.FC = () => {
   const handleImport = () => {
     if (!fileContent.trim()) return
     importMutation.mutate()
-  }
-
-  const handleDownloadDemo = async (demoFile: string) => {
-    try {
-      const response = await fetch(`/api/workflows/demo/${demoFile}`)
-      const blob = await response.blob()
-      const url = window.URL.createObjectURL(blob)
-      const a = document.createElement('a')
-      a.href = url
-      a.download = demoFile
-      document.body.appendChild(a)
-      a.click()
-      window.URL.revokeObjectURL(url)
-      document.body.removeChild(a)
-
-      // Also load the demo into the import area
-      const text = await blob.text()
-      setFileContent(text)
-      setFilename(demoFile)
-    } catch (err) {
-      alert('Failed to download demo: ' + err)
-    }
   }
 
   return (
@@ -245,39 +224,14 @@ export const WorkflowImportExport: React.FC = () => {
         )}
       </div>
 
-      {/* Demo Workflows Section */}
-      <div className="card">
-        <h3 className="card-title">Demo & Training Workflows</h3>
+      {/* Marketplace redirect note */}
+      <div className="card" style={{ padding: '1.5rem', textAlign: 'center' }}>
         <p style={{ color: '#666', marginBottom: '1rem' }}>
-          Click to download and automatically load a demo workflow for import. These are pre-built examples covering common patterns.
+          Demo workflows and reusable node templates are now available in the marketplace.
         </p>
-        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '1rem' }}>
-          <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '6px', background: '#fafafa' }}>
-            <h4 style={{ marginTop: 0 }}>👋 Hello World</h4>
-            <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>Simple linear workflow: API call → email notification.</p>
-            <button className="btn btn-sm btn-primary" onClick={() => handleDownloadDemo('hello-world.xml')}>Download & Load</button>
-          </div>
-          <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '6px', background: '#fafafa' }}>
-            <h4 style={{ marginTop: 0 }}>💰 Expense Approval</h4>
-            <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>Form → approval → branching → database update + email.</p>
-            <button className="btn btn-sm btn-primary" onClick={() => handleDownloadDemo('expense-approval.xml')}>Download & Load</button>
-          </div>
-          <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '6px', background: '#fafafa' }}>
-            <h4 style={{ marginTop: 0 }}>📊 Data Report</h4>
-            <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>SQL query → report node → scheduled email delivery.</p>
-            <button className="btn btn-sm btn-primary" onClick={() => handleDownloadDemo('data-report.xml')}>Download & Load</button>
-          </div>
-          <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '6px', background: '#fafafa' }}>
-            <h4 style={{ marginTop: 0 }}>📝 Form Collection</h4>
-            <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>Form → human review → conditional database update.</p>
-            <button className="btn btn-sm btn-primary" onClick={() => handleDownloadDemo('form-collection.xml')}>Download & Load</button>
-          </div>
-          <div style={{ padding: '1rem', border: '1px solid #ddd', borderRadius: '6px', background: '#fafafa' }}>
-            <h4 style={{ marginTop: 0 }}>🧹 Scheduled Cleanup</h4>
-            <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>Weekly cron → query old data → report → email summary.</p>
-            <button className="btn btn-sm btn-primary" onClick={() => handleDownloadDemo('scheduled-cleanup.xml')}>Download & Load</button>
-          </div>
-        </div>
+        <Link to="/marketplace" className="btn btn-primary">
+          Browse Marketplace
+        </Link>
       </div>
     </div>
   )

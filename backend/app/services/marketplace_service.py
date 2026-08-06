@@ -587,8 +587,11 @@ class MarketplaceService:
         definition: Dict[str, Any],
         audit: Dict[str, Any],
         step_type: str,
+        depth: int = 0,
     ) -> None:
         """Recursively extract URLs, code, SQL, and email from a step definition."""
+        if depth > 10:  # Prevent infinite recursion on circular references
+            return
         if step_type == "custom_code":
             audit["has_custom_code"] = True
             code = definition.get("code", "")
@@ -634,11 +637,11 @@ class MarketplaceService:
             if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://")):
                 audit["external_urls"].append(val)
             elif isinstance(val, dict):
-                self._extract_audit_fields(val, audit, step_type)
+                self._extract_audit_fields(val, audit, step_type, depth + 1)
             elif isinstance(val, list):
                 for item in val:
                     if isinstance(item, dict):
-                        self._extract_audit_fields(item, audit, step_type)
+                        self._extract_audit_fields(item, audit, step_type, depth + 1)
 
     def _parse_xml_for_audit(self, content: str) -> Dict[str, Any]:
         """Minimal XML parser for audit extraction (mirrors import service logic)."""

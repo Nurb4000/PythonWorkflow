@@ -80,8 +80,18 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Role-Based Access**: Admin/Developer/Staff/User permissions
 - **Code Sandboxing**: Restricted builtins for custom code steps
 
+### Marketplace
+- **Publish Workflows**: Export and publish workflows from the detail page with metadata (name, description, category, tags)
+- **Publish Nodes**: Save individual step configurations to the marketplace or personal My Nodes library
+- **Browse & Search**: Filter by type, category, tags; full-text search; sort by downloads/date/name
+- **Install Workflows**: One-click install with configurable options (environment, conflict resolution); delegates to import service
+- **Install Nodes**: Returns step payload for designer insert AND saves copy to My Nodes library
+- **My Nodes Library**: Personal collection of saved node templates; visible in marketplace and designer panel
+- **Security Audit**: Review-before-install panel shows step types, external URLs, custom code, SQL queries, email recipients
+- **Downloads Counter**: Tracks install count per item
+
 ### Testing
-- **Backend**: 76 tests (pytest + asyncio + SQLite in-memory)
+- **Backend**: 121 tests (pytest + asyncio + SQLite in-memory) — includes 45 marketplace tests
 - **E2E**: 10 tests (Puppeteer + Chromium headless)
 - **Regression Net**: Pins current behavior before refactors
 
@@ -223,6 +233,22 @@ POST   /ai/assist-form               # Suggest form fields from a description
 POST   /ai/explain-error             # Diagnose workflow run failures
 ```
 
+### Marketplace
+```
+GET    /marketplace/items            # List items (filter: type, search, category, tag, sort)
+GET    /marketplace/items/{id}       # Item detail with author name
+POST   /marketplace/items            # Publish workflow or node (Admin/Dev)
+PUT    /marketplace/items/{id}       # Update metadata/version (Author/Admin)
+DELETE /marketplace/items/{id}       # Delete or archive (Author/Admin)
+POST   /marketplace/items/{id}/install  # Install (workflow→import; node→payload+My Nodes)
+GET    /marketplace/items/{id}/package    # Raw package content download
+POST   /marketplace/items/{id}/preview    # Security audit summary
+GET    /marketplace/my-nodes         # List personal node templates
+POST   /marketplace/my-nodes         # Save node to personal library
+DELETE /marketplace/my-nodes/{id}    # Remove from personal library
+GET    /marketplace/categories       # Category catalog + tag cloud
+```
+
 ## Configuration
 
 ### Environment Variables
@@ -282,6 +308,7 @@ PythonWorkflow/
 - ✅ **Phase 5**: Feature gaps (Calculation, AI condition, Report/Form, Step templates, Programmable delay)
 - ✅ **Phase 6**: Hardening (SSRF protection, pagination, docs, dead-code sweep)
 - ✅ **AI Assist**: Hybrid KB steering, backend AI endpoints, per-node/query/form/error AI assist (all 6 phases)
+- ✅ **Phase 10**: Internal Marketplace — publish/discover/install workflows and node templates; My Nodes library; security audit preview; demo migration
 
 ## Next Steps
 
