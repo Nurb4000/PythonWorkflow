@@ -272,6 +272,75 @@ async def delete_my_node(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+# ── Install ───────────────────────────────────────────────────────────
+
+@router.post("/items/{item_id}/install")
+async def install_item(
+    item_id: int,
+    on_conflict: str = Query("copy", description="'copy', 'skip', or 'overwrite'"),
+    environment: Optional[str] = Query(None, description="Target environment: test, production, or preserve"),
+    create_forms: bool = Query(True, description="Create missing forms during import"),
+    create_groups: bool = Query(True, description="Create missing groups during import"),
+    match_users_by_email: bool = Query(True, description="Resolve user refs by email"),
+    developer: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    item = await marketplace_service.get_item(db, item_id)
+    if not item:
+        raise HTTPException(status_code=404, detail="Item not found")
+
+    options = {
+        "on_conflict": on_conflict,
+        "create_forms": create_forms,
+        "create_groups": create_groups,
+        "match_users_by_email": match_users_by_email,
+    }
+    if environment:
+        options["environment"] = environment
+
+    try:
+        if item.item_type == "workflow":
+            result = await marketplace_service.install_workflow_item(
+                db, item_id, developer.id, options
+            )
+            return {
+                "installed": True,
+                "item_id": item_id,
+                "item_type": "workflow",
+                "import_result": result.to_dict(),
+            }
+        elif item.item_type == "node":
+            result = await marketplace_service.install_node_item(
+                db, item_id, developer.id
+            )
+            return {
+                "installed": True,
+                "item_id": item_id,
+                "item_type": "node",
+                "step_payload": result["step_payload"],
+                "saved_node": result["saved_node"],
+            }
+        else:
+            raise HTTPException(status_code=400, detail=f"Cannot install item type: {item.item_type}")
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+
+# ── Preview / Audit ───────────────────────────────────────────────────
+
+@router.post("/items/{item_id}/preview")
+async def preview_item(
+    item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    try:
+        audit = await marketplace_service.preview_item(db, item_id)
+        return audit
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ── Categories ────────────────────────────────────────────────────────
 
 @router.get("/categories")

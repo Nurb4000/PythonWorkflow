@@ -1,9 +1,9 @@
 # Internal Workflow & Node Marketplace — Implementation Plan
 
-**Status:** Phase 1 complete — backend foundation (schema, models, service, API, tests)
+**Status:** Phase 2 complete — install, audit preview, my-nodes (backend)
 **Date:** 2026-08-05
 **Author:** opencode
-**Last Updated:** 2026-08-06 — Phase 1 implemented and tested
+**Last Updated:** 2026-08-06 — Phase 2 implemented and tested (45/45 green)
 
 ## Goal
 
@@ -19,8 +19,8 @@ artifacts so nobody rebuilds the same workflow or node twice:
 Both artifacts are stored in one "Marketplace", browsed/searchable, and installed with
 one click through the existing import pipeline.
 
-**No code has been changed. This document is for review.** When approved, the work is built
-phase-by-phase over multiple sessions (one phase ≈ one session).
+**Phases 1 and 2 implemented.** Backend foundation + install/audit/my-nodes complete.
+Remaining: Phase 3 (frontend browse), Phase 4 (publish UX + designer integration), Phase 5 (seed demos, hardening).
 
 ---
 
@@ -202,15 +202,22 @@ Legend: `[ ]` pending · `[~]` in progress · `[x]` done
 - Auth: `get_current_user` for browse, `get_current_developer` for CRUD/my-nodes.
 - Secrets scan blocks workflow publish, warns on node publish (per plan D7).
 
-### Phase 2 — Publish/install/audit/my-nodes (backend)
-- [ ] `POST /items/{id}/install` for workflows → `workflow_import_service.import_workflow()`, return `ImportResult`, bump `downloads_count`
-- [ ] `POST /items/{id}/install` for nodes → returns step payload **and** saves a copy to the installer's `saved_node_templates` (D5)
-- [ ] `POST /items/{id}/preview` audit extractor (steps, URLs, custom_code, SQL, forms/groups)
-- [ ] Node item validation on publish (`VALID_STEP_TYPES`, allowed step types)
-- [ ] Secrets scan on publish + block/warn logic
-- [ ] My Nodes endpoints: `GET /my-nodes`, `POST /my-nodes`, `DELETE /my-nodes/{id}`; `GET /categories`
-- [ ] Tests: install end-to-end (package → workflow row created), node install (payload returned + library row created), preview extraction, secrets rejection, my-nodes ownership
-- **Exit:** `pytest` green
+### Phase 2 — Publish/install/audit/my-nodes (backend) **[COMPLETE]**
+- [x] `POST /items/{id}/install` for workflows → `workflow_import_service.import_workflow()`, return `ImportResult`, bump `downloads_count`
+- [x] `POST /items/{id}/install` for nodes → returns step payload **and** saves a copy to the installer's `saved_node_templates` (D5)
+- [x] `POST /items/{id}/preview` audit extractor (steps, URLs, custom_code, SQL, forms/groups)
+- [x] Node item validation on publish (`VALID_STEP_TYPES`, allowed step types) — implemented in Phase 1
+- [x] Secrets scan on publish + block/warn logic — implemented in Phase 1
+- [x] My Nodes endpoints: `GET /my-nodes`, `POST /my-nodes`, `DELETE /my-nodes/{id}`; `GET /categories` — implemented in Phase 1
+- [x] Tests: install end-to-end (package → workflow row created), node install (payload returned + library row created), preview extraction, secrets rejection, my-nodes ownership
+- **Exit:** `pytest` green (45/45 — 31 Phase 1 + 14 Phase 2)
+
+**Notes:**
+- Install endpoint accepts query params: `on_conflict`, `environment`, `create_forms`, `create_groups`, `match_users_by_email`.
+- Workflow install delegates to `workflow_import_service.import_workflow()` and bumps `downloads_count` on success.
+- Node install returns both the raw step payload (for designer insert) and a saved copy in user's My Nodes library with `source_marketplace_item_id` linkage.
+- Preview/audit extracts: step types, external URLs (recursive), custom_code presence, SQL queries, email recipients, forms/groups references. Works for both JSON and XML workflow packages.
+- Audit warns on custom code and database query presence for review-before-install UX.
 
 ### Phase 3 — Marketplace frontend (browse)
 - [ ] `frontend/src/services/api.ts` — `marketplaceApi` client (items + my-nodes)

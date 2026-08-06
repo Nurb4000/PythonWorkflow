@@ -577,3 +577,406 @@ class TestCategories:
             "Data / ETL", "Notifications", "Approvals & Tasks", "Reporting",
             "Integrations", "Schedules & Maintenance", "Onboarding", "General",
         ]
+
+
+# ── Phase 2: Install / Preview / Audit ────────────────────────────────
+
+class TestInstallWorkflowItem:
+    @pytest.mark.asyncio
+    async def test_install_workflow_item_success(self, db_session):
+        """Installing a workflow item calls import service and bumps downloads."""
+        wf_content = json.dumps({
+            "workflow": {"name": "Imported Workflow", "isPublished": False, "environment": "test"},
+            "steps": [
+                {
+                    "refId": "step-1",
+                    "type": "delay",
+                    "position": 0,
+                    "title": "Wait",
+                    "definition": {"seconds": 5},
+                }
+            ],
+            "schedules": [],
+            "forms": [],
+            "groups": [],
+        })
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="Imported Workflow",
+            description="Test workflow for install",
+            category="General",
+            tags=["test"],
+            author_id=1,
+            content=wf_content,
+            content_format="json",
+        )
+
+        assert item.downloads_count == 0
+
+        result = await marketplace_service.install_workflow_item(
+            db_session,
+            item_id=item.id,
+            user_id=1,
+            options={"on_conflict": "copy"},
+        )
+
+        assert result is not None
+        assert hasattr(result, "to_dict")
+        assert len(result.workflows_created) == 1
+        assert result.workflows_created[0].startswith("Imported Workflow")
+
+        refreshed = await marketplace_service.get_item(db_session, item.id)
+        assert refreshed.downloads_count == 1
+
+    @pytest.mark.asyncio
+    async def test_install_workflow_item_not_found(self, db_session):
+        with pytest.raises(ValueError, match="not found"):
+            await marketplace_service.install_workflow_item(
+                db_session, item_id=9999, user_id=1, options={}
+            )
+
+    @pytest.mark.asyncio
+    async def test_install_workflow_item_wrong_type(self, db_session):
+        node_content = json.dumps({
+            "step_type": "api_call",
+            "definition": {"method": "GET", "url": "https://example.com"},
+        })
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="node",
+            name="A Node",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=node_content,
+            content_format="json",
+            node_type="api_call",
+        )
+
+        with pytest.raises(ValueError, match="is not a workflow"):
+            await marketplace_service.install_workflow_item(
+                db_session, item_id=item.id, user_id=1, options={}
+            )
+
+    @pytest.mark.asyncio
+    async def test_install_workflow_item_not_published(self, db_session):
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="Draft Workflow",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=json.dumps({"workflow": {"name": "Draft"}, "steps": []}),
+            content_format="json",
+            status="draft",
+        )
+
+        with pytest.raises(ValueError, match="is not published"):
+            await marketplace_service.install_workflow_item(
+                db_session, item_id=item.id, user_id=1, options={}
+            )
+
+
+class TestInstallNodeItem:
+    @pytest.mark.asyncio
+    async def test_install_node_item_success(self, db_session):
+        """Installing a node returns step payload and saves to My Nodes."""
+        node_content = json.dumps({
+            "step_type": "api_call",
+            "title": "Fetch Users",
+            "description": "GET /users endpoint",
+            "definition": {"method": "GET", "url": "https://api.example.com/users"},
+            "is_enabled": True,
+            "max_retries": 2,
+            "retry_delay_seconds": 10,
+        })
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="node",
+            name="Fetch Users Node",
+            description="GET /users endpoint",
+            category="Integrations",
+            tags=["api"],
+            author_id=1,
+            content=node_content,
+            content_format="json",
+            node_type="api_call",
+        )
+
+        assert item.downloads_count == 0
+
+        result = await marketplace_service.install_node_item(
+            db_session, item_id=item.id, user_id=1
+        )
+
+        assert "step_payload" in result
+        assert "saved_node" in result
+        assert result["step_payload"]["step_type"] == "api_call"
+        assert result["step_payload"]["title"] == "Fetch Users"
+        assert result["saved_node"]["id"] is not None
+        assert result["saved_node"]["step_type"] == "api_call"
+        assert result["saved_node"]["title"] == "Fetch Users"
+        assert result["saved_node"]["max_retries"] == 2
+
+        refreshed = await marketplace_service.get_item(db_session, item.id)
+        assert refreshed.downloads_count == 1
+
+        saved_nodes = await marketplace_service.list_saved_nodes(db_session, user_id=1)
+        assert len(saved_nodes) == 1
+        assert saved_nodes[0].source_marketplace_item_id == item.id
+
+    @pytest.mark.asyncio
+    async def test_install_node_item_not_found(self, db_session):
+        with pytest.raises(ValueError, match="not found"):
+            await marketplace_service.install_node_item(
+                db_session, item_id=9999, user_id=1
+            )
+
+    @pytest.mark.asyncio
+    async def test_install_node_item_wrong_type(self, db_session):
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="A Workflow",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=json.dumps({"workflow": {"name": "A"}, "steps": []}),
+            content_format="json",
+        )
+
+        with pytest.raises(ValueError, match="is not a node"):
+            await marketplace_service.install_node_item(
+                db_session, item_id=item.id, user_id=1
+            )
+
+
+class TestPreviewAudit:
+    @pytest.mark.asyncio
+    async def test_preview_workflow_json(self, db_session):
+        wf_content = json.dumps({
+            "workflow": {"name": "Audit Me", "isPublished": False, "environment": "test"},
+            "steps": [
+                {
+                    "refId": "step-1",
+                    "type": "api_call",
+                    "position": 0,
+                    "title": "Call API",
+                    "definition": {"method": "GET", "url": "https://api.example.com/data"},
+                },
+                {
+                    "refId": "step-2",
+                    "type": "custom_code",
+                    "position": 1,
+                    "title": "Process",
+                    "definition": {"code": "return data['items']"},
+                },
+                {
+                    "refId": "step-3",
+                    "type": "database_query",
+                    "position": 2,
+                    "title": "Save",
+                    "definition": {"type": "select", "table": "users", "query": "SELECT * FROM users"},
+                },
+                {
+                    "refId": "step-4",
+                    "type": "email",
+                    "position": 3,
+                    "title": "Notify",
+                    "definition": {"to": "admin@example.com;ops@example.com", "subject": "Done"},
+                },
+            ],
+            "schedules": [{"cronExpression": "0 0 * * *"}],
+            "forms": [],
+            "groups": [],
+        })
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="Audit Me",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=wf_content,
+            content_format="json",
+        )
+
+        audit = await marketplace_service.preview_item(db_session, item.id)
+
+        assert audit["item_type"] == "workflow"
+        assert "api_call" in audit["step_types"]
+        assert "custom_code" in audit["step_types"]
+        assert "database_query" in audit["step_types"]
+        assert "email" in audit["step_types"]
+        assert audit["has_custom_code"] is True
+        assert audit["has_database_query"] is True
+        assert "https://api.example.com/data" in audit["external_urls"]
+        assert "admin@example.com" in audit["email_recipients"]
+        assert "ops@example.com" in audit["email_recipients"]
+        assert audit["steps_count"] == 4
+        assert audit["schedules_count"] == 1
+        assert any("Custom code present" in w for w in audit["warnings"])
+        assert any("Database query present" in w for w in audit["warnings"])
+
+    @pytest.mark.asyncio
+    async def test_preview_workflow_xml(self, db_session):
+        wf_content = """<?xml version="1.0"?>
+        <WorkflowPackage version="1.0">
+            <Workflow name="XML Audit" isPublished="false" environment="test">
+                <Steps>
+                    <Step id="step-1" type="webhook" position="0">
+                        <Title>Webhook Step</Title>
+                        <Definition>{"url": "https://hooks.example.com/notify"}</Definition>
+                    </Step>
+                    <Step id="step-2" type="custom_code" position="1">
+                        <Title>Code Step</Title>
+                        <Definition>{"code": "x = 1 + 2"}</Definition>
+                    </Step>
+                </Steps>
+            </Workflow>
+        </WorkflowPackage>"""
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="XML Audit",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=wf_content,
+            content_format="xml",
+        )
+
+        audit = await marketplace_service.preview_item(db_session, item.id)
+
+        assert audit["item_type"] == "workflow"
+        assert "webhook" in audit["step_types"]
+        assert "custom_code" in audit["step_types"]
+        assert audit["has_custom_code"] is True
+        assert "https://hooks.example.com/notify" in audit["external_urls"]
+        assert audit["workflow_name"] == "XML Audit"
+        assert audit["steps_count"] == 2
+
+    @pytest.mark.asyncio
+    async def test_preview_node(self, db_session):
+        node_content = json.dumps({
+            "step_type": "api_call",
+            "title": "Preview Node",
+            "description": "A node for preview testing",
+            "definition": {
+                "method": "POST",
+                "url": "https://api.test.com/submit",
+                "headers": {"Authorization": "Bearer test"},
+            },
+            "failure_hook_url": "https://hooks.test.com/fail",
+        })
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="node",
+            name="Preview Node",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=node_content,
+            content_format="json",
+            node_type="api_call",
+        )
+
+        audit = await marketplace_service.preview_item(db_session, item.id)
+
+        assert audit["item_type"] == "node"
+        assert audit["step_types"] == ["api_call"]
+        assert "https://api.test.com/submit" in audit["external_urls"]
+        assert "https://hooks.test.com/fail" in audit["external_urls"]
+        assert audit["node_title"] == "Preview Node"
+
+    @pytest.mark.asyncio
+    async def test_preview_not_found(self, db_session):
+        with pytest.raises(ValueError, match="not found"):
+            await marketplace_service.preview_item(db_session, 9999)
+
+    @pytest.mark.asyncio
+    async def test_preview_not_published(self, db_session):
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="Draft Preview",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=json.dumps({"workflow": {"name": "Draft"}, "steps": []}),
+            content_format="json",
+            status="draft",
+        )
+
+        with pytest.raises(ValueError, match="is not published"):
+            await marketplace_service.preview_item(db_session, item.id)
+
+
+class TestDownloadsCounter:
+    @pytest.mark.asyncio
+    async def test_downloads_increment_on_each_workflow_install(self, db_session):
+        wf_content = json.dumps({
+            "workflow": {"name": "Multi Install WF", "isPublished": False, "environment": "test"},
+            "steps": [{"refId": "s1", "type": "delay", "position": 0, "definition": {"seconds": 1}}],
+        })
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="workflow",
+            name="Multi Install WF",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=wf_content,
+            content_format="json",
+        )
+
+        for i in range(3):
+            await marketplace_service.install_workflow_item(
+                db_session, item_id=item.id, user_id=1, options={"on_conflict": "copy"}
+            )
+            refreshed = await marketplace_service.get_item(db_session, item.id)
+            assert refreshed.downloads_count == i + 1
+
+    @pytest.mark.asyncio
+    async def test_downloads_increment_on_each_node_install(self, db_session):
+        node_content = json.dumps({
+            "step_type": "delay",
+            "title": "Multi Install Node",
+            "definition": {"seconds": 5},
+        })
+
+        item = await marketplace_service.create_item(
+            db_session,
+            item_type="node",
+            name="Multi Install Node",
+            description="",
+            category="General",
+            tags=[],
+            author_id=1,
+            content=node_content,
+            content_format="json",
+            node_type="delay",
+        )
+
+        for i in range(3):
+            await marketplace_service.install_node_item(
+                db_session, item_id=item.id, user_id=1
+            )
+            refreshed = await marketplace_service.get_item(db_session, item.id)
+            assert refreshed.downloads_count == i + 1

@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from app.models.marketplace import MarketplaceItem, SavedNodeTemplate
 from app.models.auth import User
 from app.services.ai_service import AIService
+from app.services.workflow_import_service import workflow_import_service, ImportResult
 
 logger = logging.getLogger(__name__)
 
@@ -388,6 +389,304 @@ class MarketplaceService:
             "tagCloud": tag_cloud,
             "allCategories": CATEGORIES,
         }
+
+    # ── Install ───────────────────────────────────────────────────────
+
+    async def install_workflow_item(
+        self,
+        db: AsyncSession,
+        item_id: int,
+        user_id: int,
+        options: Dict[str, Any],
+    ) -> ImportResult:
+        """Install a workflow marketplace item via the import service."""
+        item = await self.get_item(db, item_id)
+        if not item:
+            raise ValueError(f"Marketplace item {item_id} not found")
+
+        if item.item_type != "workflow":
+            raise ValueError(f"Item {item_id} is not a workflow (type={item.item_type})")
+
+        if item.status != "published":
+            raise ValueError(f"Item {item_id} is not published (status={item.status})")
+
+        filename = f"{item.name.lower().replace(' ', '-')}.{item.content_format}"
+        result = await workflow_import_service.import_workflow(
+            db,
+            content=item.content,
+            filename=filename,
+            user_id=user_id,
+            options=options,
+        )
+
+        if not result.errors:
+            item.downloads_count = (item.downloads_count or 0) + 1
+            await db.commit()
+            logger.info(f"Installed workflow item {item.id} ({item.name}) for user {user_id}")
+
+        return result
+
+    async def install_node_item(
+        self,
+        db: AsyncSession,
+        item_id: int,
+        user_id: int,
+    ) -> Dict[str, Any]:
+        """Install a node marketplace item — returns step payload and saves to My Nodes."""
+        item = await self.get_item(db, item_id)
+        if not item:
+            raise ValueError(f"Marketplace item {item_id} not found")
+
+        if item.item_type != "node":
+            raise ValueError(f"Item {item_id} is not a node (type={item.item_type})")
+
+        if item.status != "published":
+            raise ValueError(f"Item {item_id} is not published (status={item.status})")
+
+        node_data = self._validate_node_content(item.content)
+
+        saved_node = await self.create_saved_node(
+            db,
+            user_id=user_id,
+            step_type=node_data["step_type"],
+            title=node_data.get("title", item.name),
+            description=node_data.get("description", item.description or ""),
+            definition=node_data.get("definition", {}),
+            condition_expr=node_data.get("condition_expr", ""),
+            is_enabled=node_data.get("is_enabled", True),
+            max_retries=node_data.get("max_retries", 0),
+            retry_delay_seconds=node_data.get("retry_delay_seconds", 0),
+            failure_hook_url=node_data.get("failure_hook_url", ""),
+            source_marketplace_item_id=item.id,
+        )
+
+        item.downloads_count = (item.downloads_count or 0) + 1
+        await db.commit()
+
+        logger.info(f"Installed node item {item.id} ({item.name}) for user {user_id}")
+
+        return {
+            "step_payload": node_data,
+            "saved_node": {
+                "id": saved_node.id,
+                "step_type": saved_node.step_type,
+                "title": saved_node.title,
+                "description": saved_node.description,
+                "definition": saved_node.definition_dict,
+                "condition_expr": saved_node.condition_expr,
+                "is_enabled": saved_node.is_enabled,
+                "max_retries": saved_node.max_retries,
+                "retry_delay_seconds": saved_node.retry_delay_seconds,
+                "failure_hook_url": saved_node.failure_hook_url,
+            },
+        }
+
+    # ── Preview / Audit ───────────────────────────────────────────────
+
+    async def preview_item(
+        self,
+        db: AsyncSession,
+        item_id: int,
+    ) -> Dict[str, Any]:
+        """Extract audit summary for review-before-install."""
+        item = await self.get_item(db, item_id)
+        if not item:
+            raise ValueError(f"Marketplace item {item_id} not found")
+
+        if item.status != "published":
+            raise ValueError(f"Item {item_id} is not published (status={item.status})")
+
+        if item.item_type == "workflow":
+            return self._audit_workflow_content(item.content, item.content_format)
+        else:
+            return self._audit_node_content(item.content)
+
+    def _audit_workflow_content(self, content: str, content_format: str) -> Dict[str, Any]:
+        """Extract audit info from a workflow package."""
+        audit: Dict[str, Any] = {
+            "item_type": "workflow",
+            "step_types": [],
+            "external_urls": [],
+            "has_custom_code": False,
+            "has_database_query": False,
+            "forms_referenced": [],
+            "groups_referenced": [],
+            "email_recipients": [],
+            "warnings": [],
+        }
+
+        try:
+            if content_format == "json":
+                data = json.loads(content)
+            else:
+                data = self._parse_xml_for_audit(content)
+        except Exception as e:
+            audit["warnings"].append(f"Could not fully parse content: {e}")
+            return audit
+
+        steps = data.get("steps", [])
+        for step in steps:
+            step_type = step.get("type", step.get("step_type", "unknown"))
+            audit["step_types"].append(step_type)
+
+            definition = step.get("definition", {})
+            self._extract_audit_fields(definition, audit, step_type)
+
+        workflow_data = data.get("workflow", {})
+        audit["workflow_name"] = workflow_data.get("name", "")
+        audit["steps_count"] = len(steps)
+        audit["forms_count"] = len(data.get("forms", []))
+        audit["groups_count"] = len(data.get("groups", []))
+        audit["schedules_count"] = len(data.get("schedules", []))
+
+        audit["step_types"] = list(set(audit["step_types"]))
+        audit["external_urls"] = list(set(audit["external_urls"]))
+        audit["email_recipients"] = list(set(audit["email_recipients"]))
+
+        return audit
+
+    def _audit_node_content(self, content: str) -> Dict[str, Any]:
+        """Extract audit info from a node template."""
+        audit: Dict[str, Any] = {
+            "item_type": "node",
+            "step_types": [],
+            "external_urls": [],
+            "has_custom_code": False,
+            "has_database_query": False,
+            "forms_referenced": [],
+            "groups_referenced": [],
+            "email_recipients": [],
+            "warnings": [],
+        }
+
+        try:
+            node_data = json.loads(content)
+        except (json.JSONDecodeError, TypeError) as e:
+            audit["warnings"].append(f"Could not parse node content: {e}")
+            return audit
+
+        step_type = node_data.get("step_type", "unknown")
+        audit["step_types"] = [step_type]
+        definition = node_data.get("definition", {})
+        self._extract_audit_fields(definition, audit, step_type)
+        audit["node_title"] = node_data.get("title", "")
+
+        # Also check top-level node fields for URLs (e.g. failure_hook_url)
+        for field in ("failure_hook_url", "webhook_url", "url"):
+            val = node_data.get(field)
+            if val and isinstance(val, str) and val.startswith(("http://", "https://")):
+                audit["external_urls"].append(val)
+
+        audit["external_urls"] = list(set(audit["external_urls"]))
+        audit["email_recipients"] = list(set(audit["email_recipients"]))
+
+        return audit
+
+    def _extract_audit_fields(
+        self,
+        definition: Dict[str, Any],
+        audit: Dict[str, Any],
+        step_type: str,
+    ) -> None:
+        """Recursively extract URLs, code, SQL, and email from a step definition."""
+        if step_type == "custom_code":
+            audit["has_custom_code"] = True
+            code = definition.get("code", "")
+            if code:
+                audit["warnings"].append(
+                    f"Custom code present ({len(code)} chars). Review before installing."
+                )
+
+        if step_type == "database_query":
+            audit["has_database_query"] = True
+            query = definition.get("query", definition.get("sql", ""))
+            if query:
+                audit["warnings"].append(
+                    f"Database query present ({len(query)} chars). Review before installing."
+                )
+
+        url_fields = {"url", "webhook_url", "failure_hook_url", "endpoint"}
+        for field in url_fields:
+            val = definition.get(field)
+            if val and isinstance(val, str) and val.startswith(("http://", "https://")):
+                audit["external_urls"].append(val)
+
+        if step_type == "email":
+            to = definition.get("to", "")
+            if to:
+                if isinstance(to, list):
+                    audit["email_recipients"].extend(to)
+                elif isinstance(to, str):
+                    for addr in re.split(r"[;,]\s*", to):
+                        addr = addr.strip()
+                        if addr:
+                            audit["email_recipients"].append(addr)
+
+        form_id = definition.get("form_id")
+        if form_id:
+            audit["forms_referenced"].append(str(form_id))
+
+        group_id = definition.get("assigned_group_id")
+        if group_id:
+            audit["groups_referenced"].append(str(group_id))
+
+        for key, val in definition.items():
+            if isinstance(val, str) and (val.startswith("http://") or val.startswith("https://")):
+                audit["external_urls"].append(val)
+            elif isinstance(val, dict):
+                self._extract_audit_fields(val, audit, step_type)
+            elif isinstance(val, list):
+                for item in val:
+                    if isinstance(item, dict):
+                        self._extract_audit_fields(item, audit, step_type)
+
+    def _parse_xml_for_audit(self, content: str) -> Dict[str, Any]:
+        """Minimal XML parser for audit extraction (mirrors import service logic)."""
+        from xml.etree import ElementTree as ET
+
+        root = ET.fromstring(content)
+        data: Dict[str, Any] = {
+            "workflow": {},
+            "steps": [],
+            "schedules": [],
+            "forms": [],
+            "groups": [],
+        }
+
+        wf_el = root.find("Workflow")
+        if wf_el is not None:
+            data["workflow"]["name"] = wf_el.get("name", "")
+
+            steps_el = wf_el.find("Steps")
+            if steps_el is not None:
+                for step_el in steps_el.findall("Step"):
+                    step_data = {
+                        "type": step_el.get("type", ""),
+                        "title": (step_el.findtext("Title") or ""),
+                    }
+                    def_el = step_el.find("Definition")
+                    if def_el is not None and def_el.text:
+                        try:
+                            step_data["definition"] = json.loads(def_el.text)
+                        except json.JSONDecodeError:
+                            step_data["definition"] = {}
+                    else:
+                        step_data["definition"] = {}
+                    data["steps"].append(step_data)
+
+            sched_el = wf_el.find("Schedules")
+            if sched_el is not None:
+                data["schedules"] = list(sched_el.findall("Schedule"))
+
+        forms_section = root.find("Forms")
+        if forms_section is not None:
+            data["forms"] = list(forms_section.findall("Form"))
+
+        groups_section = root.find("Groups")
+        if groups_section is not None:
+            data["groups"] = list(groups_section.findall("Group"))
+
+        return data
 
 
 marketplace_service = MarketplaceService()
