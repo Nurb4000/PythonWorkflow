@@ -18,7 +18,8 @@ class TemplateService:
     """Manage workflow templates"""
     
     def __init__(self):
-        self.templates_path = Path("knowledge-base/templates")
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        self.templates_path = project_root / "knowledge-base" / "templates"
         self._templates: List[Dict[str, Any]] = []
         self._load_templates()
     

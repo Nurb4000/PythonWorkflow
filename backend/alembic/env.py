@@ -12,7 +12,7 @@ from app.core.config import settings
 from app.core.database import Base
 
 # Import every model module so all tables are registered on Base.metadata.
-from app.models import auth, forms, schemas, system_settings, custom_fields  # noqa: F401
+from app.models import auth, forms, schemas, system_settings, custom_fields, marketplace  # noqa: F401
 
 config = context.config
 

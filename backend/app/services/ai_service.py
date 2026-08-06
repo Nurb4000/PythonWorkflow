@@ -56,7 +56,8 @@ class AIService:
     def _load_knowledge_base(self) -> Dict[str, str]:
         """Load knowledge base files into a dict keyed by domain path"""
         kb = {}
-        kb_root = Path("knowledge-base")
+        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        kb_root = project_root / "knowledge-base"
 
         for directory in ["steering", "nodes", "queries", "forms", "debugging", "admin"]:
             dir_path = kb_root / directory
@@ -109,7 +110,8 @@ class AIService:
         """Generate a complete workflow from description"""
         template = None
         if template_name:
-            templates_path = Path("knowledge-base/templates")
+            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            templates_path = project_root / "knowledge-base" / "templates"
             if templates_path.exists():
                 for file in templates_path.glob("*.json"):
                     try:
