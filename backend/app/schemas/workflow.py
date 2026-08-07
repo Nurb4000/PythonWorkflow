@@ -53,6 +53,7 @@ class WorkflowUpdate(BaseModel):
     portal_icon: Optional[str] = None
     portal_order: Optional[int] = None
     portal_visible: Optional[bool] = None
+    portal_link_url: Optional[str] = None
     entry_form_id: Optional[int] = None  # P3.3
     manual_version_increment: bool = False  # P7: Manual version bump
 

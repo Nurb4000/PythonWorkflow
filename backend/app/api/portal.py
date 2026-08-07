@@ -69,6 +69,7 @@ async def get_available_workflows(
             "portal_icon": w.portal_icon or "",
             "portal_order": w.portal_order or 0,
             "portal_visible": w.portal_visible,
+            "portal_link_url": (w.config or {}).get("portal_link_url", ""),
             "entry_form_id": w.entry_form_id,  # P3.3
         }
         for w in workflows

@@ -43,7 +43,7 @@ export const WorkflowDetail: React.FC = () => {
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
   const [permsInitialized, setPermsInitialized] = useState(false)
   const [permsError, setPermsError] = useState('')
-  const [portalSettings, setPortalSettings] = useState({ icon: '', order: 0, visible: true })
+  const [portalSettings, setPortalSettings] = useState({ icon: '', order: 0, visible: true, linkUrl: '' })
   const [editMode, setEditMode] = useState(false)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
@@ -87,7 +87,8 @@ export const WorkflowDetail: React.FC = () => {
       setPortalSettings({
         icon: workflow.portal_icon || '',
         order: workflow.portal_order || 0,
-        visible: workflow.portal_visible !== false
+        visible: workflow.portal_visible !== false,
+        linkUrl: (workflow.config?.portal_link_url || '')
       })
       setEditName(workflow.name || '')
       setEditDescription(workflow.description || '')
@@ -145,7 +146,8 @@ export const WorkflowDetail: React.FC = () => {
       workflowApi.update(workflowId, {
         portal_icon: portalSettings.icon,
         portal_order: portalSettings.order,
-        portal_visible: portalSettings.visible
+        portal_visible: portalSettings.visible,
+        portal_link_url: portalSettings.linkUrl || undefined
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
@@ -498,6 +500,17 @@ export const WorkflowDetail: React.FC = () => {
               />
               Visible on portal
             </label>
+          </div>
+          <div className="form-group">
+            <label className="form-label">External Link URL</label>
+            <input
+              type="url"
+              className="form-input"
+              value={portalSettings.linkUrl}
+              onChange={(e) => setPortalSettings(s => ({ ...s, linkUrl: e.target.value }))}
+              placeholder="https://example.com — replaces 'Submit' with 'Go To' on the portal"
+              style={{ maxWidth: '500px' }}
+            />
           </div>
           <button
             className="btn btn-primary"

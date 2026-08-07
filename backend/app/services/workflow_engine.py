@@ -132,6 +132,10 @@ class WorkflowEngine:
             workflow.portal_order = workflow_data.portal_order
         if workflow_data.portal_visible is not None:
             workflow.portal_visible = workflow_data.portal_visible
+        if workflow_data.portal_link_url is not None:
+            if workflow.config is None:
+                workflow.config = {}
+            workflow.config["portal_link_url"] = workflow_data.portal_link_url
         
         # P7: Manual version increment
         if workflow_data.manual_version_increment:

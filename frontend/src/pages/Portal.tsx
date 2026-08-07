@@ -13,6 +13,7 @@ interface PortalWorkflow {
   portal_icon: string
   portal_order: number
   portal_visible: boolean
+  portal_link_url?: string
   entry_form_id?: number | null  // P3.3
 }
 
@@ -312,14 +313,26 @@ export const Portal: React.FC = () => {
                 {wf.description || 'No description provided'}
               </p>
               <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', width: '100%' }}>
-                <button
-                  className="btn btn-sm btn-primary"
-                  style={{ marginLeft: 'auto' }}
-                  onClick={() => runWorkflow(wf)}
-                  disabled={running !== null}
-                >
-                  {running === wf.id ? 'Submitting...' : 'Submit'}
-                </button>
+                {wf.portal_link_url ? (
+                  <a
+                    href={wf.portal_link_url}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="btn btn-sm btn-primary"
+                    style={{ marginLeft: 'auto', textDecoration: 'none' }}
+                  >
+                    Go To →
+                  </a>
+                ) : (
+                  <button
+                    className="btn btn-sm btn-primary"
+                    style={{ marginLeft: 'auto' }}
+                    onClick={() => runWorkflow(wf)}
+                    disabled={running !== null}
+                  >
+                    {running === wf.id ? 'Submitting...' : 'Submit'}
+                  </button>
+                )}
               </div>
             </div>
           ))}
