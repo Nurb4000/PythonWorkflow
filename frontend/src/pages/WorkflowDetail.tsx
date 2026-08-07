@@ -131,6 +131,15 @@ export const WorkflowDetail: React.FC = () => {
     }
   })
 
+  const isActiveMutation = useMutation({
+    mutationFn: (active: boolean) =>
+      workflowApi.update(workflowId, { is_active: active }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
+      queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    }
+  })
+
   const portalMutation = useMutation({
     mutationFn: () =>
       workflowApi.update(workflowId, {
@@ -385,10 +394,20 @@ export const WorkflowDetail: React.FC = () => {
           <div className="stat-label">Steps</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value">
+          <div className="stat-value" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
             <span className={`badge ${workflow.is_active ? 'badge-success' : 'badge-danger'}`}>
               {workflow.is_active ? 'Active' : 'Inactive'}
             </span>
+            {canDevelop && (
+              <button
+                className={`btn btn-sm ${workflow.is_active ? 'btn-warning' : 'btn-success'}`}
+                onClick={() => isActiveMutation.mutate(!workflow.is_active)}
+                disabled={isActiveMutation.isPending}
+                title={workflow.is_active ? 'Deactivate workflow' : 'Activate workflow'}
+              >
+                {isActiveMutation.isPending ? '...' : (workflow.is_active ? 'Deactivate' : 'Activate')}
+              </button>
+            )}
           </div>
           <div className="stat-label">Status</div>
         </div>
