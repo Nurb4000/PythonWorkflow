@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { workflowApi, authApi } from '../services/api'
@@ -41,10 +41,19 @@ export const WorkflowList: React.FC = () => {
   const queryClient = useQueryClient()
 
   // Search, filter, sort state
+  const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [sortBy, setSortBy] = useState<string>('name')
   const [sortOrder, setSortOrder] = useState<string>('asc')
+  const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
+
+  // Debounce search input -> search term
+  useEffect(() => {
+    if (searchTimerRef.current) clearTimeout(searchTimerRef.current)
+    searchTimerRef.current = setTimeout(() => setSearchTerm(searchInput), 300)
+    return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
+  }, [searchInput])
 
   const { data: workflows, isLoading } = useQuery({
     queryKey: ['workflows', searchTerm, statusFilter, sortBy, sortOrder],
@@ -78,6 +87,7 @@ export const WorkflowList: React.FC = () => {
       setShowCreate(false)
       setNewWorkflow({ name: '', description: '' })
       setSelectedGroupIds([])
+      setSearchInput('')
       setSearchTerm('')
       setStatusFilter('')
       setError('')
@@ -95,6 +105,7 @@ export const WorkflowList: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       setDeleteConfirm(null)
       setDeleteForms(false)
+      setSearchInput('')
       setSearchTerm('')
       setStatusFilter('')
     },
@@ -201,8 +212,8 @@ export const WorkflowList: React.FC = () => {
               type="text"
               className="form-input"
               placeholder="Filter by name or description..."
-              value={searchTerm}
-              onChange={(e) => setSearchTerm(e.target.value)}
+              value={searchInput}
+              onChange={(e) => setSearchInput(e.target.value)}
             />
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -247,10 +258,10 @@ export const WorkflowList: React.FC = () => {
               <option value="desc">Descending</option>
             </select>
           </div>
-          {(searchTerm || statusFilter) && (
+          {(searchInput || statusFilter) && (
             <button
               className="btn btn-sm btn-secondary"
-              onClick={() => { setSearchTerm(''); setStatusFilter('') }}
+              onClick={() => { setSearchInput(''); setSearchTerm(''); setStatusFilter('') }}
               style={{ marginBottom: 0 }}
             >
               Clear
