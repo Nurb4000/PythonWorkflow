@@ -163,9 +163,13 @@ export const Marketplace: React.FC = () => {
       return marketplaceApi.installItem(selectedItem.id, params)
     },
     onSuccess: (data) => {
-      setInstallResult(data.data)
+      const result = data.data
+      setInstallResult(result)
       queryClient.invalidateQueries({ queryKey: ['marketplace-items'] })
       queryClient.invalidateQueries({ queryKey: ['my-nodes'] })
+      if (result.item_type === 'workflow' && result.import_result?.workflowsCreatedIds?.[0]) {
+        navigate(`/workflows/${result.import_result.workflowsCreatedIds[0]}/design`)
+      }
     },
     onError: (err: any) => {
       setError(err.response?.data?.detail || 'Install failed')

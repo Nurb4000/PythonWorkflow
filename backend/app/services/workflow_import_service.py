@@ -157,8 +157,6 @@ class WorkflowImportService:
             result.workflows_skipped.append(wf_name)
             return result
 
-        env = target_env if target_env in ("test", "production") else wf_data.get("environment", "test")
-
         if existing_wf and on_conflict == "overwrite":
             # Update existing workflow
             new_wf = existing_wf
@@ -267,22 +265,31 @@ class WorkflowImportService:
                         val = route["target_step_id"]
                         if isinstance(val, str) and val in step_ref_to_id:
                             route["target_step_id"] = step_ref_to_id[val]
+                        elif val == "-1":
+                            route["target_step_id"] = -1  # END_TARGET sentinel
+            # Normalize END_TARGET sentinels from string to int
+            if "next_step_ids" in defn and isinstance(defn["next_step_ids"], list):
+                defn["next_step_ids"] = [-1 if v == "-1" else v for v in defn["next_step_ids"]]
+            for field in ("next_step_id", "default_target_step_id", "data_source_step_id"):
+                if field in defn and defn[field] == "-1":
+                    defn[field] = -1
             saved_step.definition = defn
 
         # 6. Remap config start_step_ids using step_ref_to_id
-        if new_wf.config and new_wf.config.get("start_step_ids"):
-            original_refs = data["workflow"].get("config", {}).get("start_step_ids", [])
+        original_refs = data["workflow"].get("config", {}).get("start_step_ids", [])
+        if original_refs:
             remapped_ids = []
             for ref in original_refs:
                 if ref in step_ref_to_id:
                     remapped_ids.append(step_ref_to_id[ref])
                 elif isinstance(ref, str) and ref.startswith("step-"):
-                    # Try to find by symbolic name
-                    sym_id = int(ref.split("-")[1])
                     for sr, ri in step_ref_to_id.items():
                         if sr == ref:
                             remapped_ids.append(ri)
                             break
+            # Ensure config dict exists and has remapped start_step_ids
+            if not new_wf.config:
+                new_wf.config = {}
             new_wf.config["start_step_ids"] = remapped_ids
 
         # 7. Create schedules

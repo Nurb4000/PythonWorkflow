@@ -552,8 +552,10 @@ export const WorkflowDesigner: React.FC = () => {
     })
 
     // Build edges from step definitions — connections are drawn ONLY from node settings
+    const toNum = (v: any) => (typeof v === 'string' ? Number(v) : v)
     const addEdgeFor = (stepId: number, sourceHandle: string, target: string | number, label: string, color: string) => {
-      const targetId = target === END_TARGET ? 'end' : `step-${target}`
+      const numTarget = toNum(target)
+      const targetId = numTarget === END_TARGET ? 'end' : `step-${numTarget}`
       newEdges.push({
         id: `e-${stepId}-${sourceHandle}`,
         source: `step-${stepId}`,
@@ -570,18 +572,21 @@ export const WorkflowDesigner: React.FC = () => {
       if (step.step_type === 'condition') {
         const routes = def.routes || []
         routes.forEach((route: any, i: number) => {
-          if (route.target_step_id && (route.target_step_id === END_TARGET || stepMap.has(route.target_step_id))) {
-            addEdgeFor(step.id, `route-${i}`, route.target_step_id, route.expression || `Route ${i + 1}`, '#27ae60')
+          const numTarget = toNum(route.target_step_id)
+          if (numTarget && (numTarget === END_TARGET || stepMap.has(numTarget))) {
+            addEdgeFor(step.id, `route-${i}`, numTarget, route.expression || `Route ${i + 1}`, '#27ae60')
           }
         })
-        if (def.default_target_step_id && (def.default_target_step_id === END_TARGET || stepMap.has(def.default_target_step_id))) {
-          addEdgeFor(step.id, 'default', def.default_target_step_id, 'Else', '#e74c3c')
+        const numDefault = toNum(def.default_target_step_id)
+        if (numDefault && (numDefault === END_TARGET || stepMap.has(numDefault))) {
+          addEdgeFor(step.id, 'default', numDefault, 'Else', '#e74c3c')
         }
       } else {
         const targets = def.next_step_ids || (def.next_step_id ? [def.next_step_id] : [])
         targets.forEach((targetId: number, i: number) => {
-          if (targetId && (targetId === END_TARGET || stepMap.has(targetId))) {
-            addEdgeFor(step.id, `out-${i}`, targetId, targetId === END_TARGET ? 'End' : '', '#1565c0')
+          const numTarget = toNum(targetId)
+          if (numTarget && (numTarget === END_TARGET || stepMap.has(numTarget))) {
+            addEdgeFor(step.id, `out-${i}`, numTarget, numTarget === END_TARGET ? 'End' : '', '#1565c0')
           }
         })
       }
@@ -589,6 +594,7 @@ export const WorkflowDesigner: React.FC = () => {
 
     // Start node → explicitly configured outputs only (no auto-derived connections)
     const startIds: number[] = (configDraft?.start_step_ids || [])
+      .map(toNum)
       .filter((sid: number) => stepMap.has(sid))
     startIds.forEach((sid, i) => {
       newEdges.push({
