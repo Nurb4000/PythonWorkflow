@@ -18,7 +18,7 @@ interface FormField {
   text_align?: 'left' | 'center' | 'right'
   column?: number
   data_size?: 'short' | 'medium' | 'long'
-  display_size?: 'full' | 'half' | 'third'
+  display_size?: 'full' | 'half' | 'third' | 'quarter'
   validation?: {
     minLength?: number
     maxLength?: number
@@ -40,6 +40,7 @@ const DISPLAY_SIZES = [
   { value: 'full', label: 'Full Width' },
   { value: 'half', label: 'Half Width' },
   { value: 'third', label: 'Third Width' },
+  { value: 'quarter', label: 'Quarter Width' },
 ]
 
 interface FormSchema {
@@ -96,7 +97,7 @@ export const FormDesigner: React.FC = () => {
   const [aiSuggestLoading, setAiSuggestLoading] = useState(false)
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
-  const [formColumns, setFormColumns] = useState<1 | 2>(1)
+  const [formColumns, setFormColumns] = useState<1 | 2 | 3 | 4>(1)
   const queryClient = useQueryClient()
 
   const { data: formsData } = useQuery({
@@ -221,7 +222,7 @@ export const FormDesigner: React.FC = () => {
       }))
       setFields(loadedFields)
       setSchema(fullForm.schema || { type: 'object', properties: {}, required: [] })
-      setFormColumns((fullForm.schema?.columns ?? 1) as 1 | 2)
+      setFormColumns((fullForm.schema?.columns ?? 1) as 1 | 2 | 3 | 4)
     } catch (err: any) {
       setError('Failed to load form details: ' + (err.response?.data?.detail || err.message))
     }
@@ -624,6 +625,20 @@ export const FormDesigner: React.FC = () => {
                 title="Two columns"
               >
                 2 Col
+              </button>
+              <button
+                className={`btn btn-sm ${formColumns === 3 ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setFormColumns(3)}
+                title="Three columns"
+              >
+                3 Col
+              </button>
+              <button
+                className={`btn btn-sm ${formColumns === 4 ? 'btn-primary' : 'btn-secondary'}`}
+                onClick={() => setFormColumns(4)}
+                title="Four columns"
+              >
+                4 Col
               </button>
             </div>
           </div>

@@ -504,7 +504,7 @@ export const FieldManager: React.FC = () => {
             {formData.field_type === 'relationship' && (
               <div className="form-group" style={{ marginTop: '1rem' }}>
                 <label className="form-label">Relationship Configuration</label>
-                <div className="grid grid-3">
+                <div className="grid grid-4">
                   <div>
                     <small style={{ display: 'block', marginBottom: '0.25rem' }}>Target Table</small>
                     <select

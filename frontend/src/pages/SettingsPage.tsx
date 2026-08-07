@@ -652,7 +652,7 @@ export const SettingsPage: React.FC = () => {
             </div>
           </div>
 
-          <div className="grid grid-3">
+          <div className="grid grid-4">
             <div className="form-group">
               <label className="form-label">Source Folder</label>
               <input

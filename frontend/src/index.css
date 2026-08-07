@@ -244,6 +244,10 @@ code {
   grid-template-columns: repeat(3, 1fr);
 }
 
+.grid-4 {
+  grid-template-columns: repeat(4, 1fr);
+}
+
 /* Stats cards */
 .stats-grid {
   display: grid;
@@ -330,7 +334,8 @@ code {
 /* Responsive */
 @media (max-width: 768px) {
   .grid-2,
-  .grid-3 {
+  .grid-3,
+  .grid-4 {
     grid-template-columns: 1fr;
   }
   
