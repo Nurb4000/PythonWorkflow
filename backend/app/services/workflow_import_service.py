@@ -166,13 +166,17 @@ class WorkflowImportService:
             new_wf.description = wf_data.get("description", "")
             new_wf.is_published = False
             new_wf.environment = "test"
-            new_wf.is_active = wf_data.get("isActive", True)
+            new_wf.is_active = False
             new_wf.version = (new_wf.version or 1) + 1
             new_wf.portal_icon = wf_data.get("portal", {}).get("icon", "")
             new_wf.portal_order = wf_data.get("portal", {}).get("order", 0)
             new_wf.portal_visible = wf_data.get("portal", {}).get("visible", True)
             new_wf.config = wf_data.get("config", {})
             new_wf.created_by = user_id
+            # Clean existing steps and schedules before re-creating
+            from sqlalchemy import delete as sa_delete
+            await db.execute(sa_delete(WorkflowStep).where(WorkflowStep.workflow_id == new_wf.id))
+            await db.execute(sa_delete(Schedule).where(Schedule.workflow_id == new_wf.id))
         else:
             # Create new workflow (or copy if name exists)
             final_name = wf_name
@@ -189,7 +193,7 @@ class WorkflowImportService:
                 name=final_name,
                 description=wf_data.get("description", ""),
                 version=wf_data.get("version", 1),
-                is_active=wf_data.get("isActive", True),
+                is_active=False,
                 created_by=user_id,
                 is_published=False,
                 environment="test",
@@ -235,6 +239,35 @@ class WorkflowImportService:
             await db.flush()
             step_ref_to_id[step_data["refId"]] = new_step.id
             result.steps_count += 1
+
+        # 5b. Second pass: remap inter-step references (next_step_ids, routes, etc.)
+        for step_data in data.get("steps", []):
+            new_step_id = step_ref_to_id.get(step_data["refId"])
+            if new_step_id is None:
+                continue
+            stmt = select(WorkflowStep).where(WorkflowStep.id == new_step_id)
+            step_result = await db.execute(stmt)
+            saved_step = step_result.scalar_one()
+            defn = dict(saved_step.definition or {})
+            # Remap next_step_ids
+            if "next_step_ids" in defn and isinstance(defn["next_step_ids"], list):
+                defn["next_step_ids"] = [
+                    step_ref_to_id.get(ref, ref) for ref in defn["next_step_ids"]
+                ]
+            # Remap single step refs
+            for field in ("next_step_id", "data_source_step_id", "default_target_step_id"):
+                if field in defn and defn[field]:
+                    val = defn[field]
+                    if isinstance(val, str) and val in step_ref_to_id:
+                        defn[field] = step_ref_to_id[val]
+            # Remap routes[].target_step_id
+            if "routes" in defn and isinstance(defn["routes"], list):
+                for route in defn["routes"]:
+                    if "target_step_id" in route and route["target_step_id"]:
+                        val = route["target_step_id"]
+                        if isinstance(val, str) and val in step_ref_to_id:
+                            route["target_step_id"] = step_ref_to_id[val]
+            saved_step.definition = defn
 
         # 6. Remap config start_step_ids using step_ref_to_id
         if new_wf.config and new_wf.config.get("start_step_ids"):
