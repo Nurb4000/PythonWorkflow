@@ -22,6 +22,7 @@ class ImportResult:
 
     def __init__(self):
         self.workflows_created: List[str] = []
+        self.workflows_created_ids: List[int] = []
         self.workflows_skipped: List[str] = []
         self.forms_created: List[str] = []
         self.forms_matched: List[str] = []
@@ -35,6 +36,7 @@ class ImportResult:
     def to_dict(self) -> Dict[str, Any]:
         return {
             "workflowsCreated": self.workflows_created,
+            "workflowsCreatedIds": self.workflows_created_ids,
             "workflowsSkipped": self.workflows_skipped,
             "formsCreated": self.forms_created,
             "formsMatched": self.forms_matched,
@@ -276,6 +278,7 @@ class WorkflowImportService:
 
         await db.commit()
         result.workflows_created.append(new_wf.name)
+        result.workflows_created_ids.append(new_wf.id)
 
         return result
 

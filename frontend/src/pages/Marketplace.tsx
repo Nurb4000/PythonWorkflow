@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 import { marketplaceApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
@@ -64,6 +64,7 @@ export const Marketplace: React.FC = () => {
   const canDevelop = user?.role === 'admin' || user?.role === 'developer'
   const isAdmin = user?.role === 'admin'
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [activeTab, setActiveTab] = useState<ActiveTab>('workflows')
   const [searchTerm, setSearchTerm] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
@@ -997,7 +998,15 @@ export const Marketplace: React.FC = () => {
                     )}
 
                     <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                      {installResult.item_type === 'workflow' && (
+                      {installResult.item_type === 'workflow' && installResult.import_result?.workflowsCreatedIds?.[0] && (
+                        <button
+                          className="btn btn-primary"
+                          onClick={() => navigate(`/workflows/${installResult.import_result.workflowsCreatedIds[0]}/design`)}
+                        >
+                          Edit Workflow
+                        </button>
+                      )}
+                      {installResult.item_type === 'workflow' && !installResult.import_result?.workflowsCreatedIds?.[0] && (
                         <Link to="/workflows" className="btn btn-primary">
                           View Workflows
                         </Link>
