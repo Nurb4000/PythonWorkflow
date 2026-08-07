@@ -119,7 +119,7 @@ class WorkflowExportService:
         for form in forms:
             id_map["form"][form.id] = f"form-{form.id}"
         for group in groups:
-            id_map["group"][group.id] = f"group-{group.group_name or group.id}"
+            id_map["group"][group.id] = f"group-{group.name or group.id}"
         for uid, email in user_emails.items():
             id_map["user"][uid] = f"user-{uid}"
 
