@@ -29,10 +29,11 @@ export const WorkflowImportExport: React.FC = () => {
   const importMutation = useMutation({
     mutationFn: () => workflowExportApi.import(fileContent, filename, options),
     onSuccess: (data) => {
-      setImportResult(data)
+      const result = data.data
+      setImportResult(result)
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
-      if (data.workflowsCreatedIds && data.workflowsCreatedIds.length > 0) {
-        navigate(`/workflows/${data.workflowsCreatedIds[0]}/design`)
+      if (result.workflowsCreatedIds && result.workflowsCreatedIds.length > 0) {
+        navigate(`/workflows/${result.workflowsCreatedIds[0]}/design`)
       }
     },
     onError: (err: any) => {
