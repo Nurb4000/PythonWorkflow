@@ -61,6 +61,8 @@ type ActiveTab = 'workflows' | 'nodes' | 'my-nodes'
 
 export const Marketplace: React.FC = () => {
   const { user } = useAuth()
+  const canDevelop = user?.role === 'admin' || user?.role === 'developer'
+  const isAdmin = user?.role === 'admin'
   const queryClient = useQueryClient()
   const [activeTab, setActiveTab] = useState<ActiveTab>('workflows')
   const [searchTerm, setSearchTerm] = useState('')
@@ -180,6 +182,53 @@ export const Marketplace: React.FC = () => {
     },
   })
 
+  // Delete marketplace item mutation
+  const deleteItemMutation = useMutation({
+    mutationFn: (id: number) => marketplaceApi.deleteItem(id, false),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['marketplace-items'] })
+      handleCloseDetail()
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Delete failed')
+    },
+  })
+
+  // Archive marketplace item mutation (admin)
+  const archiveItemMutation = useMutation({
+    mutationFn: (id: number) => marketplaceApi.deleteItem(id, true),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['marketplace-items'] })
+      handleCloseDetail()
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Archive failed')
+    },
+  })
+
+  // Update marketplace item mutation
+  const [editMode, setEditMode] = useState(false)
+  const [editForm, setEditForm] = useState({ name: '', description: '', category: '', tags: '' })
+  const updateItemMutation = useMutation({
+    mutationFn: () => {
+      if (!itemDetail) throw new Error('No item')
+      return marketplaceApi.updateItem(itemDetail.id, {
+        name: editForm.name,
+        description: editForm.description,
+        category: editForm.category,
+        tags: editForm.tags.split(',').map((t: string) => t.trim()).filter(Boolean),
+      })
+    },
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['marketplace-items'] })
+      queryClient.invalidateQueries({ queryKey: ['marketplace-item', itemDetail?.id] })
+      setEditMode(false)
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Update failed')
+    },
+  })
+
   // Fetch audit when item detail loads
   useEffect(() => {
     if (itemDetail && !previewMutation.isPending) {
@@ -187,6 +236,13 @@ export const Marketplace: React.FC = () => {
       setInstallConfirmed(false)
       setInstallResult(null)
       setError('')
+      setEditMode(false)
+      setEditForm({
+        name: itemDetail.name || '',
+        description: itemDetail.description || '',
+        category: itemDetail.category || 'General',
+        tags: (itemDetail.tags || []).join(', '),
+      })
       previewMutation.mutate(itemDetail.id)
     }
   }, [itemDetail?.id])
@@ -230,70 +286,74 @@ export const Marketplace: React.FC = () => {
     return <span className="badge badge-secondary">{category}</span>
   }
 
-  // ── My Nodes tab ────────────────────────────────────────────────────
-  if (activeTab === 'my-nodes') {
-    return (
-      <div>
-        <div className="card-header">
-          <h2>My Nodes Library</h2>
-        </div>
-
-        {myNodesLoading && <div className="loading">Loading your nodes...</div>}
-
-        {!myNodesLoading && (!myNodesData || myNodesData.length === 0) && (
-          <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
-            <p style={{ color: '#7f8c8d', fontSize: '1.1rem' }}>No saved nodes yet.</p>
-            <p style={{ color: '#95a5a6' }}>Install node templates from the marketplace to save them here, or save nodes from the designer.</p>
-          </div>
-        )}
-
-        {!myNodesLoading && myNodesData && myNodesData.length > 0 && (
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {myNodesData.map((node: SavedNode) => (
-              <div key={node.id} className="card" style={{ padding: '1.25rem' }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                  <h4 style={{ margin: 0 }}>{node.title}</h4>
-                  <span className="badge badge-info">{node.step_type}</span>
-                </div>
-                {node.description && (
-                  <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>{node.description}</p>
-                )}
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
-                  {node.max_retries > 0 && (
-                    <span className="badge badge-secondary">Retries: {node.max_retries}</span>
-                  )}
-                  {node.is_enabled ? (
-                    <span className="badge badge-success">Enabled</span>
-                  ) : (
-                    <span className="badge badge-warning">Disabled</span>
-                  )}
-                  {node.source_marketplace_item_id && (
-                    <span className="badge badge-secondary" title="From marketplace">Marketplace import</span>
-                  )}
-                </div>
-                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <small style={{ color: '#95a5a6' }}>
-                    {new Date(node.created_at).toLocaleDateString()}
-                  </small>
-                  <button
-                    className="btn btn-sm btn-danger"
-                    onClick={() => {
-                      if (window.confirm(`Delete "${node.title}" from your library?`)) {
-                        deleteNodeMutation.mutate(node.id)
-                      }
-                    }}
-                    disabled={deleteNodeMutation.isPending}
-                  >
-                    Delete
-                  </button>
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+  // ── My Nodes tab content ────────────────────────────────────────────
+  const renderMyNodes = () => (
+    <div>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
+        <h2 style={{ margin: 0 }}>My Nodes Library</h2>
+        <button
+          className="btn btn-secondary"
+          onClick={() => { setActiveTab('workflows'); setOffset(0); setSelectedItem(null) }}
+        >
+          ← Back to Marketplace
+        </button>
       </div>
-    )
-  }
+
+      {myNodesLoading && <div className="loading">Loading your nodes...</div>}
+
+      {!myNodesLoading && (!myNodesData || myNodesData.length === 0) && (
+        <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
+          <p style={{ color: '#7f8c8d', fontSize: '1.1rem' }}>No saved nodes yet.</p>
+          <p style={{ color: '#95a5a6' }}>Install node templates from the marketplace to save them here, or save nodes from the designer.</p>
+        </div>
+      )}
+
+      {!myNodesLoading && myNodesData && myNodesData.length > 0 && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+          {myNodesData.map((node: SavedNode) => (
+            <div key={node.id} className="card" style={{ padding: '1.25rem' }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                <h4 style={{ margin: 0 }}>{node.title}</h4>
+                <span className="badge badge-info">{node.step_type}</span>
+              </div>
+              {node.description && (
+                <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0' }}>{node.description}</p>
+              )}
+              <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+                {node.max_retries > 0 && (
+                  <span className="badge badge-secondary">Retries: {node.max_retries}</span>
+                )}
+                {node.is_enabled ? (
+                  <span className="badge badge-success">Enabled</span>
+                ) : (
+                  <span className="badge badge-warning">Disabled</span>
+                )}
+                {node.source_marketplace_item_id && (
+                  <span className="badge badge-secondary" title="From marketplace">Marketplace import</span>
+                )}
+              </div>
+              <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                <small style={{ color: '#95a5a6' }}>
+                  {new Date(node.created_at).toLocaleDateString()}
+                </small>
+                <button
+                  className="btn btn-sm btn-danger"
+                  onClick={() => {
+                    if (window.confirm(`Delete "${node.title}" from your library?`)) {
+                      deleteNodeMutation.mutate(node.id)
+                    }
+                  }}
+                  disabled={deleteNodeMutation.isPending}
+                >
+                  Delete
+                </button>
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
 
   // ── Main browse view ────────────────────────────────────────────────
   return (
@@ -423,95 +483,101 @@ export const Marketplace: React.FC = () => {
         )}
       </div>
 
-      {/* Items grid */}
-      {itemsLoading && <div className="loading">Loading marketplace items...</div>}
-
-      {!itemsLoading && (!itemsData || itemsData.items.length === 0) && (
-        <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
-          <p style={{ color: '#7f8c8d', fontSize: '1.1rem' }}>
-            No {activeTab === 'workflows' ? 'workflows' : 'nodes'} found.
-          </p>
-          {(searchTerm || selectedCategory) && (
-            <p style={{ color: '#95a5a6' }}>Try adjusting your search or filters.</p>
-          )}
-        </div>
-      )}
-
-      {!itemsLoading && itemsData && itemsData.items.length > 0 && (
+{/* Items grid or My Nodes */}
+      {activeTab === 'my-nodes' ? (
+        {renderMyNodes()}
+      ) : (
         <>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
-            {itemsData.items.map((item: MarketplaceItem) => (
-              <div
-                key={item.id}
-                className="card"
-                style={{ padding: '1.25rem', cursor: 'pointer', transition: 'box-shadow 0.2s', border: '1px solid #eee' }}
-                onClick={() => handleSelectItem(item)}
-                onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)' }}
-                onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
-              >
-                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
-                  {renderItemTypeBadge(item.item_type)}
-                  <span style={{ fontSize: '0.8rem', color: '#95a5a6' }}>v{item.version}</span>
-                </div>
-                <h4 style={{ margin: '0.5rem 0' }}>{item.name}</h4>
-                {item.description && (
-                  <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0', lineHeight: 1.4 }}>
-                    {item.description.length > 120 ? item.description.substring(0, 120) + '...' : item.description}
-                  </p>
-                )}
-                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
-                  {renderCategoryBadge(item.category)}
-                  {item.node_type && (
-                    <span className="badge badge-info">{item.node_type}</span>
-                  )}
-                </div>
-                {item.tags && item.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-                    {item.tags.slice(0, 3).map((tag: string) => (
-                      <span key={tag} style={{ fontSize: '0.75rem', color: '#3498db', background: '#ebf5fb', padding: '0.15rem 0.5rem', borderRadius: '8px' }}>
-                        {tag}
-                      </span>
-                    ))}
-                    {item.tags.length > 3 && (
-                      <span style={{ fontSize: '0.75rem', color: '#95a5a6' }}>+{item.tags.length - 3}</span>
-                    )}
-                  </div>
-                )}
-                <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
-                  <small style={{ color: '#95a5a6' }}>
-                    {item.author_name || 'Unknown'} &middot; {new Date(item.updated_at).toLocaleDateString()}
-                  </small>
-                  <small style={{ color: '#3498db' }}>
-                    {item.downloads_count} downloads
-                  </small>
-                </div>
-              </div>
-            ))}
-          </div>
+          {itemsLoading && <div className="loading">Loading marketplace items...</div>}
 
-          {/* Pagination */}
-          {totalPages > 1 && (
-            <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
-              {offset > 0 && (
-                <button className="btn btn-sm btn-secondary" onClick={() => handlePageChange(offset - limit)}>
-                  Previous
-                </button>
-              )}
-              {Array.from({ length: totalPages }, (_, i) => i).map(page => (
-                <button
-                  key={page}
-                  className={`btn btn-sm ${page * limit === offset ? 'btn-primary' : 'btn-secondary'}`}
-                  onClick={() => handlePageChange(page * limit)}
-                >
-                  {page + 1}
-                </button>
-              ))}
-              {offset + limit < (itemsData.total || 0) && (
-                <button className="btn btn-sm btn-secondary" onClick={() => handlePageChange(offset + limit)}>
-                  Next
-                </button>
+          {!itemsLoading && (!itemsData || itemsData.items.length === 0) && (
+            <div className="card" style={{ padding: '2rem', textAlign: 'center' }}>
+              <p style={{ color: '#7f8c8d', fontSize: '1.1rem' }}>
+                No {activeTab === 'workflows' ? 'workflows' : 'nodes'} found.
+              </p>
+              {(searchTerm || selectedCategory) && (
+                <p style={{ color: '#95a5a6' }}>Try adjusting your search or filters.</p>
               )}
             </div>
+          )}
+
+          {!itemsLoading && itemsData && itemsData.items.length > 0 && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(320px, 1fr))', gap: '1rem' }}>
+                {itemsData.items.map((item: MarketplaceItem) => (
+                  <div
+                    key={item.id}
+                    className="card"
+                    style={{ padding: '1.25rem', cursor: 'pointer', transition: 'box-shadow 0.2s', border: '1px solid #eee' }}
+                    onClick={() => handleSelectItem(item)}
+                    onMouseEnter={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = '0 4px 12px rgba(0,0,0,0.1)' }}
+                    onMouseLeave={(e) => { (e.currentTarget as HTMLElement).style.boxShadow = 'none' }}
+                  >
+                    <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '0.5rem' }}>
+                      {renderItemTypeBadge(item.item_type)}
+                      <span style={{ fontSize: '0.8rem', color: '#95a5a6' }}>v{item.version}</span>
+                    </div>
+                    <h4 style={{ margin: '0.5rem 0' }}>{item.name}</h4>
+                    {item.description && (
+                      <p style={{ color: '#666', fontSize: '0.9rem', margin: '0.5rem 0', lineHeight: 1.4 }}>
+                        {item.description.length > 120 ? item.description.substring(0, 120) + '...' : item.description}
+                      </p>
+                    )}
+                    <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap', marginTop: '0.75rem' }}>
+                      {renderCategoryBadge(item.category)}
+                      {item.node_type && (
+                        <span className="badge badge-info">{item.node_type}</span>
+                      )}
+                    </div>
+                    {item.tags && item.tags.length > 0 && (
+                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
+                        {item.tags.slice(0, 3).map((tag: string) => (
+                          <span key={tag} style={{ fontSize: '0.75rem', color: '#3498db', background: '#ebf5fb', padding: '0.15rem 0.5rem', borderRadius: '8px' }}>
+                            {tag}
+                          </span>
+                        ))}
+                        {item.tags.length > 3 && (
+                          <span style={{ fontSize: '0.75rem', color: '#95a5a6' }}>+{item.tags.length - 3}</span>
+                        )}
+                      </div>
+                    )}
+                    <div style={{ marginTop: '1rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+                      <small style={{ color: '#95a5a6' }}>
+                        {item.author_name || 'Unknown'} &middot; {new Date(item.updated_at).toLocaleDateString()}
+                      </small>
+                      <small style={{ color: '#3498db' }}>
+                        {item.downloads_count} downloads
+                      </small>
+                    </div>
+                  </div>
+                ))}
+              </div>
+
+              {/* Pagination */}
+              {totalPages > 1 && (
+                <div style={{ display: 'flex', justifyContent: 'center', gap: '0.5rem', marginTop: '1.5rem' }}>
+                  {offset > 0 && (
+                    <button className="btn btn-sm btn-secondary" onClick={() => handlePageChange(offset - limit)}>
+                      Previous
+                    </button>
+                  )}
+                  {Array.from({ length: totalPages }, (_, i) => i).map(page => (
+                    <button
+                      key={page}
+                      className={`btn btn-sm ${page * limit === offset ? 'btn-primary' : 'btn-secondary'}`}
+                      onClick={() => handlePageChange(page * limit)}
+                    >
+                      {page + 1}
+                    </button>
+                  ))}
+                  {offset + limit < (itemsData.total || 0) && (
+                    <button className="btn btn-sm btn-secondary" onClick={() => handlePageChange(offset + limit)}>
+                      Next
+                    </button>
+                  )}
+                </div>
+              )}
+            </>
           )}
         </>
       )}
@@ -541,12 +607,55 @@ export const Marketplace: React.FC = () => {
                 </div>
                 <h3 style={{ margin: 0 }}>{itemDetail?.name || selectedItem.name}</h3>
               </div>
-              <button
-                onClick={handleCloseDetail}
-                style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#999', lineHeight: 1 }}
-              >
-                &times;
-              </button>
+              <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                {canDevelop && itemDetail && (
+                  <>
+                    {!editMode ? (
+                      <button
+                        className="btn btn-sm btn-secondary"
+                        onClick={() => setEditMode(true)}
+                        title="Edit metadata"
+                      >
+                        ✎ Edit
+                      </button>
+                    ) : null}
+                    {isAdmin && itemDetail && (
+                      <button
+                        className="btn btn-sm btn-warning"
+                        onClick={() => {
+                          if (window.confirm(`Archive "${itemDetail.name}"? It will be hidden from the marketplace but not permanently deleted.`)) {
+                            archiveItemMutation.mutate(itemDetail.id)
+                          }
+                        }}
+                        disabled={archiveItemMutation.isPending}
+                        title="Archive item (admin)"
+                      >
+                        Archive
+                      </button>
+                    )}
+                    {(itemDetail.author_id === user?.id || isAdmin) && itemDetail && (
+                      <button
+                        className="btn btn-sm btn-danger"
+                        onClick={() => {
+                          if (window.confirm(`Permanently delete "${itemDetail.name}"? This cannot be undone.`)) {
+                            deleteItemMutation.mutate(itemDetail.id)
+                          }
+                        }}
+                        disabled={deleteItemMutation.isPending}
+                        title="Delete item"
+                      >
+                        Delete
+                      </button>
+                    )}
+                  </>
+                )}
+                <button
+                  onClick={handleCloseDetail}
+                  style={{ background: 'none', border: 'none', fontSize: '1.5rem', cursor: 'pointer', color: '#999', lineHeight: 1 }}
+                >
+                  &times;
+                </button>
+              </div>
             </div>
 
             {itemDetail && (
@@ -567,6 +676,69 @@ export const Marketplace: React.FC = () => {
                         {tag}
                       </span>
                     ))}
+                  </div>
+                )}
+
+                {/* Edit metadata form */}
+                {editMode && canDevelop && (
+                  <div style={{ background: '#f0f3f5', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
+                    <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Edit Metadata</h4>
+                    <div className="form-group">
+                      <label className="form-label">Name</label>
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={editForm.name}
+                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
+                      />
+                    </div>
+                    <div className="form-group">
+                      <label className="form-label">Description</label>
+                      <textarea
+                        className="form-textarea"
+                        value={editForm.description}
+                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                        rows={2}
+                      />
+                    </div>
+                    <div className="grid grid-2">
+                      <div className="form-group">
+                        <label className="form-label">Category</label>
+                        <select
+                          className="form-select"
+                          value={editForm.category}
+                          onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                        >
+                          {(categoriesData?.allCategories || []).map((cat: string) => (
+                            <option key={cat} value={cat}>{cat}</option>
+                          ))}
+                        </select>
+                      </div>
+                      <div className="form-group">
+                        <label className="form-label">Tags (comma-separated)</label>
+                        <input
+                          type="text"
+                          className="form-input"
+                          value={editForm.tags}
+                          onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                        />
+                      </div>
+                    </div>
+                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
+                      <button
+                        className="btn btn-primary"
+                        onClick={() => updateItemMutation.mutate()}
+                        disabled={updateItemMutation.isPending || !editForm.name.trim()}
+                      >
+                        {updateItemMutation.isPending ? 'Saving...' : 'Save Changes'}
+                      </button>
+                      <button
+                        className="btn btn-secondary"
+                        onClick={() => setEditMode(false)}
+                      >
+                        Cancel
+                      </button>
+                    </div>
                   </div>
                 )}
 
