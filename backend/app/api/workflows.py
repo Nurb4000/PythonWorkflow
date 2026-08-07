@@ -345,7 +345,21 @@ async def delete_workflow(
         if row:
             form_ids.add(row)
 
-    # Delete the workflow (cascade handles steps, runs, tasks, etc.)
+    # Delete associated schedules first (no cascade from Workflow)
+    from sqlalchemy import delete as sa_delete
+    from app.models.schemas import Schedule
+    await db.execute(sa_delete(Schedule).where(Schedule.workflow_id == workflow_id))
+
+    # Delete tasks associated with this workflow's runs (no cascade to tasks)
+    await db.execute(
+        sa_delete(Task).where(
+            Task.workflow_run_id.in_(
+                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
+            )
+        )
+    )
+
+    # Delete the workflow (cascade handles steps, runs, etc.)
     await db.delete(workflow)
     await db.commit()
 

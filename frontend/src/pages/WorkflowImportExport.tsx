@@ -1,7 +1,7 @@
 import React, { useState } from 'react'
 import { useMutation, useQueryClient } from '@tanstack/react-query'
 import { workflowExportApi } from '../services/api'
-import { Link } from 'react-router-dom'
+import { Link, useNavigate } from 'react-router-dom'
 
 interface ImportOptions {
   environment: string
@@ -13,6 +13,7 @@ interface ImportOptions {
 
 export const WorkflowImportExport: React.FC = () => {
   const queryClient = useQueryClient()
+  const navigate = useNavigate()
   const [fileContent, setFileContent] = useState('')
   const [filename, setFilename] = useState('')
   const [isDragging, setIsDragging] = useState(false)
@@ -30,6 +31,9 @@ export const WorkflowImportExport: React.FC = () => {
     onSuccess: (data) => {
       setImportResult(data)
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
+      if (data.workflowsCreatedIds && data.workflowsCreatedIds.length > 0) {
+        navigate(`/workflows/${data.workflowsCreatedIds[0]}/design`)
+      }
     },
     onError: (err: any) => {
       setImportResult({ errors: [err.response?.data?.detail || 'Import failed'], warnings: [] })

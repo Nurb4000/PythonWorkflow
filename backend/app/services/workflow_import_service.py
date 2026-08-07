@@ -127,7 +127,7 @@ class WorkflowImportService:
                     is_active=True,
                     created_by=user_id,
                     environment=form_data.get("environment", "test"),
-                    is_published=form_data.get("isPublished", False),
+                    is_published=False,
                 )
                 db.add(new_form)
                 await db.flush()
@@ -164,8 +164,8 @@ class WorkflowImportService:
             new_wf = existing_wf
             new_wf.name = wf_name
             new_wf.description = wf_data.get("description", "")
-            new_wf.is_published = wf_data.get("isPublished", False)
-            new_wf.environment = env
+            new_wf.is_published = False
+            new_wf.environment = "test"
             new_wf.is_active = wf_data.get("isActive", True)
             new_wf.version = (new_wf.version or 1) + 1
             new_wf.portal_icon = wf_data.get("portal", {}).get("icon", "")
@@ -191,8 +191,8 @@ class WorkflowImportService:
                 version=wf_data.get("version", 1),
                 is_active=wf_data.get("isActive", True),
                 created_by=user_id,
-                is_published=wf_data.get("isPublished", False),
-                environment=env,
+                is_published=False,
+                environment="test",
                 config=wf_data.get("config", {}),
                 portal_icon=wf_data.get("portal", {}).get("icon", ""),
                 portal_order=wf_data.get("portal", {}).get("order", 0),
