@@ -142,6 +142,38 @@ const RoleDefault: React.FC = () => {
 const Navbar: React.FC = () => {
   const { branding } = useBranding()
   const { user, logout } = useAuth()
+  const [showPwdModal, setShowPwdModal] = useState(false)
+  const [pwdForm, setPwdForm] = useState({ old_password: '', new_password: '', confirm_password: '' })
+  const [pwdMsg, setPwdMsg] = useState('')
+  const [pwdLoading, setPwdLoading] = useState(false)
+
+  const handlePasswordChange = async (e: React.FormEvent) => {
+    e.preventDefault()
+    setPwdMsg('')
+    if (pwdForm.new_password !== pwdForm.confirm_password) {
+      setPwdMsg('New passwords do not match')
+      return
+    }
+    setPwdLoading(true)
+    try {
+      const token = localStorage.getItem('token')
+      const res = await fetch('/api/auth/me/password', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ old_password: pwdForm.old_password, new_password: pwdForm.new_password })
+      })
+      const data = await res.json()
+      if (!res.ok) throw new Error(data.detail || 'Failed to change password')
+      setPwdMsg('Password changed successfully')
+      setPwdForm({ old_password: '', new_password: '', confirm_password: '' })
+      setTimeout(() => setShowPwdModal(false), 1500)
+    } catch (err: any) {
+      setPwdMsg(err.message || 'Failed to change password')
+    } finally {
+      setPwdLoading(false)
+    }
+  }
+
   return (
     <nav className="navbar">
       <div className="nav-brand">
@@ -159,12 +191,72 @@ const Navbar: React.FC = () => {
             <span style={{ marginLeft: '1rem', opacity: 0.8 }}>
               {user.full_name || user.username} ({user.role})
             </span>
-            <button onClick={logout} className="btn btn-sm btn-secondary" style={{ marginLeft: '1rem' }}>
+            <button onClick={() => setShowPwdModal(true)} className="btn btn-sm btn-secondary" style={{ marginLeft: '1rem' }}>
+              Change Password
+            </button>
+            <button onClick={logout} className="btn btn-sm btn-secondary" style={{ marginLeft: '0.5rem' }}>
               Logout
             </button>
           </>
         )}
       </div>
+
+      {showPwdModal && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          background: 'rgba(0,0,0,0.5)', display: 'flex',
+          alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }} onClick={() => setShowPwdModal(false)}>
+          <div className="card" style={{ maxWidth: '400px', width: '90%' }} onClick={e => e.stopPropagation()}>
+            <h3 className="card-title">Change Password</h3>
+            {pwdMsg && (
+              <div style={{ marginBottom: '1rem', padding: '0.5rem', borderRadius: '4px', backgroundColor: pwdMsg.includes('successfully') ? '#d4edda' : '#f8d7da', color: pwdMsg.includes('successfully') ? '#155724' : '#721c24' }}>
+                {pwdMsg}
+              </div>
+            )}
+            <form onSubmit={handlePasswordChange}>
+              <div className="form-group">
+                <label className="form-label">Current Password</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={pwdForm.old_password}
+                  onChange={e => setPwdForm({ ...pwdForm, old_password: e.target.value })}
+                  required
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">New Password</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={pwdForm.new_password}
+                  onChange={e => setPwdForm({ ...pwdForm, new_password: e.target.value })}
+                  required
+                  minLength={4}
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Confirm New Password</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={pwdForm.confirm_password}
+                  onChange={e => setPwdForm({ ...pwdForm, confirm_password: e.target.value })}
+                  required
+                  minLength={4}
+                />
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                <button type="submit" className="btn btn-primary" disabled={pwdLoading}>
+                  {pwdLoading ? 'Changing...' : 'Change Password'}
+                </button>
+                <button type="button" className="btn btn-secondary" onClick={() => setShowPwdModal(false)}>Cancel</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
     </nav>
   )
 }

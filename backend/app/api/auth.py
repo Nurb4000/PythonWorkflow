@@ -107,6 +107,34 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     }
 
 
+@router.put("/auth/me/password")
+async def change_password(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Change the current user's password"""
+    old_password = body.get("old_password", "")
+    new_password = body.get("new_password", "")
+
+    if not old_password or not new_password:
+        raise HTTPException(status_code=400, detail="Both old_password and new_password are required")
+
+    if len(new_password) < 4:
+        raise HTTPException(status_code=400, detail="New password must be at least 4 characters")
+
+    from passlib.context import CryptContext
+    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+
+    if not pwd_context.verify(old_password, current_user.password_hash):
+        raise HTTPException(status_code=400, detail="Current password is incorrect")
+
+    current_user.password_hash = pwd_context.hash(new_password)
+    await db.commit()
+
+    return {"message": "Password changed successfully"}
+
+
 @router.post("/auth/register")
 async def register(
     request: Request,
