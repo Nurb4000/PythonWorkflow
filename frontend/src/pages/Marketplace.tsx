@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { marketplaceApi } from '../services/api'
@@ -484,9 +484,7 @@ export const Marketplace: React.FC = () => {
       </div>
 
 {/* Items grid or My Nodes */}
-      {activeTab === 'my-nodes' ? (
-        {renderMyNodes()}
-      ) : (
+      {activeTab === 'my-nodes' ? renderMyNodes() : (
         <>
           {itemsLoading && <div className="loading">Loading marketplace items...</div>}
 

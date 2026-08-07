@@ -7,6 +7,7 @@ import re
 from typing import Any, Dict, List, Optional, Tuple
 
 from sqlalchemy import select, func, or_
+from sqlalchemy.orm import selectinload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.marketplace import MarketplaceItem, SavedNodeTemplate
@@ -134,7 +135,9 @@ class MarketplaceService:
         return item
 
     async def get_item(self, db: AsyncSession, item_id: int) -> Optional[MarketplaceItem]:
-        stmt = select(MarketplaceItem).where(MarketplaceItem.id == item_id)
+        stmt = select(MarketplaceItem).where(MarketplaceItem.id == item_id).options(
+            selectinload(MarketplaceItem.author)
+        )
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
 
