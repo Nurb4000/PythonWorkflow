@@ -192,6 +192,7 @@ class WorkflowExportService:
         config = workflow.config or {}
         if config.get("start_step_ids"):
             remapped_starts = [id_map["step"].get(sid, str(sid)) for sid in config["start_step_ids"]]
+            logger.info(f"Export XML start_step_ids: {config['start_step_ids']} -> {remapped_starts}")
             ET.SubElement(config_el, "StartStepIds").text = ",".join(str(s) for s in remapped_starts)
 
         # Entry form
@@ -297,7 +298,7 @@ class WorkflowExportService:
                     "order": workflow.portal_order or 0,
                     "visible": workflow.portal_visible,
                 },
-                "config": workflow.config or {},
+                "config": dict(workflow.config) if workflow.config else {},
             },
             "steps": [],
             "schedules": [],
@@ -305,9 +306,10 @@ class WorkflowExportService:
 
         # Remap config start_step_ids
         if workflow.config and workflow.config.get("start_step_ids"):
-            data["workflow"]["config"]["start_step_ids"] = [
-                id_map["step"].get(sid, sid) for sid in workflow.config["start_step_ids"]
-            ]
+            original_ids = workflow.config["start_step_ids"]
+            remapped_ids = [id_map["step"].get(sid, sid) for sid in original_ids]
+            data["workflow"]["config"]["start_step_ids"] = remapped_ids
+            logger.info(f"Export start_step_ids: {original_ids} -> {remapped_ids}")
 
         if workflow.entry_form_id and include_forms:
             data["workflow"]["entryFormRefId"] = id_map["form"].get(workflow.entry_form_id, workflow.entry_form_id)

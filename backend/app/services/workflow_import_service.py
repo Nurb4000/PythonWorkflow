@@ -288,6 +288,9 @@ class WorkflowImportService:
                         if sr == ref:
                             remapped_ids.append(ri)
                             break
+                else:
+                    # Integer ref from JSON export — try to match by step position or skip
+                    logger.warning(f"Import start_step_ids: unmatched ref={ref} (type={type(ref).__name__})")
             # Ensure config dict exists and has remapped start_step_ids
             if not new_wf.config:
                 new_wf.config = {}
@@ -421,9 +424,11 @@ class WorkflowImportService:
         if config_el is not None:
             start_ids_el = config_el.find("StartStepIds")
             if start_ids_el is not None and start_ids_el.text:
+                parsed_ids = [s.strip() for s in start_ids_el.text.split(",") if s.strip()]
                 data["workflow"]["config"] = {
-                    "start_step_ids": [s.strip() for s in start_ids_el.text.split(",") if s.strip()]
+                    "start_step_ids": parsed_ids
                 }
+                logger.info(f"Import XML parsed start_step_ids: {parsed_ids}")
 
         # Entry form
         entry_el = wf_el.find("EntryForm")
@@ -522,6 +527,9 @@ class WorkflowImportService:
             return {}
 
         wf = data["workflow"]
+        wf_config = wf.get("config", {})
+        if wf_config and wf_config.get("start_step_ids"):
+            logger.info(f"Import JSON parsed start_step_ids: {wf_config['start_step_ids']}")
         normalized: Dict[str, Any] = {
             "workflow": {
                 "name": wf.get("name", ""),
@@ -530,7 +538,7 @@ class WorkflowImportService:
                 "isActive": wf.get("isActive", True),
                 "version": wf.get("version", 1),
                 "portal": wf.get("portal", {}),
-                "config": wf.get("config", {}),
+                "config": wf_config,
                 "entryFormRefId": wf.get("entryFormRefId"),
             },
             "steps": data.get("steps", []),

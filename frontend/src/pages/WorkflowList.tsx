@@ -46,6 +46,7 @@ export const WorkflowList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<string>('')
   const [sortBy, setSortBy] = useState<string>('name')
   const [sortOrder, setSortOrder] = useState<string>('asc')
+  const searchInputRef = useRef<HTMLInputElement>(null)
   const searchTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null)
 
   // Debounce search input -> search term
@@ -55,7 +56,7 @@ export const WorkflowList: React.FC = () => {
     return () => { if (searchTimerRef.current) clearTimeout(searchTimerRef.current) }
   }, [searchInput])
 
-  const { data: workflows, isLoading } = useQuery({
+  const { data: workflows, isLoading, isFetching } = useQuery({
     queryKey: ['workflows', searchTerm, statusFilter, sortBy, sortOrder],
     queryFn: async () => {
       const params: Record<string, string> = {}
@@ -65,8 +66,20 @@ export const WorkflowList: React.FC = () => {
       if (sortOrder) params.sort_order = sortOrder
       const response = await workflowApi.list(params)
       return response.data
-    }
+    },
+    placeholderData: (previousData) => previousData,
+    refetchOnWindowFocus: false,
   })
+
+  // Restore focus to search input after query refetch
+  useEffect(() => {
+    if (!isFetching && searchInputRef.current && document.activeElement !== searchInputRef.current) {
+      // Only restore if we were recently typing (searchInput is non-empty and matches active content)
+      if (searchInput && document.activeElement?.tagName !== 'INPUT') {
+        searchInputRef.current.focus()
+      }
+    }
+  }, [isFetching, workflows])
 
   const { data: groups } = useQuery({
     queryKey: ['groups'],
@@ -209,6 +222,7 @@ export const WorkflowList: React.FC = () => {
           <div className="form-group" style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}>
             <label className="form-label">Search</label>
             <input
+              ref={searchInputRef}
               type="text"
               className="form-input"
               placeholder="Filter by name or description..."
