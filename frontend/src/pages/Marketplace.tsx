@@ -127,7 +127,7 @@ export const Marketplace: React.FC = () => {
   })
 
   // Fetch item detail
-  const { data: itemDetail } = useQuery({
+  const { data: itemDetail, isLoading: itemDetailLoading, error: itemDetailError } = useQuery({
     queryKey: ['marketplace-item', selectedItem?.id],
     queryFn: async () => {
       const res = await marketplaceApi.getItem(selectedItem!.id)
@@ -231,20 +231,19 @@ export const Marketplace: React.FC = () => {
 
   // Fetch audit when item detail loads
   useEffect(() => {
-    if (itemDetail && !previewMutation.isPending) {
-      setAuditResult(null)
-      setInstallConfirmed(false)
-      setInstallResult(null)
-      setError('')
-      setEditMode(false)
-      setEditForm({
-        name: itemDetail.name || '',
-        description: itemDetail.description || '',
-        category: itemDetail.category || 'General',
-        tags: (itemDetail.tags || []).join(', '),
-      })
-      previewMutation.mutate(itemDetail.id)
-    }
+    if (!itemDetail) return
+    setAuditResult(null)
+    setInstallConfirmed(false)
+    setInstallResult(null)
+    setError('')
+    setEditMode(false)
+    setEditForm({
+      name: itemDetail.name || '',
+      description: itemDetail.description || '',
+      category: itemDetail.category || 'General',
+      tags: (itemDetail.tags || []).join(', '),
+    })
+    previewMutation.mutate(itemDetail.id)
   }, [itemDetail?.id])
 
   const handleSelectItem = (item: MarketplaceItem) => {
@@ -655,6 +654,16 @@ export const Marketplace: React.FC = () => {
                 </button>
               </div>
             </div>
+
+            {itemDetailLoading && (
+              <div style={{ textAlign: 'center', padding: '2rem' }}>Loading details...</div>
+            )}
+
+            {itemDetailError && (
+              <div style={{ textAlign: 'center', padding: '1rem', color: '#e74c3c' }}>
+                Failed to load item details. Please try again.
+              </div>
+            )}
 
             {itemDetail && (
               <>
