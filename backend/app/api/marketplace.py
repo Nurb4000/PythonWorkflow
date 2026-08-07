@@ -3,6 +3,7 @@ Marketplace API — browse, publish, and manage workflow packages and node templ
 """
 import json
 from fastapi import APIRouter, Depends, HTTPException, Query
+from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import List, Optional
 
@@ -12,6 +13,18 @@ from app.api.auth import get_current_user, get_current_developer, get_current_ad
 from app.services.marketplace_service import marketplace_service
 
 router = APIRouter()
+
+
+class MarketplaceItemCreate(BaseModel):
+    item_type: str = Field(..., description="'workflow' or 'node'")
+    name: str = Field(..., min_length=1)
+    description: str = ""
+    category: str = "General"
+    tags: List[str] = []
+    content: str = ""
+    content_format: str = "json"
+    node_type: Optional[str] = None
+    status: str = "published"
 
 
 def _item_to_dict(item) -> dict:
@@ -122,31 +135,23 @@ async def get_package(
 
 @router.post("/items")
 async def create_item(
-    item_type: str,
-    name: str,
-    description: str = "",
-    category: str = "General",
-    tags: Optional[List[str]] = None,
-    content: str = "",
-    content_format: str = "json",
-    node_type: Optional[str] = None,
-    status: str = "published",
+    body: MarketplaceItemCreate,
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
     try:
         item = await marketplace_service.create_item(
             db,
-            item_type=item_type,
-            name=name,
-            description=description,
-            category=category,
-            tags=tags or [],
+            item_type=body.item_type,
+            name=body.name,
+            description=body.description,
+            category=body.category,
+            tags=body.tags or [],
             author_id=developer.id,
-            content=content,
-            content_format=content_format,
-            node_type=node_type,
-            status=status,
+            content=body.content,
+            content_format=body.content_format,
+            node_type=body.node_type,
+            status=body.status,
         )
         return _item_to_dict(item)
     except ValueError as e:
@@ -349,3 +354,21 @@ async def get_categories(
     db: AsyncSession = Depends(get_db),
 ):
     return await marketplace_service.get_categories_and_tags(db)
+
+
+@router.put("/categories")
+async def update_categories(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Update marketplace categories (admin only). Expects { categories: [...] }."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    cats = body.get("categories", [])
+    if not isinstance(cats, list) or not all(isinstance(c, str) and c for c in cats):
+        raise HTTPException(status_code=400, detail="categories must be a non-empty list of strings")
+
+    await marketplace_service.set_categories(db, cats)
+    return {"message": "Categories updated", "categories": cats}

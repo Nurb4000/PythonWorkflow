@@ -58,11 +58,14 @@ export const SettingsPage: React.FC = () => {
     banner_message: '',
     banner_color: '#f39c12',
   })
+  const [marketplaceCategories, setMarketplaceCategories] = useState<string[]>([])
+  const [newCategory, setNewCategory] = useState('')
 
   useEffect(() => {
     loadSettings()
     loadImapSettings()
     loadBannerSettings()
+    loadMarketplaceCategories()
   }, [])
 
   useEffect(() => {
@@ -129,6 +132,54 @@ export const SettingsPage: React.FC = () => {
       setMessageType('success')
     } catch (error: any) {
       setMessage(error.response?.data?.detail || 'Failed to update banner settings')
+      setMessageType('error')
+    }
+  }
+
+  const loadMarketplaceCategories = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(`${API_URL}/marketplace/categories`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setMarketplaceCategories(response.data.allCategories || [])
+    } catch (error) {
+      console.error('Failed to load marketplace categories:', error)
+    }
+  }
+
+  const handleAddCategory = async (e: React.FormEvent) => {
+    e.preventDefault()
+    const trimmed = newCategory.trim()
+    if (!trimmed || marketplaceCategories.includes(trimmed)) return
+    const updated = [...marketplaceCategories, trimmed]
+    try {
+      const token = localStorage.getItem('token')
+      await axios.put(`${API_URL}/marketplace/categories`, { categories: updated }, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setMarketplaceCategories(updated)
+      setNewCategory('')
+      setMessage('Category added successfully')
+      setMessageType('success')
+    } catch (error: any) {
+      setMessage(error.response?.data?.detail || 'Failed to add category')
+      setMessageType('error')
+    }
+  }
+
+  const handleRemoveCategory = async (cat: string) => {
+    const updated = marketplaceCategories.filter(c => c !== cat)
+    try {
+      const token = localStorage.getItem('token')
+      await axios.put(`${API_URL}/marketplace/categories`, { categories: updated }, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setMarketplaceCategories(updated)
+      setMessage('Category removed successfully')
+      setMessageType('success')
+    } catch (error: any) {
+      setMessage(error.response?.data?.detail || 'Failed to remove category')
       setMessageType('error')
     }
   }
@@ -495,6 +546,42 @@ export const SettingsPage: React.FC = () => {
           </div>
 
           <button type="submit" className="btn btn-success">Save Banner Settings</button>
+        </form>
+      </div>
+
+      <div className="card" style={{ marginTop: '1rem' }}>
+        <h3 className="card-title">Marketplace Categories</h3>
+        <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          Manage the categories available when publishing workflows or nodes to the marketplace.
+        </p>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: '0.5rem', marginBottom: '1rem' }}>
+          {marketplaceCategories.map(cat => (
+            <span key={cat} style={{
+              display: 'inline-flex', alignItems: 'center', gap: '0.4rem',
+              backgroundColor: '#ecf0f1', padding: '0.35rem 0.75rem', borderRadius: '20px',
+              fontSize: '0.85rem'
+            }}>
+              {cat}
+              <button
+                onClick={() => handleRemoveCategory(cat)}
+                style={{ background: 'none', border: 'none', cursor: 'pointer', color: '#e74c3c', fontSize: '1rem', lineHeight: 1, padding: 0 }}
+                title="Remove category"
+              >
+                ×
+              </button>
+            </span>
+          ))}
+        </div>
+        <form onSubmit={handleAddCategory} style={{ display: 'flex', gap: '0.5rem' }}>
+          <input
+            type="text"
+            className="form-input"
+            value={newCategory}
+            onChange={(e) => setNewCategory(e.target.value)}
+            placeholder="New category name"
+            style={{ flex: 1 }}
+          />
+          <button type="submit" className="btn btn-primary" disabled={!newCategory.trim()}>Add</button>
         </form>
       </div>
 

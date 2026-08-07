@@ -188,7 +188,10 @@ export const WorkflowDetail: React.FC = () => {
       const exportRes = await fetch(`/api/workflows/${workflowId}/export?fmt=json`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      if (!exportRes.ok) throw new Error('Export failed')
+      if (!exportRes.ok) {
+        const errBody = await exportRes.text()
+        throw new Error(`Export failed (${exportRes.status}): ${errBody}`)
+      }
       const content = await exportRes.text()
 
       // Then publish to marketplace

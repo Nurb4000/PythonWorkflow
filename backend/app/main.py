@@ -1,9 +1,14 @@
 """
 Python Workflow System - Main Application
 """
+import asyncio
+import json
 import logging
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory
 from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace
@@ -12,6 +17,41 @@ from app.services.scheduler import scheduler_service
 # Configure logging
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
+
+DEMO_METADATA = {
+    "hello-world.xml": {
+        "name": "Hello World",
+        "description": "A simple linear workflow that makes an API call and sends an email notification. Great for testing import/export.",
+        "category": "General",
+        "tags": ["demo", "api", "email", "getting-started"],
+    },
+    "expense-approval.xml": {
+        "name": "Expense Approval",
+        "description": "A complete expense approval process with form submission, manager approval, branching logic, and database updates.",
+        "category": "Approvals & Tasks",
+        "tags": ["demo", "approval", "form", "branching"],
+    },
+    "data-report.xml": {
+        "name": "Data Report",
+        "description": "SQL query to report node to scheduled email delivery. Demonstrates data pipeline patterns.",
+        "category": "Reporting",
+        "tags": ["demo", "report", "sql", "scheduled"],
+    },
+    "form-collection.xml": {
+        "name": "Form Collection",
+        "description": "Form submission followed by human review and conditional database update. Shows form-to-task workflows.",
+        "category": "Onboarding",
+        "tags": ["demo", "form", "human-task", "conditional"],
+    },
+    "scheduled-cleanup.xml": {
+        "name": "Scheduled Cleanup",
+        "description": "Weekly cron trigger that queries old data, generates a report, and emails a summary. Maintenance workflow pattern.",
+        "category": "Schedules & Maintenance",
+        "tags": ["demo", "scheduled", "cleanup", "maintenance"],
+    },
+}
+
+_demo_seeded = False
 
 app = FastAPI(
     title="Python Workflow System",
@@ -83,6 +123,82 @@ async def create_default_admin():
         logger.error(f"Failed to create default admin: {str(e)}")
 
 
+async def seed_marketplace_demos():
+    """Seed demo marketplace items on startup (idempotent)"""
+    global _demo_seeded
+    if _demo_seeded:
+        return
+    try:
+        from app.models.auth import User
+        from app.models.marketplace import MarketplaceItem
+
+        demo_dir = Path(__file__).resolve().parent / "data" / "demo-workflows"
+        if not demo_dir.is_dir():
+            logger.warning(f"Demo directory not found: {demo_dir}")
+            _demo_seeded = True
+            return
+
+        async with async_session_factory() as db:
+            result = await db.execute(select(User).where(User.username == "demo"))
+            demo_user = result.scalar_one_or_none()
+            if not demo_user:
+                demo_user = User(
+                    username="demo",
+                    email="demo@pythonworkflow.local",
+                    full_name="Demo System",
+                    role="admin",
+                    is_active=True,
+                    password_hash="",
+                )
+                db.add(demo_user)
+                await db.flush()
+                logger.info(f"Created demo user (id={demo_user.id})")
+
+            seeded = 0
+            skipped = 0
+            for filename, metadata in DEMO_METADATA.items():
+                fpath = demo_dir / filename
+                if not fpath.is_file():
+                    logger.warning(f"Demo file not found: {fpath}")
+                    continue
+
+                result = await db.execute(
+                    select(MarketplaceItem).where(
+                        MarketplaceItem.name == metadata["name"],
+                        MarketplaceItem.author_id == demo_user.id,
+                    )
+                )
+                if result.scalar_one_or_none():
+                    skipped += 1
+                    continue
+
+                content = fpath.read_text(encoding="utf-8")
+                item = MarketplaceItem(
+                    item_type="workflow",
+                    name=metadata["name"],
+                    description=metadata["description"],
+                    category=metadata["category"],
+                    author_id=demo_user.id,
+                    content=content,
+                    content_format="xml",
+                    status="published",
+                    is_active=True,
+                    downloads_count=0,
+                )
+                item.tags_list = metadata["tags"]
+                db.add(item)
+                await db.flush()
+                seeded += 1
+                logger.info(f"Seeded demo: {item.name} (id={item.id})")
+
+            await db.commit()
+            logger.info(f"Marketplace demo seeding done. Seeded={seeded}, Skipped={skipped}")
+
+        _demo_seeded = True
+    except Exception as e:
+        logger.error(f"Marketplace demo seeding failed: {e}", exc_info=True)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and scheduler on startup"""
@@ -93,6 +209,7 @@ async def startup_event():
     async with async_session_factory() as db:
         await sql_view_service.sync_views(db)
     await scheduler_service.start_email_monitor()
+    asyncio.create_task(seed_marketplace_demos())
     logger.info("Application started")
 
 

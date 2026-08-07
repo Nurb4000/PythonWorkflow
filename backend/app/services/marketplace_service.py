@@ -16,7 +16,7 @@ from app.services.workflow_import_service import workflow_import_service, Import
 
 logger = logging.getLogger(__name__)
 
-CATEGORIES = [
+DEFAULT_CATEGORIES = [
     "Data / ETL",
     "Notifications",
     "Approvals & Tasks",
@@ -26,6 +26,42 @@ CATEGORIES = [
     "Onboarding",
     "General",
 ]
+
+# In-memory cache, loaded from DB on first access
+_categories_cache: Optional[List[str]] = None
+
+
+async def get_categories(db: AsyncSession) -> List[str]:
+    """Load marketplace categories from system_settings (falls back to defaults)."""
+    global _categories_cache
+    if _categories_cache is not None:
+        return _categories_cache
+
+    try:
+        from app.api.system_settings import get_setting
+        stored = await get_setting(db, "marketplace_categories", "")
+        if stored:
+            _categories_cache = json.loads(stored)
+        else:
+            _categories_cache = list(DEFAULT_CATEGORIES)
+    except Exception:
+        _categories_cache = list(DEFAULT_CATEGORIES)
+
+    return _categories_cache
+
+
+async def set_categories(db: AsyncSession, categories: List[str]) -> None:
+    """Persist marketplace categories to system_settings and refresh cache."""
+    global _categories_cache
+    from app.api.system_settings import set_setting as _set_setting
+    await _set_setting(db, "marketplace_categories", json.dumps(categories))
+    _categories_cache = list(categories)
+
+
+def reset_categories_cache() -> None:
+    """Force reload categories from DB on next get_categories call."""
+    global _categories_cache
+    _categories_cache = None
 
 SECRET_PATTERNS = [
     r"sk-[A-Za-z0-9]{20,}",
@@ -64,8 +100,8 @@ class MarketplaceService:
         if content_format not in ("xml", "json"):
             raise ValueError("content_format must be 'xml' or 'json'")
 
-        if category and category not in CATEGORIES:
-            raise ValueError(f"category must be one of {CATEGORIES}")
+        if category and category not in await get_categories(db):
+            raise ValueError(f"category must be one of {await get_categories(db)}")
 
         if item_type == "node":
             self._validate_node_content(content)
@@ -387,7 +423,7 @@ class MarketplaceService:
         return {
             "categories": categories,
             "tagCloud": tag_cloud,
-            "allCategories": CATEGORIES,
+            "allCategories": await get_categories(db),
         }
 
     # ── Install ───────────────────────────────────────────────────────

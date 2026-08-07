@@ -1,6 +1,7 @@
 """
 Workflow import/export API endpoints.
 """
+import logging
 import os
 from fastapi import APIRouter, Depends, HTTPException, Query
 from fastapi.responses import Response
@@ -13,6 +14,7 @@ from app.services.workflow_export_service import workflow_export_service
 from app.services.workflow_import_service import workflow_import_service
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 @router.get("/{workflow_id}/export")
@@ -49,6 +51,7 @@ async def export_workflow(
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
     except Exception as e:
+        logger.error(f"Export failed for workflow {workflow_id}: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Export failed: {e}")
 
 

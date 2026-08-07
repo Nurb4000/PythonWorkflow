@@ -196,7 +196,7 @@ export const marketplaceApi = {
   // Items
   listItems: (params?: any) => api.get('/marketplace/items', { params }),
   getItem: (id: number) => api.get(`/marketplace/items/${id}`),
-  createItem: (data: any) => api.post('/marketplace/items', null, { params: data }),
+  createItem: (data: any) => api.post('/marketplace/items', data),
   updateItem: (id: number, data: any) => api.put(`/marketplace/items/${id}`, null, { params: data }),
   deleteItem: (id: number, archive?: boolean) => api.delete(`/marketplace/items/${id}`, { params: { archive } }),
   // Install (dispatches to workflow or node based on item type in DB)
