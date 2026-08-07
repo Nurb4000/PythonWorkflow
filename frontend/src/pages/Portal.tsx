@@ -53,6 +53,7 @@ export const Portal: React.FC = () => {
   const [entryFormWorkflow, setEntryFormWorkflow] = useState<PortalWorkflow | null>(null)
   const [entryFormData, setEntryFormData] = useState<Record<string, any>>({})
   const [banner, setBanner] = useState<PortalBanner>({ enabled: false, title: '', message: '', color: '#f39c12' })
+  const [searchTerm, setSearchTerm] = useState('')
 
   const load = useCallback(async () => {
     try {
@@ -128,6 +129,15 @@ export const Portal: React.FC = () => {
     workflows.forEach(w => map.set(w.id, w.name))
     return map
   }, [workflows])
+
+  const filteredWorkflows = useMemo(() => {
+    if (!searchTerm.trim()) return workflows
+    const q = searchTerm.toLowerCase()
+    return workflows.filter(wf =>
+      wf.name.toLowerCase().includes(q) ||
+      (wf.description || '').toLowerCase().includes(q)
+    )
+  }, [workflows, searchTerm])
 
   if (loading) {
     return <div className="loading">Loading portal...</div>
@@ -259,14 +269,30 @@ export const Portal: React.FC = () => {
           No workflows are currently available. Check back soon.
         </div>
       ) : (
-        <div style={{ 
-          display: 'grid', 
-          gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-          gap: '1rem',
-          marginBottom: '2rem',
-          maxWidth: '1400px'
-        }}>
-          {workflows.map(wf => (
+        <>
+          <div style={{ marginBottom: '1rem', maxWidth: '1400px' }}>
+            <input
+              className="form-input"
+              type="text"
+              placeholder="Search workflows by name or description..."
+              value={searchTerm}
+              onChange={e => setSearchTerm(e.target.value)}
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+          {filteredWorkflows.length === 0 && searchTerm.trim() ? (
+            <div className="card" style={{ textAlign: 'center', padding: '2rem', opacity: 0.7, marginBottom: '2rem' }}>
+              No workflows match "{searchTerm}"
+            </div>
+          ) : (
+            <div style={{ 
+              display: 'grid', 
+              gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
+              gap: '1rem',
+              marginBottom: '2rem',
+              maxWidth: '1400px'
+            }}>
+              {filteredWorkflows.map(wf => (
             <div
               key={wf.id}
               className="stat-card"
@@ -297,7 +323,9 @@ export const Portal: React.FC = () => {
               </div>
             </div>
           ))}
-        </div>
+            </div>
+          )}
+        </>
       )}
 
       <div className="card" style={{ marginTop: '2rem' }}>

@@ -42,15 +42,16 @@ async def get_available_workflows(
             )
         else:
             # Users with groups can see workflows accessible to any of their groups
-            stmt = (
-                select(Workflow)
-                .join(workflow_permissions, workflow_permissions.c.workflow_id == Workflow.id)
-                .where(
-                    base,
-                    or_(
-                        workflow_permissions.c.group_id.in_(user_group_ids),
-                        and_(Workflow.environment == "production")
-                    )
+            permitted_wf_ids = (
+                select(workflow_permissions.c.workflow_id)
+                .where(workflow_permissions.c.group_id.in_(user_group_ids))
+                .distinct()
+            )
+            stmt = select(Workflow).where(
+                base,
+                or_(
+                    Workflow.id.in_(permitted_wf_ids),
+                    Workflow.environment == "production"
                 )
             )
     
