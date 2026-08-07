@@ -351,6 +351,14 @@ export const WorkflowDetail: React.FC = () => {
                   {publishMutation.isPending ? 'Saving...' : (workflow.is_published ? 'Unpublish' : 'Publish')}
                 </button>
                 <button
+                  className={`btn ${workflow.is_active ? 'btn-warning' : 'btn-success'}`}
+                  onClick={() => isActiveMutation.mutate(!workflow.is_active)}
+                  disabled={isActiveMutation.isPending}
+                  title={workflow.is_active ? 'Deactivate workflow' : 'Activate workflow'}
+                >
+                  {isActiveMutation.isPending ? '...' : (workflow.is_active ? 'Deactivate' : 'Activate')}
+                </button>
+                <button
                   className="btn btn-secondary"
                   onClick={() => duplicateMutation.mutate()}
                   disabled={duplicateMutation.isPending}
@@ -396,20 +404,10 @@ export const WorkflowDetail: React.FC = () => {
           <div className="stat-label">Steps</div>
         </div>
         <div className="stat-card">
-          <div className="stat-value" style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <div className="stat-value">
             <span className={`badge ${workflow.is_active ? 'badge-success' : 'badge-danger'}`}>
               {workflow.is_active ? 'Active' : 'Inactive'}
             </span>
-            {canDevelop && (
-              <button
-                className={`btn btn-sm ${workflow.is_active ? 'btn-warning' : 'btn-success'}`}
-                onClick={() => isActiveMutation.mutate(!workflow.is_active)}
-                disabled={isActiveMutation.isPending}
-                title={workflow.is_active ? 'Deactivate workflow' : 'Activate workflow'}
-              >
-                {isActiveMutation.isPending ? '...' : (workflow.is_active ? 'Deactivate' : 'Activate')}
-              </button>
-            )}
           </div>
           <div className="stat-label">Status</div>
         </div>
