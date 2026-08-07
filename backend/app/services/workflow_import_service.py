@@ -277,6 +277,7 @@ class WorkflowImportService:
 
         # 6. Remap config start_step_ids using step_ref_to_id
         original_refs = data["workflow"].get("config", {}).get("start_step_ids", [])
+        logger.info(f"Import start_step_ids: original_refs={original_refs}, step_ref_to_id={step_ref_to_id}")
         if original_refs:
             remapped_ids = []
             for ref in original_refs:
@@ -291,6 +292,7 @@ class WorkflowImportService:
             if not new_wf.config:
                 new_wf.config = {}
             new_wf.config["start_step_ids"] = remapped_ids
+            logger.info(f"Import start_step_ids: remapped={remapped_ids}")
 
         # 7. Create schedules
         for sched_data in data.get("schedules", []):
