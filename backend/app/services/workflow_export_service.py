@@ -309,9 +309,6 @@ class WorkflowExportService:
             original_ids = workflow.config["start_step_ids"]
             remapped_ids = [id_map["step"].get(sid, sid) for sid in original_ids]
             data["workflow"]["config"]["start_step_ids"] = remapped_ids
-            print(f"DEBUG Export start_step_ids: {original_ids} -> {remapped_ids}")
-        else:
-            print(f"DEBUG Export: no start_step_ids in config={workflow.config}")
 
         if workflow.entry_form_id and include_forms:
             data["workflow"]["entryFormRefId"] = id_map["form"].get(workflow.entry_form_id, workflow.entry_form_id)
