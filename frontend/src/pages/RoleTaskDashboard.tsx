@@ -52,7 +52,7 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
     queryKey: ['role-tasks', role],
     queryFn: async () => {
       const response = await taskApi.listTasks()
-      return (response.data as any).tasks || []
+      return ((response.data as any).tasks || []) as Task[]
     }
   })
 
