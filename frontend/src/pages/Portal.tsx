@@ -1,7 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
-import { portalApi } from '../services/api'
+import { portalApi, formsApi } from '../services/api'
 import { getStatusBadgeClass, formatDuration } from './WorkflowRunsAdmin'
 
 interface PortalWorkflow {
@@ -41,6 +41,7 @@ export const Portal: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null)
   const [entryFormWorkflow, setEntryFormWorkflow] = useState<PortalWorkflow | null>(null)
   const [entryFormData, setEntryFormData] = useState<Record<string, any>>({})
+  const [entryFormSchema, setEntryFormSchema] = useState<any>(null)
   const [banner, setBanner] = useState<PortalBanner>({ enabled: false, title: '', message: '', color: '#f39c12' })
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -78,6 +79,14 @@ export const Portal: React.FC = () => {
     if (wf.entry_form_id) {
       setEntryFormWorkflow(wf)
       setEntryFormData({})
+      setEntryFormSchema(null)
+      try {
+        const res = await formsApi.get(wf.entry_form_id)
+        setEntryFormSchema(res.data)
+      } catch {
+        // If form fetch fails, proceed without schema
+        setEntryFormSchema(null)
+      }
       return
     }
     
@@ -174,23 +183,64 @@ export const Portal: React.FC = () => {
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.5)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }} onClick={() => { setEntryFormWorkflow(null); setEntryFormData({}) }}>
-          <div className="card" style={{ maxWidth: '500px', width: '90%' }} onClick={e => e.stopPropagation()}>
+        }} onClick={() => { setEntryFormWorkflow(null); setEntryFormData({}); setEntryFormSchema(null) }}>
+          <div className="card" style={{ maxWidth: '500px', width: '90%', maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3>Entry Form: {entryFormWorkflow.name}</h3>
             <p>{entryFormWorkflow.description}</p>
-            <div className="form-group">
-              <label className="form-label">Sample Field (replace with actual form fields)</label>
-              <input
-                className="form-input"
-                type="text"
-                value={entryFormData.sample || ''}
-                onChange={e => setEntryFormData({ ...entryFormData, sample: e.target.value })}
-                placeholder="Enter data..."
-              />
-            </div>
+            {entryFormSchema?.schema_json?.properties ? (
+              Object.entries(entryFormSchema.schema_json.properties).map(([key, field]: [string, any]) => {
+                const type = field.type || 'string'
+                return (
+                  <div className="form-group" key={key}>
+                    <label className="form-label">
+                      {field.title || key} {field.required && <span style={{ color: '#e74c3c' }}>*</span>}
+                    </label>
+                    {type === 'textarea' ? (
+                      <textarea
+                        className="form-textarea"
+                        value={entryFormData[key] || ''}
+                        onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.value })}
+                        placeholder={field.description || ''}
+                        rows={3}
+                      />
+                    ) : type === 'select' && field.options ? (
+                      <select
+                        className="form-select"
+                        value={entryFormData[key] || ''}
+                        onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.value })}
+                      >
+                        <option value="">Select...</option>
+                        {field.options.map((opt: string) => (
+                          <option key={opt} value={opt}>{opt}</option>
+                        ))}
+                      </select>
+                    ) : type === 'boolean' ? (
+                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                        <input
+                          type="checkbox"
+                          checked={!!entryFormData[key]}
+                          onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.checked })}
+                        />
+                        {field.description || 'Checked'}
+                      </label>
+                    ) : (
+                      <input
+                        className="form-input"
+                        type={type === 'email' ? 'email' : type === 'number' || type === 'integer' ? 'number' : type === 'date' ? 'date' : type === 'date-time' ? 'datetime-local' : 'text'}
+                        value={entryFormData[key] || ''}
+                        onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.value })}
+                        placeholder={field.description || ''}
+                      />
+                    )}
+                  </div>
+                )
+              })
+            ) : (
+              <p style={{ color: '#7f8c8d' }}>Loading form fields...</p>
+            )}
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
               <button className="btn btn-primary" onClick={submitEntryForm}>Submit</button>
-              <button className="btn btn-secondary" onClick={() => { setEntryFormWorkflow(null); setEntryFormData({}) }}>Cancel</button>
+              <button className="btn btn-secondary" onClick={() => { setEntryFormWorkflow(null); setEntryFormData({}); setEntryFormSchema(null) }}>Cancel</button>
             </div>
           </div>
         </div>

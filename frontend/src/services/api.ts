@@ -154,6 +154,12 @@ export const dataFieldApi = {
   delete: (id: number) => api.delete(`/data-fields/${id}`),
 }
 
+// Forms APIs
+export const formsApi = {
+  list: (params?: any) => api.get('/forms', { params }),
+  get: (id: number) => api.get(`/forms/${id}`),
+}
+
 // Data Query APIs
 export const dataQueryApi = {
   listTables: () => api.get('/data-query/tables'),

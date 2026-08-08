@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { workflowApi, runApi, authApi, workflowExportApi, marketplaceApi } from '../services/api'
+import { workflowApi, runApi, authApi, workflowExportApi, marketplaceApi, formsApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
 interface Workflow {
@@ -15,6 +15,7 @@ interface Workflow {
   portal_icon: string
   portal_order: number
   portal_visible: boolean
+  entry_form_id: number | null
   steps: any[]
   allowed_groups: Array<{id: number, name: string}>
 }
@@ -78,6 +79,17 @@ export const WorkflowDetail: React.FC = () => {
     enabled: canDevelop
   })
 
+  const { data: forms } = useQuery({
+    queryKey: ['forms-list'],
+    queryFn: async () => {
+      const response = await formsApi.list()
+      return response.data as Array<{id: number, name: string, description: string}>
+    },
+    enabled: canDevelop
+  })
+
+  const [entryFormId, setEntryFormId] = useState<number | null>(null)
+
   useEffect(() => {
     if (workflow && !permsInitialized) {
       setSelectedGroupIds((workflow.allowed_groups || []).map((g: {id: number}) => g.id))
@@ -92,6 +104,7 @@ export const WorkflowDetail: React.FC = () => {
       })
       setEditName(workflow.name || '')
       setEditDescription(workflow.description || '')
+      setEntryFormId(workflow.entry_form_id ?? null)
     }
   }, [workflow, permsInitialized])
 
@@ -152,6 +165,14 @@ export const WorkflowDetail: React.FC = () => {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
+    }
+  })
+
+  const entryFormMutation = useMutation({
+    mutationFn: () =>
+      workflowApi.update(workflowId, { entry_form_id: entryFormId }),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
     }
   })
 
@@ -510,13 +531,37 @@ export const WorkflowDetail: React.FC = () => {
               style={{ maxWidth: '500px' }}
             />
           </div>
-          <button
-            className="btn btn-primary"
-            onClick={() => portalMutation.mutate()}
-            disabled={portalMutation.isPending}
-          >
-            {portalMutation.isPending ? 'Saving...' : 'Save Portal Settings'}
-          </button>
+          <div className="form-group">
+            <label className="form-label">Entry Form (shown before workflow starts)</label>
+            <select
+              className="form-select"
+              value={entryFormId || ''}
+              onChange={(e) => setEntryFormId(e.target.value ? Number(e.target.value) : null)}
+              style={{ maxWidth: '400px' }}
+            >
+              <option value="">None (start directly)</option>
+              {(forms || []).map(f => (
+                <option key={f.id} value={f.id}>{f.name}{f.description ? ` — ${f.description}` : ''}</option>
+              ))}
+            </select>
+            <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input.</small>
+          </div>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => portalMutation.mutate()}
+              disabled={portalMutation.isPending}
+            >
+              {portalMutation.isPending ? 'Saving...' : 'Save Portal Settings'}
+            </button>
+            <button
+              className="btn btn-secondary"
+              onClick={() => entryFormMutation.mutate()}
+              disabled={entryFormMutation.isPending}
+            >
+              {entryFormMutation.isPending ? 'Saving...' : 'Save Entry Form'}
+            </button>
+          </div>
         </div>
       )}
 
