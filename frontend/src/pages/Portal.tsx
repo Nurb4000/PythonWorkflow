@@ -26,17 +26,6 @@ interface PortalRun {
   created_at: string
 }
 
-interface PortalTask {
-  id: number
-  title: string
-  description: string
-  status: string
-  workflow_run_id: number | null
-  step_id: number | null
-  created_at: string
-  completed_at: string | null
-}
-
 interface PortalBanner {
   enabled: boolean
   title: string
@@ -47,7 +36,6 @@ interface PortalBanner {
 export const Portal: React.FC = () => {
   const [workflows, setWorkflows] = useState<PortalWorkflow[]>([])
   const [myRuns, setMyRuns] = useState<PortalRun[]>([])
-  const [myTasks, setMyTasks] = useState<PortalTask[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -58,15 +46,13 @@ export const Portal: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const [wfResponse, runsResponse, tasksResponse, bannerResponse] = await Promise.all([
+      const [wfResponse, runsResponse, bannerResponse] = await Promise.all([
         portalApi.listWorkflows(),
         portalApi.myRuns(),
-        portalApi.myTasks(),
         axios.get('/api/portal/banner')
       ])
       setWorkflows(wfResponse.data)
       setMyRuns(runsResponse.data)
-      setMyTasks(tasksResponse.data || [])
       if (bannerResponse.data.enabled) {
         setBanner(bannerResponse.data)
       }
@@ -179,61 +165,6 @@ export const Portal: React.FC = () => {
             {banner.title && <strong style={{ display: 'block', marginBottom: '0.25rem' }}>{banner.title}</strong>}
             <span style={{ fontSize: '0.9rem', opacity: 0.95 }}>{banner.message}</span>
           </div>
-        </div>
-      )}
-
-      {/* P3.3: Pending tasks section */}
-      {myTasks.length > 0 && (
-        <div className="card" style={{ marginBottom: '2rem' }}>
-          <div className="card-header">
-            <h3 className="card-title">📋 My Pending Tasks ({myTasks.length})</h3>
-          </div>
-          <table className="table">
-            <thead>
-              <tr>
-                <th>Task</th>
-                <th>Status</th>
-                <th>Created</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody>
-              {myTasks.slice(0, 10).map(task => (
-                <tr key={task.id}>
-                  <td>
-                    <div>
-                      <strong>{task.title}</strong>
-                      {task.description && <div style={{ fontSize: '0.85rem', opacity: 0.7 }}>{task.description}</div>}
-                    </div>
-                  </td>
-                  <td>
-                    <span className={`badge ${task.status === 'owned' ? 'badge-info' : 'badge-warning'}`}>
-                      {task.status}
-                    </span>
-                  </td>
-                  <td>{new Date(task.created_at).toLocaleDateString()}</td>
-                  <td>
-                    {task.status === 'open' && (
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => window.location.href = `/tasks/${task.id}`}
-                      >
-                        Take Task
-                      </button>
-                    )}
-                    {task.status === 'owned' && (
-                      <button
-                        className="btn btn-sm btn-success"
-                        onClick={() => window.location.href = `/tasks/${task.id}/complete`}
-                      >
-                        Complete
-                      </button>
-                    )}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
         </div>
       )}
 
