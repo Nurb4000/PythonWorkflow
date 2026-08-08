@@ -298,6 +298,74 @@ const FORM_SCHEMA = {
     await page.close();
   });
 
+  // ---------- Part C: portal entry form modal (regression: "Loading form fields..." hang) ----------
+  await api('PUT', '/workflows/' + wf.id, adminToken, {
+    environment: 'production',
+    is_published: true,
+    is_active: true,
+    portal_visible: true,
+    entry_form_id: form.id,
+  });
+
+  await step('C1: portal entry form modal renders fields instead of hanging', async () => {
+    const { page } = await newPage(browser);
+    await login(page, 'user', 'user');
+    await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
+    await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf.name);
+
+    await page.evaluate((name) => {
+      const cards = [...document.querySelectorAll('.stat-card')];
+      const card = cards.find((c) => c.textContent.includes(name));
+      const btn = card.querySelector('button');
+      btn.click();
+    }, wf.name);
+
+    await waitForText(page, 'Entry Form:');
+    await waitForText(page, 'Approved');
+    await waitForText(page, 'Notes');
+    const hung = await page.evaluate(() => document.body.innerText.includes('Loading form fields...'));
+    if (hung) throw new Error('modal still shows "Loading form fields..."');
+    await page.close();
+  });
+
+  await step('C2: submit portal entry form starts the workflow', async () => {
+    const { page } = await newPage(browser);
+    await login(page, 'user', 'user');
+    await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
+    await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf.name);
+
+    await page.evaluate((name) => {
+      const cards = [...document.querySelectorAll('.stat-card')];
+      const card = cards.find((c) => c.textContent.includes(name));
+      card.querySelector('button').click();
+    }, wf.name);
+    await waitForText(page, 'Approved');
+
+    await page.evaluate((uniq) => {
+      const labels = [...document.querySelectorAll('.form-label')];
+      const find = (t) => labels.find((x) => x.textContent.startsWith(t)).closest('.form-group');
+      const notes = find('Notes').querySelector('input');
+      const approved = find('Approved').querySelector('input[type=checkbox]');
+      const nSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nSet.call(notes, 'Portal notes ' + uniq);
+      notes.dispatchEvent(new Event('input', { bubbles: true }));
+      approved.click();
+    }, unique);
+
+    await page.evaluate(() => {
+      const overlay = [...document.querySelectorAll('div[style*="position: fixed"]')]
+        .find((el) => el.textContent.includes('Entry Form:'));
+      const btn = [...overlay.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Submit');
+      btn.click();
+    });
+
+    // Toast confirms the run started
+    await page.waitForFunction(() => document.body.innerText.includes('Started'), { timeout: 10000 });
+    const body = await page.evaluate(() => document.body.innerText);
+    if (!body.includes('Started')) throw new Error('no started toast');
+    await page.close();
+  });
+
   await browser.disconnect();
 
   console.log('\nRESULT: ' + passed.length + ' passed, ' + failed.length + ' failed');

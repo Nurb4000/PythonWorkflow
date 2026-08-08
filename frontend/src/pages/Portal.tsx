@@ -187,8 +187,8 @@ export const Portal: React.FC = () => {
           <div className="card" style={{ maxWidth: '500px', width: '90%', maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3>Entry Form: {entryFormWorkflow.name}</h3>
             <p>{entryFormWorkflow.description}</p>
-            {entryFormSchema?.schema_json?.properties ? (
-              Object.entries(entryFormSchema.schema_json.properties).map(([key, field]: [string, any]) => {
+            {entryFormSchema?.schema?.properties ? (
+              Object.entries(entryFormSchema.schema.properties).map(([key, field]: [string, any]) => {
                 const type = field.type || 'string'
                 return (
                   <div className="form-group" key={key}>
