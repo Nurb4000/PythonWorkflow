@@ -15,7 +15,7 @@ from app.api.auth import get_current_user, get_current_admin
 router = APIRouter()
 
 
-@router.get("/tasks", response_model=List[dict])
+@router.get("/tasks")
 async def list_tasks(
     status: Optional[str] = None,
     assigned_to: Optional[int] = None,

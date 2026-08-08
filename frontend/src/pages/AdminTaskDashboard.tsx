@@ -45,7 +45,6 @@ export const AdminTaskDashboard: React.FC = () => {
     queryKey: ['admin-tasks'],
     queryFn: async () => {
       const response = await taskApi.listTasks()
-      console.log('Admin tasks API response:', response.data)
       return ((response.data as any).tasks || []) as Task[]
     }
   })

@@ -48,7 +48,7 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
   const [tab, setTab] = useState<Tab>('all')
   const queryClient = useQueryClient()
 
-  const { data: tasks, isLoading } = useQuery({
+  const { data: tasks, isLoading, error: taskError } = useQuery({
     queryKey: ['role-tasks', role],
     queryFn: async () => {
       const response = await taskApi.listTasks()
@@ -162,6 +162,10 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
 
   if (isLoading) {
     return <div className="loading">Loading tasks...</div>
+  }
+
+  if (taskError) {
+    return <div className="error">Failed to load tasks: {(taskError as Error).message}</div>
   }
 
   return (
