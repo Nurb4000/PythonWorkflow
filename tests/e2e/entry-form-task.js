@@ -320,7 +320,7 @@ const FORM_SCHEMA = {
       btn.click();
     }, wf.name);
 
-    await waitForText(page, 'Entry Form:');
+    await waitForText(page, form.name);
     await waitForText(page, 'Approved');
     await waitForText(page, 'Notes');
     const hung = await page.evaluate(() => document.body.innerText.includes('Loading form fields...'));
@@ -354,7 +354,7 @@ const FORM_SCHEMA = {
 
     await page.evaluate(() => {
       const overlay = [...document.querySelectorAll('div[style*="position: fixed"]')]
-        .find((el) => el.textContent.includes('Entry Form:'));
+        .find((el) => el.textContent.includes('Start Workflow'));
       const btn = [...overlay.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Start Workflow');
       btn.click();
     });

@@ -170,8 +170,6 @@ export const Portal: React.FC = () => {
           alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }} onClick={() => setEntryFormWorkflow(null)}>
           <div className="card" style={{ maxWidth: '600px', width: '90%', maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h3>Entry Form: {entryFormWorkflow.name}</h3>
-            <p>{entryFormWorkflow.description}</p>
             {entryFormWorkflow.entry_form_id && (
               <FormRenderer
                 formId={entryFormWorkflow.entry_form_id}
