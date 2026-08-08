@@ -14,7 +14,7 @@ fi
 
 TESTS=("$@")
 if [ ${#TESTS[@]} -eq 0 ]; then
-  TESTS=(smoke.js designer-save.js)
+  TESTS=(smoke.js designer-save.js entry-form-task.js)
 fi
 
 status=0

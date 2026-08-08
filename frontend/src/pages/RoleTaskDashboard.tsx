@@ -111,6 +111,12 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
       csv: r => r.status
     },
     {
+      key: 'form',
+      label: 'Form',
+      render: r => r.form_id ? <span className="badge badge-info">Form</span> : '-',
+      csv: r => r.form_id ? 'Yes' : 'No'
+    },
+    {
       key: 'assigned_user',
       label: 'Assigned To',
       render: r => r.assigned_user?.full_name || r.assigned_user?.username || '-',
@@ -148,7 +154,7 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
           Take
         </button>
       )}
-      {task.status === 'owned' && (
+      {task.status === 'owned' && !task.form_id && (
         <button
           className="btn btn-sm btn-success"
           onClick={() => completeMutation.mutate(task.id)}

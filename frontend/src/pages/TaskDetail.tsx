@@ -1,8 +1,9 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
 import { taskApi } from '../services/api'
 import { useAuth } from '../components/Auth'
+import { FormRenderer } from '../components/FormRenderer'
 
 interface Task {
   id: number
@@ -48,7 +49,7 @@ export const TaskDetail: React.FC = () => {
   })
 
   const completeMutation = useMutation({
-    mutationFn: () => taskApi.completeTask(taskId, resultData),
+    mutationFn: (resultData: any) => taskApi.completeTask(taskId, resultData || {}),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['task', taskId] })
   })
 
@@ -62,6 +63,11 @@ export const TaskDetail: React.FC = () => {
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['task', taskId] })
   })
 
+  const formInitialData = useMemo(
+    () => ({ ...(task?.task_data || {}), ...(task?.result_data || {}) }),
+    [task?.task_data, task?.result_data]
+  )
+
   if (isLoading) {
     return <div className="loading">Loading task...</div>
   }
@@ -70,11 +76,17 @@ export const TaskDetail: React.FC = () => {
     return <div className="error">Task not found</div>
   }
 
+  const userGroupIds = user?.groups?.map((g: { id: number }) => g.id) || []
+
   const canTake = task.status === 'open' && 
-    (task.assigned_to_user_id === user?.id || user?.role === 'admin')
+    (task.assigned_to_user_id === user?.id || 
+     (task.assigned_group_id != null && userGroupIds.includes(task.assigned_group_id)) ||
+     user?.role === 'admin')
   
   const canComplete = task.status === 'owned' && 
     (task.assigned_to_user_id === user?.id || user?.role === 'admin')
+
+  const canEditForm = canComplete
   
   const canReject = (task.status === 'owned' || task.status === 'completed') && 
     (task.assigned_to_user_id === user?.id || user?.role === 'admin')
@@ -142,6 +154,27 @@ export const TaskDetail: React.FC = () => {
         )}
       </div>
 
+      {task.form_id && (
+        <div className="card">
+          <h3 className="card-title">Form</h3>
+          <p style={{ color: '#7f8c8d', marginBottom: '1rem' }}>
+            {canEditForm
+              ? 'Fill out the form below and submit to complete this task.'
+              : task.status === 'open'
+                ? 'Take this task to fill out the form.'
+                : 'Saved form data is shown below (read-only).'}
+          </p>
+          <FormRenderer
+            key={`${task.form_id}-${task.status}-${task.completed_at || task.updated_at || ''}`}
+            formId={task.form_id}
+            readOnly={!canEditForm}
+            initialData={formInitialData}
+            onSubmitData={canEditForm ? (data) => completeMutation.mutate(data) : undefined}
+            submitLabel="Complete Task & Save Data"
+          />
+        </div>
+      )}
+
       <div className="card">
         <h3 className="card-title">Actions</h3>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
@@ -155,7 +188,7 @@ export const TaskDetail: React.FC = () => {
             </button>
           )}
           
-          {canComplete && (
+          {canComplete && !task.form_id && (
             <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
               <input
                 type="text"
@@ -173,7 +206,7 @@ export const TaskDetail: React.FC = () => {
               />
               <button
                 className="btn btn-success"
-                onClick={() => completeMutation.mutate()}
+                onClick={() => completeMutation.mutate(resultData)}
                 disabled={completeMutation.isPending}
               >
                 Complete Task

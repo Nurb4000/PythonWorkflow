@@ -22,9 +22,19 @@ interface FormRendererProps {
   formId: number
   onSubmit?: (submissionId: number) => void
   readOnly?: boolean
+  initialData?: Record<string, any>
+  onSubmitData?: (data: Record<string, any>) => void
+  submitLabel?: string
 }
 
-export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, readOnly = false }) => {
+export const FormRenderer: React.FC<FormRendererProps> = ({
+  formId,
+  onSubmit,
+  readOnly = false,
+  initialData,
+  onSubmitData,
+  submitLabel = 'Submit'
+}) => {
   const [schema, setSchema] = useState<FormSchema | null>(null)
   const [formName, setFormName] = useState('')
   const [formData, setFormData] = useState<Record<string, any>>({})
@@ -32,6 +42,23 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
   const [submitting, setSubmitting] = useState(false)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState(false)
+  const appliedInitialRef = React.useRef<string | null>(null)
+
+  const buildInitialData = (props: Record<string, FormField>, prefill?: Record<string, any>) => {
+    const initialData: Record<string, any> = {}
+    Object.keys(props).forEach(key => {
+      const field = props[key]
+      const value = prefill && prefill[key] !== undefined ? prefill[key] : undefined
+      if (value !== undefined) {
+        initialData[key] = value
+      } else if (field.type === 'boolean') {
+        initialData[key] = false
+      } else {
+        initialData[key] = ''
+      }
+    })
+    return initialData
+  }
 
   React.useEffect(() => {
     loadForm()
@@ -45,19 +72,22 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
       })
       setSchema(response.data.schema)
       setFormName(response.data.name || '')
-      
-      // Initialize form data with defaults
-      const initialData: Record<string, any> = {}
-      Object.keys(response.data.schema.properties).forEach(key => {
-        initialData[key] = ''
-      })
-      setFormData(initialData)
+      setFormData(buildInitialData(response.data.schema.properties || {}, initialData))
+      appliedInitialRef.current = JSON.stringify(initialData || {})
       setLoading(false)
     } catch (err) {
       setError('Failed to load form')
       setLoading(false)
     }
   }
+
+  React.useEffect(() => {
+    if (!schema) return
+    const serialized = JSON.stringify(initialData || {})
+    if (serialized === appliedInitialRef.current) return
+    appliedInitialRef.current = serialized
+    setFormData(buildInitialData(schema.properties || {}, initialData))
+  }, [initialData])
 
   const handleInputChange = (fieldName: string, value: any) => {
     setFormData({ ...formData, [fieldName]: value })
@@ -106,19 +136,28 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
     setSubmitting(true)
 
     try {
-      const token = localStorage.getItem('token')
-      const response = await axios.post(
-        `${API_URL}/forms/${formId}/submit`,
-        formData,
-        { headers: { Authorization: `Bearer ${token}` } }
-      )
+      if (onSubmitData) {
+        // Custom submit handler (e.g. complete a task with the form data)
+        await onSubmitData(formData)
+        setSuccess(true)
+        if (onSubmit) {
+          onSubmit(0)
+        }
+      } else {
+        const token = localStorage.getItem('token')
+        const response = await axios.post(
+          `${API_URL}/forms/${formId}/submit`,
+          formData,
+          { headers: { Authorization: `Bearer ${token}` } }
+        )
 
-      setSuccess(true)
-      if (onSubmit) {
-        onSubmit(response.data.id)
+        setSuccess(true)
+        if (onSubmit) {
+          onSubmit(response.data.id)
+        }
       }
     } catch (err: any) {
-      setError(err.response?.data?.detail || 'Submission failed')
+      setError(err.response?.data?.detail || err.message || 'Submission failed')
     }
     setSubmitting(false)
   }
@@ -231,7 +270,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({ formId, onSubmit, re
 
         {!readOnly && (
           <button type="submit" className="btn btn-success" disabled={submitting}>
-            {submitting ? 'Submitting...' : 'Submit'}
+            {submitting ? 'Submitting...' : submitLabel}
           </button>
         )}
       </form>

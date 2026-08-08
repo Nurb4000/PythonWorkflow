@@ -13,13 +13,15 @@ An entry form prompts users with a form before a workflow starts. The submitted 
 2. **Assign to a workflow**
    - Go to the workflow's detail page (`/workflows/{id}`)
    - Scroll to **Portal Settings** section
-   - Select a form from the **Entry Form** dropdown
-   - Click **Save Entry Form**
+   - Select a form from the **Entry Form** dropdown (or "None (start directly)" to disable)
+   - Click **Save Portal Settings** (this saves the entry form together with the portal settings)
 
 3. **On the portal**, when a user clicks the workflow card:
    - The entry form modal appears with all defined fields
    - User fills out and submits the form
    - Workflow starts with the form data as `input_data`
+
+> Note: The entry form selection is saved by the **Save Portal Settings** button. There is no separate save button.
 
 ### Data Flow
 
@@ -37,7 +39,7 @@ Step 2 receives Step 1 output as {{ steps.<step_id>.output }}
 
 ### Clearing an Entry Form
 
-Select "None (start directly)" from the dropdown and save. The workflow will trigger immediately without prompting for data.
+Select "None (start directly)" from the dropdown and click **Save Portal Settings**. The workflow will trigger immediately without prompting for data.
 
 ---
 
@@ -49,30 +51,41 @@ A form task pauses workflow execution and creates a task assigned to a user or g
 
 1. **Create a form** in the Form Designer with the fields you need
 
-2. **Add a "form" step** in the Workflow Designer
-   - Select step type: **Form**
-   - Choose the form from the dropdown
-   - Assign to a user or group
+2. **Add a "Human Task" or "Approval" step** in the Workflow Designer
+   - Select step type: **Human Task** or **Approval**
+   - Choose the form from the **Form** dropdown
+   - Assign to a user or group (optional — unassigned tasks can be taken by anyone)
    - Connect outputs to downstream steps
 
+   (A plain **Form** step runs automatically and reads the latest form submission; it does not create an assigned task.)
+
 3. **When the workflow reaches this step:**
-   - A task is created and assigned
-   - The assignee sees it in their Tasks dashboard
-   - Opening the task displays the form
-   - Submitting the form completes the task and continues the workflow
+   - A task is created and assigned, and the workflow pauses
+   - The assignee sees it in their Tasks dashboard and opens it (`/tasks/{id}`)
+   - The task page renders the form, prefilled with any task data
+   - Filling in the form and clicking **Complete Task & Save Data** submits the data, completes the task, and continues the workflow
+
+### Working on a Form Task
+
+- **Open** status — anyone with permission can click **Take Task** to claim ownership. The form is shown read-only until taken.
+- **Owned** status — the owner can fill out the form and submit. The form data is saved as the task's result data.
+- **Completed / Closed** status — the form is shown read-only with the saved data (for review).
+- To **change** saved data, a reviewer can **Reject** the task (moving it back to open) and the assignee can re-take and re-submit.
 
 ### Data Flow
 
 ```
-Workflow runs → reaches Form step
+Workflow runs → reaches Human Task / Approval step
     ↓
-Task created, assigned to user/group
+Task created, assigned to user/group, workflow pauses
     ↓
-Human opens task → sees form fields
+Human opens task → sees form fields (prefilled from task_data)
     ↓
-Human submits form → task completed
+Human fills out + submits form → task completed
     ↓
-Form data → step output → available as {{ steps.<step_id>.output }}
+Form data → task.result_data → step output.task_result
+    ↓
+Available downstream as {{ steps.<step_id>.output.task_result.<field> }}
     ↓
 Workflow continues to next step
 ```

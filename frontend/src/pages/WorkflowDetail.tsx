@@ -160,19 +160,12 @@ export const WorkflowDetail: React.FC = () => {
         portal_icon: portalSettings.icon,
         portal_order: portalSettings.order,
         portal_visible: portalSettings.visible,
-        portal_link_url: portalSettings.linkUrl || undefined
+        portal_link_url: portalSettings.linkUrl || undefined,
+        entry_form_id: entryFormId
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
-    }
-  })
-
-  const entryFormMutation = useMutation({
-    mutationFn: () =>
-      workflowApi.update(workflowId, { entry_form_id: entryFormId }),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
     }
   })
 
@@ -544,7 +537,7 @@ export const WorkflowDetail: React.FC = () => {
                 <option key={f.id} value={f.id}>{f.name}{f.description ? ` — ${f.description}` : ''}</option>
               ))}
             </select>
-            <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input.</small>
+            <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input. Saved with "Save Portal Settings".</small>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
@@ -553,13 +546,6 @@ export const WorkflowDetail: React.FC = () => {
               disabled={portalMutation.isPending}
             >
               {portalMutation.isPending ? 'Saving...' : 'Save Portal Settings'}
-            </button>
-            <button
-              className="btn btn-secondary"
-              onClick={() => entryFormMutation.mutate()}
-              disabled={entryFormMutation.isPending}
-            >
-              {entryFormMutation.isPending ? 'Saving...' : 'Save Entry Form'}
             </button>
           </div>
         </div>

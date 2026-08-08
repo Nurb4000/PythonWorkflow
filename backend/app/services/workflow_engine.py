@@ -70,6 +70,7 @@ class WorkflowEngine:
             portal_icon=workflow_data.portal_icon,
             portal_order=workflow_data.portal_order,
             portal_visible=workflow_data.portal_visible,
+            entry_form_id=workflow_data.entry_form_id,
             created_by=created_by
         )
         db.add(workflow)

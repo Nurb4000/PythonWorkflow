@@ -84,6 +84,12 @@ export const AdminTaskDashboard: React.FC = () => {
       csv: r => r.status
     },
     {
+      key: 'form',
+      label: 'Form',
+      render: r => r.form_id ? <span className="badge badge-info">Form</span> : '-',
+      csv: r => r.form_id ? 'Yes' : 'No'
+    },
+    {
       key: 'assigned_user',
       label: 'Assigned To',
       render: r => r.assigned_user?.full_name || r.assigned_user?.username || '-',
@@ -118,7 +124,7 @@ export const AdminTaskDashboard: React.FC = () => {
   const actions = (task: Task) => (
     <div style={{ display: 'flex', gap: '0.35rem' }}>
       <Link to={`/tasks/${task.id}`} className="btn btn-sm btn-secondary">View</Link>
-      {task.status === 'open' && (
+      {task.status === 'open' && !task.form_id && (
         <button
           className="btn btn-sm btn-info"
           onClick={() => completeMutation.mutate(task.id)}
