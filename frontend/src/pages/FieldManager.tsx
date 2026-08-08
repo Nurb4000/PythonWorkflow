@@ -99,7 +99,7 @@ export const FieldManager: React.FC = () => {
   })
 
   // Fetch table schemas for the currently selected target table in the form
-  const { data: tableSchemas } = useQuery({
+  const { data: tableSchemas, isLoading: schemasLoading } = useQuery({
     queryKey: ['data-tables'],
     queryFn: async () => {
       const res = await dataQueryApi.listTables()
@@ -349,7 +349,12 @@ export const FieldManager: React.FC = () => {
               </div>
 
               {/* Table Schema Reference */}
-              {currentTableSchema && (
+              {schemasLoading && (
+                <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                  <small style={{ color: '#7f8c8d' }}>Loading table schema...</small>
+                </div>
+              )}
+              {!schemasLoading && currentTableSchema && (
                 <div className="form-group" style={{ gridColumn: '1 / -1' }}>
                   <label className="form-label">Existing Columns on "{currentTableSchema.display_name}"</label>
                   <div style={{ background: '#f8f9fa', border: '1px solid #ddd', borderRadius: '4px', padding: '0.75rem', maxHeight: '200px', overflow: 'auto' }}>
