@@ -41,10 +41,11 @@ export const AdminTaskDashboard: React.FC = () => {
   const [tab, setTab] = useState<Tab>('all')
   const queryClient = useQueryClient()
 
-  const { data: tasks, isLoading } = useQuery({
+  const { data: tasks, isLoading, error: taskError } = useQuery({
     queryKey: ['admin-tasks'],
     queryFn: async () => {
       const response = await taskApi.listTasks()
+      console.log('Admin tasks API response:', response.data)
       return ((response.data as any).tasks || []) as Task[]
     }
   })
@@ -141,6 +142,10 @@ export const AdminTaskDashboard: React.FC = () => {
 
   if (isLoading) {
     return <div className="loading">Loading tasks...</div>
+  }
+
+  if (taskError) {
+    return <div className="error">Failed to load tasks: {(taskError as Error).message}</div>
   }
 
   return (
