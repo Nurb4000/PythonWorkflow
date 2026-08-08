@@ -52,6 +52,7 @@ def _workflow_to_response(workflow: Workflow) -> dict:
         "portal_icon": workflow.portal_icon or "",
         "portal_order": workflow.portal_order or 0,
         "portal_visible": workflow.portal_visible,
+        "entry_form_id": workflow.entry_form_id,
         "created_at": workflow.created_at,
         "updated_at": workflow.updated_at,
         "steps": [_step_to_dict(s) for s in workflow.steps],
