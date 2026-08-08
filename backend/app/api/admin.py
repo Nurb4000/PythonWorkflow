@@ -1,8 +1,12 @@
 """
 Admin API endpoints for monitoring and reporting
 """
+import asyncio
+import io
+import logging
 import re
-from fastapi import APIRouter, Depends, HTTPException
+import subprocess
+from fastapi import APIRouter, Depends, HTTPException, Response
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, and_, or_
 from typing import List, Optional
@@ -16,6 +20,94 @@ from app.api.auth import get_current_admin
 from app.services.scheduler import scheduler_service
 
 router = APIRouter()
+
+
+# In-memory log buffer for recent entries
+_log_buffer: List[str] = []
+_MAX_LOG_ENTRIES = 10000
+
+
+class LogCaptureHandler(logging.Handler):
+    """Captures log records and stores them in memory."""
+    def emit(self, record):
+        msg = self.format(record)
+        _log_buffer.append(msg)
+        if len(_log_buffer) > _MAX_LOG_ENTRIES:
+            _log_buffer[:] = _log_buffer[-_MAX_LOG_ENTRIES:]
+
+
+# Attach to root logger
+_capture_handler = LogCaptureHandler()
+_capture_handler.setLevel(logging.DEBUG)
+_capture_handler.setFormatter(logging.Formatter('%(asctime)s [%(levelname)s] %(name)s: %(message)s'))
+logging.getLogger().addHandler(_capture_handler)
+
+
+@router.get("/logs")
+async def get_system_logs(
+    level: Optional[str] = None,
+    search: Optional[str] = None,
+    lines: int = 500,
+    source: str = "app",
+    current_user: User = Depends(get_current_admin),
+):
+    """Get system logs. source='app' for in-memory Python logs, source='docker' for container logs."""
+    if source == "docker":
+        try:
+            result = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: subprocess.run(
+                    ["docker", "logs", "--tail", str(lines * 2), "pythonworkflow-backend"],
+                    capture_output=True, text=True, timeout=10
+                )
+            )
+            log_lines = result.stderr.splitlines() if result.stderr else []
+        except Exception:
+            log_lines = list(_log_buffer)
+    else:
+        log_lines = list(_log_buffer)
+
+    # Filter by level
+    if level:
+        level_upper = level.upper()
+        log_lines = [l for l in log_lines if f"[{level_upper}]" in l]
+
+    # Filter by search term
+    if search:
+        search_lower = search.lower()
+        log_lines = [l for l in log_lines if search_lower in l.lower()]
+
+    # Return last N lines
+    return {
+        "logs": log_lines[-lines:],
+        "total_count": len(log_lines),
+        "source": source,
+    }
+
+
+@router.get("/logs/export")
+async def export_system_logs(
+    level: Optional[str] = None,
+    search: Optional[str] = None,
+    lines: int = 5000,
+    current_user: User = Depends(get_current_admin),
+):
+    """Export system logs as a downloadable text file."""
+    log_lines = list(_log_buffer)
+
+    if level:
+        level_upper = level.upper()
+        log_lines = [l for l in log_lines if f"[{level_upper}]" in l]
+
+    if search:
+        search_lower = search.lower()
+        log_lines = [l for l in log_lines if search_lower in l.lower()]
+
+    content = "\n".join(log_lines[-lines:])
+    return Response(
+        content=content,
+        media_type="text/plain",
+        headers={"Content-Disposition": f"attachment; filename=system-logs-{datetime.utcnow().strftime('%Y%m%d-%H%M%S')}.txt"},
+    )
 
 
 def validate_cron_expression(cron_expr: str) -> bool:

@@ -99,7 +99,9 @@ export const adminApi = {
   listSchedules: () => api.get('/admin/schedules'),
   createSchedule: (data: any) => api.post('/admin/schedules', data),
   updateSchedule: (id: number, data: any) => api.put(`/admin/schedules/${id}`, data),
-  deleteSchedule: (id: number) => api.delete(`/admin/schedules/${id}`)
+  deleteSchedule: (id: number) => api.delete(`/admin/schedules/${id}`),
+  getLogs: (params?: any) => api.get('/admin/logs', { params }),
+  exportLogs: (params?: any) => api.get('/admin/logs/export', { params, responseType: 'blob' }),
 }
 
 // Portal APIs

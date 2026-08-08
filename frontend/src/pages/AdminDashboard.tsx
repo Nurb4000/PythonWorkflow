@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { adminApi } from '../services/api'
 import { ScheduleManager } from '../components/ScheduleManager'
@@ -189,6 +189,153 @@ export const AdminDashboard: React.FC = () => {
           </tbody>
         </table>
       </div>
+
+      {/* System Logs */}
+      <SystemLogsViewer />
+    </div>
+  )
+}
+
+const SystemLogsViewer: React.FC = () => {
+  const [showLogs, setShowLogs] = useState(false)
+  const [logs, setLogs] = useState<string[]>([])
+  const [loading, setLoading] = useState(false)
+  const [searchTerm, setSearchTerm] = useState('')
+  const [levelFilter, setLevelFilter] = useState('')
+  const [lines, setLines] = useState(500)
+  const logContainerRef = useRef<HTMLDivElement>(null)
+
+  const fetchLogs = async () => {
+    setLoading(true)
+    try {
+      const params: any = { lines }
+      if (searchTerm) params.search = searchTerm
+      if (levelFilter) params.level = levelFilter
+      const res = await adminApi.getLogs(params)
+      setLogs(res.data.logs || [])
+    } catch {
+      setLogs([])
+    } finally {
+      setLoading(false)
+    }
+  }
+
+  useEffect(() => {
+    if (showLogs) fetchLogs()
+  }, [showLogs, lines])
+
+  const handleExport = async () => {
+    try {
+      const params: any = { lines: Math.min(lines * 10, 5000) }
+      if (searchTerm) params.search = searchTerm
+      if (levelFilter) params.level = levelFilter
+      const res = await adminApi.exportLogs(params)
+      const url = window.URL.createObjectURL(new Blob([res.data]))
+      const a = document.createElement('a')
+      a.href = url
+      a.download = `system-logs-${new Date().toISOString().slice(0, 10)}.txt`
+      a.click()
+      window.URL.revokeObjectURL(url)
+    } catch {
+      // Silently fail
+    }
+  }
+
+  const filteredLogs = logs.filter(line => {
+    if (searchTerm && !line.toLowerCase().includes(searchTerm.toLowerCase())) return false
+    if (levelFilter && !line.includes(`[${levelFilter.toUpperCase()}]`)) return false
+    return true
+  })
+
+  return (
+    <div className="card" style={{ marginTop: '2rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">System Logs</h3>
+        <button
+          className={`btn btn-sm ${showLogs ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => setShowLogs(!showLogs)}
+        >
+          {showLogs ? 'Hide Logs' : 'View Logs'}
+        </button>
+      </div>
+
+      {showLogs && (
+        <>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              type="text"
+              className="form-input"
+              placeholder="Search logs..."
+              value={searchTerm}
+              onChange={(e) => setSearchTerm(e.target.value)}
+              style={{ maxWidth: '250px' }}
+            />
+            <select
+              className="form-select"
+              value={levelFilter}
+              onChange={(e) => setLevelFilter(e.target.value)}
+              style={{ maxWidth: '150px' }}
+            >
+              <option value="">All Levels</option>
+              <option value="debug">Debug</option>
+              <option value="info">Info</option>
+              <option value="warning">Warning</option>
+              <option value="error">Error</option>
+              <option value="critical">Critical</option>
+            </select>
+            <select
+              className="form-select"
+              value={lines}
+              onChange={(e) => setLines(Number(e.target.value))}
+              style={{ maxWidth: '120px' }}
+            >
+              <option value={100}>100 lines</option>
+              <option value={500}>500 lines</option>
+              <option value={1000}>1000 lines</option>
+              <option value={5000}>5000 lines</option>
+            </select>
+            <button className="btn btn-sm btn-primary" onClick={fetchLogs} disabled={loading}>
+              {loading ? 'Loading...' : 'Refresh'}
+            </button>
+            <button className="btn btn-sm btn-secondary" onClick={handleExport}>
+              Export
+            </button>
+          </div>
+
+          <div
+            ref={logContainerRef}
+            style={{
+              background: '#1a1a2e',
+              color: '#e0e0e0',
+              fontFamily: 'monospace',
+              fontSize: '0.8rem',
+              padding: '1rem',
+              borderRadius: '4px',
+              maxHeight: '500px',
+              overflow: 'auto',
+              whiteSpace: 'pre-wrap',
+              wordBreak: 'break-all',
+            }}
+          >
+            {filteredLogs.length === 0 && !loading ? (
+              <span style={{ color: '#888' }}>No logs found</span>
+            ) : (
+              filteredLogs.map((line, i) => {
+                let color = '#e0e0e0'
+                if (line.includes('[ERROR]') || line.includes('[CRITICAL]')) color = '#ff6b6b'
+                else if (line.includes('[WARNING]')) color = '#ffd93d'
+                else if (line.includes('[INFO]')) color = '#6bcb77'
+                else if (line.includes('[DEBUG]')) color = '#888'
+                return (
+                  <div key={i} style={{ color }}>
+                    {line}
+                  </div>
+                )
+              })
+            )}
+          </div>
+        </>
+      )}
     </div>
   )
 }
