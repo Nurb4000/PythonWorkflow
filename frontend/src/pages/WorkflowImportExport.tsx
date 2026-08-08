@@ -33,6 +33,8 @@ export const WorkflowImportExport: React.FC = () => {
       setImportResult(result)
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       if (result.workflowsCreatedIds && result.workflowsCreatedIds.length > 0) {
+        // Invalidate the workflow detail cache so designer loads fresh data
+        queryClient.invalidateQueries({ queryKey: ['workflow', result.workflowsCreatedIds[0]] })
         navigate(`/workflows/${result.workflowsCreatedIds[0]}/design`)
       }
     },

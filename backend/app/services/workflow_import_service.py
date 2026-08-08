@@ -277,7 +277,7 @@ class WorkflowImportService:
 
         # 6. Remap config start_step_ids using step_ref_to_id
         original_refs = data["workflow"].get("config", {}).get("start_step_ids", [])
-        logger.info(f"Import start_step_ids: original_refs={original_refs}, step_ref_to_id={step_ref_to_id}")
+        print(f"DEBUG Import start_step_ids: original_refs={original_refs}, step_ref_to_id={step_ref_to_id}")
         if original_refs:
             remapped_ids = []
             for ref in original_refs:
@@ -289,13 +289,12 @@ class WorkflowImportService:
                             remapped_ids.append(ri)
                             break
                 else:
-                    # Integer ref from JSON export — try to match by step position or skip
-                    logger.warning(f"Import start_step_ids: unmatched ref={ref} (type={type(ref).__name__})")
-            # Ensure config dict exists and has remapped start_step_ids
-            if not new_wf.config:
-                new_wf.config = {}
+                    print(f"DEBUG Import start_step_ids: unmatched ref={ref} (type={type(ref).__name__})")
+            # Always create a fresh config dict with remapped start_step_ids
+            new_wf.config = dict(new_wf.config or {})
             new_wf.config["start_step_ids"] = remapped_ids
-            logger.info(f"Import start_step_ids: remapped={remapped_ids}")
+            await db.flush()
+            print(f"DEBUG Import start_step_ids: remapped={remapped_ids}, final config={new_wf.config}")
 
         # 7. Create schedules
         for sched_data in data.get("schedules", []):

@@ -593,9 +593,12 @@ export const WorkflowDesigner: React.FC = () => {
     })
 
     // Start node → explicitly configured outputs only (no auto-derived connections)
-    const startIds: number[] = (configDraft?.start_step_ids || [])
+    const rawStartIds = configDraft?.start_step_ids || []
+    console.log('DEBUG start_step_ids:', rawStartIds, 'stepMap keys:', Array.from(stepMap.keys()))
+    const startIds: number[] = rawStartIds
       .map(toNum)
       .filter((sid: number) => stepMap.has(sid))
+    console.log('DEBUG filtered startIds:', startIds)
     startIds.forEach((sid, i) => {
       newEdges.push({
         id: `e-start-${sid}`,
