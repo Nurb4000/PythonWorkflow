@@ -140,8 +140,8 @@ class WorkflowEngine:
                 current.pop("portal_link_url", None)
             workflow.config = current
         
-        # P3.3: Entry form
-        if workflow_data.entry_form_id is not None:
+        # P3.3: Entry form — only update if explicitly provided in request
+        if "entry_form_id" in workflow_data.model_fields_set:
             workflow.entry_form_id = workflow_data.entry_form_id
         
         # P7: Manual version increment
