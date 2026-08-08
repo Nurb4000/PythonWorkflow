@@ -115,7 +115,6 @@ const RoleAwareNav: React.FC = () => {
       {user.role === 'admin' && <Link to="/settings">Settings</Link>}
 {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/data">Data Explorer</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/views">SQL Views</Link>}
-      {(user.role === 'admin' || user.role === 'developer') && <Link to="/workflows/import">Import/Export</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/marketplace">Marketplace</Link>}
 {user.role === 'admin' && <Link to="/admin/fields">Field Manager</Link>}
     </>

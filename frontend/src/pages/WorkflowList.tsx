@@ -157,12 +157,16 @@ export const WorkflowList: React.FC = () => {
       <div className="card-header">
         <h2>Workflows</h2>
         {canDevelop && (
-          <button 
-            className="btn btn-primary"
-            onClick={() => setShowCreate(!showCreate)}
-          >
-            {showCreate ? 'Cancel' : '+ New Workflow'}
-          </button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <Link to="/workflows/import" className="btn btn-secondary">Import</Link>
+            <Link to="/marketplace" className="btn btn-secondary">Marketplace</Link>
+            <button 
+              className="btn btn-primary"
+              onClick={() => setShowCreate(!showCreate)}
+            >
+              {showCreate ? 'Cancel' : '+ New Workflow'}
+            </button>
+          </div>
         )}
       </div>
 
