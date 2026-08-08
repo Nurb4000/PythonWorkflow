@@ -385,7 +385,7 @@ export const Marketplace: React.FC = () => {
             }}
           >
             {label}
-            {tab !== 'my-nodes' && (
+            {tab !== 'my-nodes' && activeTab === tab && (
               <span style={{ marginLeft: '0.5rem', fontSize: '0.85rem', color: '#95a5a6' }}>
                 {itemsData?.total || 0}
               </span>
