@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState, useEffect, useRef } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { dataFieldApi, workflowApi, dataQueryApi } from '../services/api'
 
@@ -78,6 +78,20 @@ export const FieldManager: React.FC = () => {
   const [relTargetTable, setRelTargetTable] = useState('tasks')
   const [relTargetColumn, setRelTargetColumn] = useState('id')
   const [relDisplayColumn, setRelDisplayColumn] = useState('name')
+  const [tableSearch, setTableSearch] = useState('')
+  const [showTableDropdown, setShowTableDropdown] = useState(false)
+  const tableSearchRef = useRef<HTMLDivElement>(null)
+
+  // Close dropdown on outside click
+  useEffect(() => {
+    const handleClick = (e: MouseEvent) => {
+      if (tableSearchRef.current && !tableSearchRef.current.contains(e.target as Node)) {
+        setShowTableDropdown(false)
+      }
+    }
+    document.addEventListener('mousedown', handleClick)
+    return () => document.removeEventListener('mousedown', handleClick)
+  }, [])
 
   const { data: fields, isLoading } = useQuery({
     queryKey: ['custom-fields', selectedTable],
@@ -334,18 +348,38 @@ export const FieldManager: React.FC = () => {
           <h3 className="card-title">{editingId ? 'Edit Field' : 'Create New Field'}</h3>
           <form onSubmit={handleSubmit}>
             <div className="grid grid-2">
-              <div className="form-group">
+              <div ref={tableSearchRef} className="form-group" style={{ position: 'relative' }}>
                 <label className="form-label">Target Table *</label>
-                <select
-                  className="form-select"
-                  value={formData.target_table}
-                  onChange={(e) => setFormData({ ...formData, target_table: e.target.value })}
+                <input
+                  type="text"
+                  className="form-input"
+                  value={tableSearch || (currentTableSchema?.display_name || formData.target_table)}
+                  placeholder="Search tables..."
+                  onChange={(e) => { setTableSearch(e.target.value); setShowTableDropdown(true) }}
+                  onFocus={() => setShowTableDropdown(true)}
                   required
-                >
-                  {TARGET_TABLES.map(t => (
-                    <option key={t.value} value={t.value}>{t.label}</option>
-                  ))}
-                </select>
+                />
+                {showTableDropdown && tableSchemas && (
+                  <div style={{ position: 'absolute', top: '100%', left: 0, right: 0, zIndex: 10, maxHeight: '200px', overflow: 'auto', background: 'white', border: '1px solid #ddd', borderRadius: '4px', boxShadow: '0 2px 8px rgba(0,0,0,0.1)' }}>
+                    {tableSchemas
+                      .filter(t => !tableSearch || t.display_name.toLowerCase().includes(tableSearch.toLowerCase()) || t.table.toLowerCase().includes(tableSearch.toLowerCase()))
+                      .map(t => (
+                        <div
+                          key={t.table}
+                          onClick={() => { setFormData({ ...formData, target_table: t.table }); setTableSearch(''); setShowTableDropdown(false) }}
+                          style={{ padding: '0.5rem', cursor: 'pointer', borderBottom: '1px solid #eee' }}
+                          onMouseEnter={(e) => (e.currentTarget.style.background = '#f0f0f0')}
+                          onMouseLeave={(e) => (e.currentTarget.style.background = 'white')}
+                        >
+                          <strong>{t.display_name}</strong>
+                          <span style={{ color: '#999', marginLeft: '0.5rem', fontSize: '0.8rem' }}>{t.table}</span>
+                        </div>
+                      ))}
+                    {tableSearch && tableSchemas.filter(t => t.display_name.toLowerCase().includes(tableSearch.toLowerCase()) || t.table.toLowerCase().includes(tableSearch.toLowerCase())).length === 0 && (
+                      <div style={{ padding: '0.5rem', color: '#999' }}>No tables found</div>
+                    )}
+                  </div>
+                )}
               </div>
 
               {/* Table Schema Reference */}
