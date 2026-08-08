@@ -1,7 +1,8 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
 import { Link } from 'react-router-dom'
-import { portalApi, formsApi } from '../services/api'
+import { portalApi } from '../services/api'
+import { FormRenderer } from '../components/FormRenderer'
 import { getStatusBadgeClass, formatDuration } from './WorkflowRunsAdmin'
 
 interface PortalWorkflow {
@@ -40,8 +41,6 @@ export const Portal: React.FC = () => {
   const [running, setRunning] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
   const [entryFormWorkflow, setEntryFormWorkflow] = useState<PortalWorkflow | null>(null)
-  const [entryFormData, setEntryFormData] = useState<Record<string, any>>({})
-  const [entryFormSchema, setEntryFormSchema] = useState<any>(null)
   const [banner, setBanner] = useState<PortalBanner>({ enabled: false, title: '', message: '', color: '#f39c12' })
   const [searchTerm, setSearchTerm] = useState('')
 
@@ -78,21 +77,12 @@ export const Portal: React.FC = () => {
     // P3.3: If workflow has an entry form, show it first
     if (wf.entry_form_id) {
       setEntryFormWorkflow(wf)
-      setEntryFormData({})
-      setEntryFormSchema(null)
-      try {
-        const res = await formsApi.get(wf.entry_form_id)
-        setEntryFormSchema(res.data)
-      } catch {
-        // If form fetch fails, proceed without schema
-        setEntryFormSchema(null)
-      }
       return
     }
     
     setRunning(wf.id)
     try {
-      const response = await portalApi.runWorkflow(wf.id, entryFormData)
+      const response = await portalApi.runWorkflow(wf.id, {})
       setToast(`Started "${wf.name}" (run #${response.data.run_id})`)
       await load()
     } catch (error: any) {
@@ -100,23 +90,18 @@ export const Portal: React.FC = () => {
     } finally {
       setRunning(null)
       setEntryFormWorkflow(null)
-      setEntryFormData({})
     }
   }
 
-  const submitEntryForm = async () => {
+  const submitEntryForm = async (data: Record<string, any>) => {
     if (!entryFormWorkflow) return
-    setRunning(entryFormWorkflow.id)
     try {
-      const response = await portalApi.runWorkflow(entryFormWorkflow.id, entryFormData)
+      const response = await portalApi.runWorkflow(entryFormWorkflow.id, data)
       setToast(`Started "${entryFormWorkflow.name}" (run #${response.data.run_id})`)
       await load()
       setEntryFormWorkflow(null)
-      setEntryFormData({})
     } catch (error: any) {
       setToast(error?.response?.data?.detail || 'Failed to start workflow')
-    } finally {
-      setRunning(null)
     }
   }
 
@@ -183,64 +168,19 @@ export const Portal: React.FC = () => {
           position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
           background: 'rgba(0,0,0,0.5)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 1000
-        }} onClick={() => { setEntryFormWorkflow(null); setEntryFormData({}); setEntryFormSchema(null) }}>
-          <div className="card" style={{ maxWidth: '500px', width: '90%', maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+        }} onClick={() => setEntryFormWorkflow(null)}>
+          <div className="card" style={{ maxWidth: '600px', width: '90%', maxHeight: '85vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
             <h3>Entry Form: {entryFormWorkflow.name}</h3>
             <p>{entryFormWorkflow.description}</p>
-            {entryFormSchema?.schema?.properties ? (
-              Object.entries(entryFormSchema.schema.properties).map(([key, field]: [string, any]) => {
-                const type = field.type || 'string'
-                return (
-                  <div className="form-group" key={key}>
-                    <label className="form-label">
-                      {field.title || key} {field.required && <span style={{ color: '#e74c3c' }}>*</span>}
-                    </label>
-                    {type === 'textarea' ? (
-                      <textarea
-                        className="form-textarea"
-                        value={entryFormData[key] || ''}
-                        onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.value })}
-                        placeholder={field.description || ''}
-                        rows={3}
-                      />
-                    ) : type === 'select' && field.options ? (
-                      <select
-                        className="form-select"
-                        value={entryFormData[key] || ''}
-                        onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.value })}
-                      >
-                        <option value="">Select...</option>
-                        {field.options.map((opt: string) => (
-                          <option key={opt} value={opt}>{opt}</option>
-                        ))}
-                      </select>
-                    ) : type === 'boolean' ? (
-                      <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                        <input
-                          type="checkbox"
-                          checked={!!entryFormData[key]}
-                          onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.checked })}
-                        />
-                        {field.description || 'Checked'}
-                      </label>
-                    ) : (
-                      <input
-                        className="form-input"
-                        type={type === 'email' ? 'email' : type === 'number' || type === 'integer' ? 'number' : type === 'date' ? 'date' : type === 'date-time' ? 'datetime-local' : 'text'}
-                        value={entryFormData[key] || ''}
-                        onChange={e => setEntryFormData({ ...entryFormData, [key]: e.target.value })}
-                        placeholder={field.description || ''}
-                      />
-                    )}
-                  </div>
-                )
-              })
-            ) : (
-              <p style={{ color: '#7f8c8d' }}>Loading form fields...</p>
+            {entryFormWorkflow.entry_form_id && (
+              <FormRenderer
+                formId={entryFormWorkflow.entry_form_id}
+                submitLabel="Start Workflow"
+                onSubmitData={submitEntryForm}
+              />
             )}
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-              <button className="btn btn-primary" onClick={submitEntryForm}>Submit</button>
-              <button className="btn btn-secondary" onClick={() => { setEntryFormWorkflow(null); setEntryFormData({}); setEntryFormSchema(null) }}>Cancel</button>
+              <button className="btn btn-secondary" onClick={() => setEntryFormWorkflow(null)}>Cancel</button>
             </div>
           </div>
         </div>

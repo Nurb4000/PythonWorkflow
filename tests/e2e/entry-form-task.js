@@ -355,7 +355,7 @@ const FORM_SCHEMA = {
     await page.evaluate(() => {
       const overlay = [...document.querySelectorAll('div[style*="position: fixed"]')]
         .find((el) => el.textContent.includes('Entry Form:'));
-      const btn = [...overlay.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Submit');
+      const btn = [...overlay.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Start Workflow');
       btn.click();
     });
 
@@ -363,6 +363,64 @@ const FORM_SCHEMA = {
     await page.waitForFunction(() => document.body.innerText.includes('Started'), { timeout: 10000 });
     const body = await page.evaluate(() => document.body.innerText);
     if (!body.includes('Started')) throw new Error('no started toast');
+    await page.close();
+  });
+
+  // ---------- Part C2: builder layout (columns) is honored ----------
+  const layoutForm = await api('POST', '/forms', adminToken, undefined, {
+    name: 'E2E Layout ' + unique,
+    schema: JSON.stringify({
+      type: 'object',
+      title: 'Layout Form',
+      columns: 2,
+      properties: {
+        left: { type: 'string', title: 'Left Field', column: 0 },
+        right: { type: 'string', title: 'Right Field', column: 1 },
+      },
+      required: [],
+    }),
+  });
+  const wf3 = await api('POST', '/workflows/', adminToken, {
+    name: 'E2E Layout WF ' + unique,
+    steps: [{ step_type: 'delay', definition: { seconds: 0 } }],
+  });
+  await api('PUT', '/workflows/' + wf3.id, adminToken, {
+    environment: 'production',
+    is_published: true,
+    is_active: true,
+    portal_visible: true,
+    entry_form_id: layoutForm.id,
+  });
+
+  await step('C3: entry form honors 2-column builder layout', async () => {
+    const { page } = await newPage(browser);
+    await login(page, 'user', 'user');
+    await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
+    await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf3.name);
+
+    await page.evaluate((name) => {
+      const cards = [...document.querySelectorAll('.stat-card')];
+      const card = cards.find((c) => c.textContent.includes(name));
+      card.querySelector('button').click();
+    }, wf3.name);
+
+    await waitForText(page, 'Left Field');
+    await waitForText(page, 'Right Field');
+
+    const layout = await page.evaluate(() => {
+      const labels = [...document.querySelectorAll('.form-label')];
+      const find = (t) => labels.find((x) => x.textContent.includes(t));
+      const left = find('Left Field').getBoundingClientRect();
+      const right = find('Right Field').getBoundingClientRect();
+      return { leftX: left.x, rightX: right.x, leftY: left.y, rightY: right.y };
+    });
+    // In a 2-column layout the fields sit side by side (different x, same row)
+    if (Math.abs(layout.leftX - layout.rightX) < 20) {
+      throw new Error('fields not side by side: ' + JSON.stringify(layout));
+    }
+    if (Math.abs(layout.leftY - layout.rightY) > 10) {
+      throw new Error('fields not on the same row: ' + JSON.stringify(layout));
+    }
     await page.close();
   });
 

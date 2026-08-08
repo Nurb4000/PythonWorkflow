@@ -10,12 +10,17 @@ interface FormField {
   description?: string
   required: boolean
   options?: string[]
+  column?: number
+  display_size?: string
+  content?: string
+  text_align?: string
 }
 
 interface FormSchema {
   type: string
   properties: Record<string, FormField>
   required: string[]
+  columns?: number
 }
 
 interface FormRendererProps {
@@ -48,6 +53,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
     const initialData: Record<string, any> = {}
     Object.keys(props).forEach(key => {
       const field = props[key]
+      if (field.type === 'info') return
       const value = prefill && prefill[key] !== undefined ? prefill[key] : undefined
       if (value !== undefined) {
         initialData[key] = value
@@ -179,94 +185,169 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
     )
   }
 
+  const renderField = (key: string, field: FormField) => {
+    if (field.type === 'info') {
+      return (
+        <div style={{
+          textAlign: (field.text_align || 'left') as any,
+          padding: '1rem',
+          background: '#f8f9fa',
+          borderRadius: '6px',
+          border: '1px solid #e9ecef',
+          color: '#495057',
+          fontSize: '0.95rem',
+          lineHeight: 1.6
+        }}>
+          {field.content || field.title || '(info text)'}
+        </div>
+      )
+    }
+
+    return (
+      <div className="form-group">
+        <label className="form-label">
+          {field.title}
+          {field.required && <span style={{ color: 'red' }}> *</span>}
+        </label>
+
+        {field.type === 'textarea' ? (
+          <textarea
+            className="form-textarea"
+            value={formData[key] || ''}
+            onChange={(e) => handleInputChange(key, e.target.value)}
+            disabled={readOnly}
+            rows={4}
+          />
+        ) : field.type === 'boolean' ? (
+          <input
+            type="checkbox"
+            checked={!!formData[key]}
+            onChange={(e) => handleInputChange(key, e.target.checked)}
+            disabled={readOnly}
+          />
+        ) : field.type === 'select' && field.options ? (
+          <select
+            className="form-select"
+            value={formData[key] || ''}
+            onChange={(e) => handleInputChange(key, e.target.value)}
+            disabled={readOnly}
+          >
+            <option value="">Select...</option>
+            {field.options.map(opt => (
+              <option key={opt} value={opt}>{opt}</option>
+            ))}
+          </select>
+        ) : field.type === 'date' ? (
+          <input
+            type="date"
+            className="form-input"
+            value={formData[key] || ''}
+            onChange={(e) => handleInputChange(key, e.target.value)}
+            disabled={readOnly}
+          />
+        ) : field.type === 'date-time' ? (
+          <input
+            type="datetime-local"
+            className="form-input"
+            value={formData[key] || ''}
+            onChange={(e) => handleInputChange(key, e.target.value)}
+            disabled={readOnly}
+          />
+        ) : field.type === 'file' ? (
+          readOnly ? (
+            formData[key] ? (
+              <button type="button" className="btn btn-sm btn-primary" onClick={() => downloadFile(formData[key])}>
+                ⬇ Download {formData[key]}
+              </button>
+            ) : (
+              <small style={{ color: '#999' }}>No file uploaded</small>
+            )
+          ) : (
+            <input
+              type="file"
+              className="form-input"
+              onChange={(e) => handleFileChange(key, e)}
+            />
+          )
+        ) : (
+          <input
+            type={field.type === 'email' ? 'email' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
+            className="form-input"
+            value={formData[key] || ''}
+            onChange={(e) => handleInputChange(key, e.target.value)}
+            disabled={readOnly}
+            required={field.required}
+          />
+        )}
+
+        {field.description && (
+          <small style={{ color: '#7f8c8d' }}>{field.description}</small>
+        )}
+      </div>
+    )
+  }
+
+  const renderFieldBlocks = (blocks: [string, FormField][]) => {
+    return blocks.map(([key, field]) => (
+      <div key={key} style={{ marginBottom: '1rem' }}>{renderField(key, field)}</div>
+    ))
+  }
+
+  const renderColumnGroup = (group: [string, FormField][]) => {
+    const cols: [string, FormField][][] = Array.from({ length: colCount }, () => [])
+    group.forEach(([key, field]) => {
+      const c = Math.min(field.column ?? 0, colCount - 1)
+      cols[c].push([key, field])
+    })
+    return (
+      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
+        {cols.map((colFields, ci) => (
+          <div key={ci} style={{ flex: 1, minWidth: 0 }}>
+            {colFields.map(([key, field]) => (
+              <div key={key} style={{ marginBottom: '1rem' }}>{renderField(key, field)}</div>
+            ))}
+          </div>
+        ))}
+      </div>
+    )
+  }
+
+  const renderLayout = () => {
+    const entries = Object.entries(schema.properties || {})
+    if (colCount === 1) return renderFieldBlocks(entries)
+
+    const groups: [string, FormField][][] = []
+    let current: [string, FormField][] = []
+    entries.forEach(([key, field]) => {
+      const isFull = field.type === 'info' || field.display_size === 'full'
+      if (isFull && current.length > 0) {
+        groups.push(current)
+        current = []
+      }
+      if (isFull) {
+        groups.push([[key, field]])
+      } else {
+        current.push([key, field])
+      }
+    })
+    if (current.length > 0) groups.push(current)
+
+    return groups.map((g, gi) =>
+      g.length === 1 && (g[0][1].type === 'info' || g[0][1].display_size === 'full')
+        ? <div key={gi} style={{ marginBottom: '1rem' }}>{renderField(g[0][0], g[0][1])}</div>
+        : <div key={gi}>{renderColumnGroup(g)}</div>
+    )
+  }
+
+  const colCount = schema.columns && schema.columns > 1 ? Math.min(schema.columns, 4) : 1
+
   return (
     <div className="card">
       <h3 className="card-title">{formName || 'Form'}</h3>
       {error && <div className="error">{error}</div>}
-      
+
       <form onSubmit={handleSubmit}>
-        {schema.properties && Object.entries(schema.properties).map(([key, field]) => (
-          <div key={key} className="form-group">
-            <label className="form-label">
-              {field.title}
-              {field.required && <span style={{ color: 'red' }}> *</span>}
-            </label>
-            
-            {field.type === 'textarea' ? (
-              <textarea
-                className="form-textarea"
-                value={formData[key] || ''}
-                onChange={(e) => handleInputChange(key, e.target.value)}
-                disabled={readOnly}
-                rows={4}
-              />
-            ) : field.type === 'boolean' ? (
-              <input
-                type="checkbox"
-                checked={!!formData[key]}
-                onChange={(e) => handleInputChange(key, e.target.checked)}
-                disabled={readOnly}
-              />
-            ) : field.type === 'select' && field.options ? (
-              <select
-                className="form-select"
-                value={formData[key] || ''}
-                onChange={(e) => handleInputChange(key, e.target.value)}
-                disabled={readOnly}
-              >
-                <option value="">Select...</option>
-                {field.options.map(opt => (
-                  <option key={opt} value={opt}>{opt}</option>
-                ))}
-              </select>
-            ) : field.type === 'date' ? (
-              <input
-                type="date"
-                className="form-input"
-                value={formData[key] || ''}
-                onChange={(e) => handleInputChange(key, e.target.value)}
-                disabled={readOnly}
-              />
-            ) : field.type === 'date-time' ? (
-              <input
-                type="datetime-local"
-                className="form-input"
-                value={formData[key] || ''}
-                onChange={(e) => handleInputChange(key, e.target.value)}
-                disabled={readOnly}
-              />
-            ) : field.type === 'file' ? (
-              readOnly ? (
-                formData[key] ? (
-                  <button type="button" className="btn btn-sm btn-primary" onClick={() => downloadFile(formData[key])}>
-                    ⬇ Download {formData[key]}
-                  </button>
-                ) : (
-                  <small style={{ color: '#999' }}>No file uploaded</small>
-                )
-              ) : (
-                <input
-                  type="file"
-                  className="form-input"
-                  onChange={(e) => handleFileChange(key, e)}
-                />
-              )
-            ) : (
-              <input
-                type={field.type === 'email' ? 'email' : field.type === 'number' || field.type === 'integer' ? 'number' : 'text'}
-                className="form-input"
-                value={formData[key] || ''}
-                onChange={(e) => handleInputChange(key, e.target.value)}
-                disabled={readOnly}
-                required={field.required}
-              />
-            )}
-            
-            {field.description && (
-              <small style={{ color: '#7f8c8d' }}>{field.description}</small>
-            )}
-          </div>
-        ))}
+        {renderLayout()}
 
         {!readOnly && (
           <button type="submit" className="btn btn-success" disabled={submitting}>
