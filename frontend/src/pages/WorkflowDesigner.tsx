@@ -78,40 +78,72 @@ const stepTypeToNodeType = (stepType: string): string => {
 const NODE_WIDTH = 170
 const NODE_HEIGHT = 70
 
-function getNodeStyle(stepType: string) {
+// Run-state overlay colors
+const runStatusColor: Record<string, string> = {
+  completed: '#27ae60',
+  failed: '#e74c3c',
+  running: '#2980b9',
+  waiting: '#f39c12',
+  skipped: '#95a5a6',
+  pending: '#bdc3c7',
+  cancelled: '#e67e22',
+}
+
+function getNodeStyle(stepType: string, instanceStatus?: string) {
   const base: any = { position: 'relative' }
+  let style: any = {}
   switch (stepType) {
     case 'apiCall':
-      return { ...base, background: '#e3f2fd', border: '2px solid #1565c0' }
+      style = { ...base, background: '#e3f2fd', border: '2px solid #1565c0' }
+      break
     case 'databaseQuery':
-      return { ...base, background: '#e8f5e9', border: '2px solid #2e7d32' }
+      style = { ...base, background: '#e8f5e9', border: '2px solid #2e7d32' }
+      break
     case 'email':
-      return { ...base, background: '#fff3e0', border: '2px solid #ef6c00' }
+      style = { ...base, background: '#fff3e0', border: '2px solid #ef6c00' }
+      break
     case 'condition':
-      return { ...base, background: '#fce4ec', border: '2px solid #c2185b' }
+      style = { ...base, background: '#fce4ec', border: '2px solid #c2185b' }
+      break
     case 'form':
-      return { ...base, background: '#f3e5f5', border: '2px solid #7b1fa2' }
+      style = { ...base, background: '#f3e5f5', border: '2px solid #7b1fa2' }
+      break
     case 'delay':
-      return { ...base, background: '#e0f7fa', border: '2px solid #00838f' }
+      style = { ...base, background: '#e0f7fa', border: '2px solid #00838f' }
+      break
     case 'human_task':
-      return { ...base, background: '#fff8e1', border: '2px solid #ff8f00' }
+      style = { ...base, background: '#fff8e1', border: '2px solid #ff8f00' }
+      break
     case 'approval':
-      return { ...base, background: '#e8f5e9', border: '2px solid #388e3c' }
+      style = { ...base, background: '#e8f5e9', border: '2px solid #388e3c' }
+      break
     case 'webhook':
-      return { ...base, background: '#e1f5fe', border: '2px solid #0288d1' }
+      style = { ...base, background: '#e1f5fe', border: '2px solid #0288d1' }
+      break
     case 'custom_code':
-      return { ...base, background: '#f3e5f5', border: '2px solid #7b1fa2' }
+      style = { ...base, background: '#f3e5f5', border: '2px solid #7b1fa2' }
+      break
     case 'calculation':
-      return { ...base, background: '#fff3e0', border: '2px solid #ef6c00' }
+      style = { ...base, background: '#fff3e0', border: '2px solid #ef6c00' }
+      break
     case 'report':
-      return { ...base, background: '#e8eaf6', border: '2px solid #3f51b5' }
+      style = { ...base, background: '#e8eaf6', border: '2px solid #3f51b5' }
+      break
     case 'start':
-      return { ...base, background: '#27ae60', border: 'none', color: 'white', borderRadius: '20px' }
+      style = { ...base, background: '#27ae60', border: 'none', color: 'white', borderRadius: '20px' }
+      break
     case 'end':
-      return { ...base, background: '#e74c3c', border: 'none', color: 'white', borderRadius: '20px' }
+      style = { ...base, background: '#e74c3c', border: 'none', color: 'white', borderRadius: '20px' }
+      break
     default:
-      return { ...base, background: '#eee', border: '2px solid #666' }
+      style = { ...base, background: '#eee', border: '2px solid #666' }
   }
+  // Run-state overlay: tint the node with status color
+  if (instanceStatus && instanceStatus !== 'pending') {
+    const c = runStatusColor[instanceStatus] || '#95a5a6'
+    style = { ...style, border: `3px solid ${c}`, boxShadow: `0 0 8px ${c}44` }
+  }
+  return style
 }
 
 function nodeLabel(stepType: string, data: any) {
@@ -164,27 +196,27 @@ const nodeTypes = {
   apiCall: ({ data }: any) => renderStepNode(data, {
     icon: '🌐', title: 'API Call',
     subtitle: `${data.method || 'GET'} ${data.url || ''}`,
-    style: getNodeStyle('apiCall')
+    style: getNodeStyle('apiCall', data.instanceStatus)
   }),
   databaseQuery: ({ data }: any) => renderStepNode(data, {
     icon: '🗄️', title: 'Database',
     subtitle: `${data.query_type || 'SELECT'} ${data.table || ''}`,
-    style: getNodeStyle('databaseQuery')
+    style: getNodeStyle('databaseQuery', data.instanceStatus)
   }),
   email: ({ data }: any) => renderStepNode(data, {
     icon: '📧', title: 'Email',
     subtitle: `To: ${data.to || 'N/A'}`,
-    style: getNodeStyle('email')
+    style: getNodeStyle('email', data.instanceStatus)
   }),
   form: ({ data }: any) => renderStepNode(data, {
     icon: '📝', title: 'Form',
     subtitle: `${data.form_name || `Form #${data.form_id || ''}`}`,
-    style: getNodeStyle('form')
+    style: getNodeStyle('form', data.instanceStatus)
   }),
   delay: ({ data }: any) => renderStepNode(data, {
     icon: '⏱', title: 'Delay',
     subtitle: `${data.seconds || 0}s`,
-    style: getNodeStyle('delay')
+    style: getNodeStyle('delay', data.instanceStatus)
   }),
   condition: ({ data }: any) => {
     const displayTitle = data.title || 'Condition'
@@ -192,7 +224,7 @@ const nodeTypes = {
     const firstRoute = data.routes?.[0]
     const displayExpr = firstRoute?.expression || data.condition_expr || ''
     return (
-      <div style={{ padding: '10px 16px', borderRadius: '8px', minWidth: '180px', cursor: 'pointer', ...getNodeStyle('condition') }}>
+      <div style={{ padding: '10px 16px', borderRadius: '8px', minWidth: '180px', cursor: 'pointer', ...getNodeStyle('condition', data.instanceStatus) }}>
         <Handle type="target" position={Position.Top} />
         <strong>❓ {displayTitle}</strong>
         {data.description && <div style={{ fontSize: '0.7rem', marginTop: '3px', opacity: 0.8 }}>{data.description}</div>}
@@ -226,7 +258,7 @@ const nodeTypes = {
     return renderStepNode(data, {
       icon: '👤', title: 'Human Task',
       subtitle: data.description || `To: ${assignee}`,
-      style: getNodeStyle('human_task')
+      style: getNodeStyle('human_task', data.instanceStatus)
     })
   },
   approval: ({ data }: any) => {
@@ -235,28 +267,28 @@ const nodeTypes = {
     return renderStepNode(data, {
       icon: '✅', title: 'Approval',
       subtitle: data.description || `${assignee} · ${formLabel}`,
-      style: getNodeStyle('approval')
+      style: getNodeStyle('approval', data.instanceStatus)
     })
   },
   webhook: ({ data }: any) => renderStepNode(data, {
     icon: '🔗', title: 'Webhook',
     subtitle: data.url || 'No URL',
-    style: getNodeStyle('webhook')
+    style: getNodeStyle('webhook', data.instanceStatus)
   }),
   customCode: ({ data }: any) => renderStepNode(data, {
     icon: '💻', title: 'Custom Code',
     subtitle: data.code ? 'Code step' : 'No code',
-    style: getNodeStyle('custom_code')
+    style: getNodeStyle('custom_code', data.instanceStatus)
   }),
   calculation: ({ data }: any) => renderStepNode(data, {
     icon: '🧮', title: 'Calculation',
     subtitle: data.expression || 'No expression',
-    style: getNodeStyle('calculation')
+    style: getNodeStyle('calculation', data.instanceStatus)
   }),
   report: ({ data }: any) => renderStepNode(data, {
     icon: '📊', title: 'Report',
     subtitle: data.report_type === 'sql_query' ? 'SQL Query' : (data.report_type || 'Table Report'),
-    style: getNodeStyle('report')
+    style: getNodeStyle('report', data.instanceStatus)
   })
 }
 
@@ -376,7 +408,24 @@ const CanvasFlow: React.FC<{
   )
 }
 
-export const WorkflowDesigner: React.FC = () => {
+interface InspectorData {
+  run: any
+  steps: any[]
+  workflow: { id: number; name: string; environment: string } | null
+  graph: { start_step_ids: number[]; steps: any[] }
+}
+
+interface WorkflowDesignerProps {
+  readOnly?: boolean
+  inspectorData?: InspectorData
+  focusStepId?: number
+}
+
+export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
+  readOnly = false,
+  inspectorData,
+  focusStepId,
+}) => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
@@ -492,6 +541,12 @@ export const WorkflowDesigner: React.FC = () => {
   const [showStartConfig, setShowStartConfig] = useState(false)
   const [startStepIds, setStartStepIds] = useState<number[]>([])
 
+  // Run inspector state
+  const [selectedInstance, setSelectedInstance] = useState<any>(null)
+  const [aiDiagnoseLoading, setAiDiagnoseLoading] = useState(false)
+  const [aiDiagnoseResult, setAiDiagnoseResult] = useState<any>(null)
+  const [aiDiagnoseError, setAiDiagnoseError] = useState('')
+
   // Marketplace / My Nodes state
   const [showSaveNodeModal, setShowSaveNodeModal] = useState<'marketplace' | 'my-nodes' | null>(null)
   const [saveNodeForm, setSaveNodeForm] = useState({
@@ -505,11 +560,24 @@ export const WorkflowDesigner: React.FC = () => {
   const [saveNodeSuccess, setSaveNodeSuccess] = useState(false)
   const [showMyNodesPanel, setShowMyNodesPanel] = useState(false)
 
-  const buildGraph = useCallback(() => {
-    const steps = draftSteps
+  const buildGraph = useCallback((opts?: { instanceStatusMap?: Map<number, any>; graphData?: InspectorData['graph'] }) => {
+    // In readOnly mode with inspector data, use graph steps; otherwise use draftSteps.
+    const isInspectorMode = !!opts?.graphData
+    const steps = isInspectorMode
+      ? (opts.graphData!.steps.map((gs: any) => ({
+          id: gs.id,
+          step_type: gs.step_type,
+          definition: gs.definition || {},
+          position: gs.position,
+          condition_expr: '',
+          is_enabled: true,
+          title: gs.title || '',
+          description: gs.description || '',
+        })))
+      : draftSteps
     const newNodes: Node[] = []
     const newEdges: Edge[] = []
-    const stepMap = new Map(steps.map(s => [s.id, s]))
+    const stepMap = new Map(steps.map((s: any) => [s.id, s]))
 
     // Build lookup maps for resolving user/group names on nodes
     const userLookup = new Map<number, string>()
@@ -517,15 +585,18 @@ export const WorkflowDesigner: React.FC = () => {
     const groupLookup = new Map<number, string>()
     groups?.forEach(g => groupLookup.set(g.id, g.name))
 
+    // Instance status map: stepId -> {status, route_taken}
+    const instMap = opts?.instanceStatusMap || new Map()
+
     const startPos = nodePositions.current['start'] || { x: 250, y: 0 }
     newNodes.push({
       id: 'start',
       type: 'start',
       position: startPos,
-      data: { label: 'Start', startStepIds: configDraft?.start_step_ids || [] }
+      data: { label: 'Start', startStepIds: isInspectorMode ? (opts.graphData!.start_step_ids || []) : (configDraft?.start_step_ids || []) }
     })
 
-    steps.forEach((step, index) => {
+    steps.forEach((step: any, index: number) => {
       const routes = step.step_type === 'condition' ? (step.definition?.routes || []) : undefined
       const savedPos = step.definition?.pos_x != null ? { x: step.definition.pos_x, y: step.definition.pos_y } : null
       const movedPos = nodePositions.current[`step-${step.id}`]
@@ -533,10 +604,13 @@ export const WorkflowDesigner: React.FC = () => {
       // Resolve user/group names for display on nodes
       const assignedUserName = def.assigned_to_user_id ? (userLookup.get(def.assigned_to_user_id) || `User #${def.assigned_to_user_id}`) : null
       const assignedGroupName = def.assigned_group_id ? (groupLookup.get(def.assigned_group_id) || `Group #${def.assigned_group_id}`) : null
+      const inst = instMap.get(step.id)
       newNodes.push({
         id: `step-${step.id}`,
         type: stepTypeToNodeType(step.step_type),
         position: savedPos || movedPos || { x: 250, y: 100 + (index * 140) },
+        draggable: !readOnly,
+        selectable: true,
         data: {
           stepId: step.id,
           label: step.step_type,
@@ -546,14 +620,17 @@ export const WorkflowDesigner: React.FC = () => {
           condition_expr: step.condition_expr,
           routes,
           assigned_user_name: assignedUserName,
-          assigned_group_name: assignedGroupName
+          assigned_group_name: assignedGroupName,
+          // Run-state overlay data
+          instanceStatus: inst?.status,
+          instanceRouteTaken: inst?.route_taken || [],
         }
       })
     })
 
     // Build edges from step definitions — connections are drawn ONLY from node settings
     const toNum = (v: any) => (typeof v === 'string' ? Number(v) : v)
-    const addEdgeFor = (stepId: number, sourceHandle: string, target: string | number, label: string, color: string) => {
+    const addEdgeFor = (stepId: number, sourceHandle: string, target: string | number, label: string, color: string, isTaken?: boolean) => {
       const numTarget = toNum(target)
       const targetId = numTarget === END_TARGET ? 'end' : `step-${numTarget}`
       newEdges.push({
@@ -563,37 +640,49 @@ export const WorkflowDesigner: React.FC = () => {
         target: targetId,
         animated: true,
         label,
-        ...edgeColor(color)
+        style: {
+          ...edgeBase.style,
+          stroke: color,
+          opacity: isTaken === false ? 0.25 : 1,
+          strokeWidth: isTaken ? 4 : (isTaken === false ? 2 : edgeBase.style.strokeWidth),
+          strokeDasharray: isTaken === false ? '8 4' : undefined,
+        },
+        markerEnd: { ...edgeBase.markerEnd, color }
       })
     }
 
-    steps.forEach(step => {
+    steps.forEach((step: any) => {
       const def = step.definition || {}
+      const inst = instMap.get(step.id)
+      const routeTaken = inst?.route_taken || []
       if (step.step_type === 'condition') {
         const routes = def.routes || []
         routes.forEach((route: any, i: number) => {
           const numTarget = toNum(route.target_step_id)
           if (numTarget && (numTarget === END_TARGET || stepMap.has(numTarget))) {
-            addEdgeFor(step.id, `route-${i}`, numTarget, route.expression || `Route ${i + 1}`, '#27ae60')
+            const taken = routeTaken.includes(numTarget)
+            addEdgeFor(step.id, `route-${i}`, numTarget, route.expression || `Route ${i + 1}`, taken ? '#27ae60' : '#95a5a6', taken)
           }
         })
         const numDefault = toNum(def.default_target_step_id)
         if (numDefault && (numDefault === END_TARGET || stepMap.has(numDefault))) {
-          addEdgeFor(step.id, 'default', numDefault, 'Else', '#e74c3c')
+          const taken = routeTaken.includes(numDefault)
+          addEdgeFor(step.id, 'default', numDefault, 'Else', taken ? '#e74c3c' : '#95a5a6', taken)
         }
       } else {
         const targets = def.next_step_ids || (def.next_step_id ? [def.next_step_id] : [])
         targets.forEach((targetId: number, i: number) => {
           const numTarget = toNum(targetId)
           if (numTarget && (numTarget === END_TARGET || stepMap.has(numTarget))) {
-            addEdgeFor(step.id, `out-${i}`, numTarget, numTarget === END_TARGET ? 'End' : '', '#1565c0')
+            const taken = routeTaken.includes(numTarget)
+            addEdgeFor(step.id, `out-${i}`, numTarget, numTarget === END_TARGET ? 'End' : '', taken ? '#1565c0' : '#95a5a6', taken)
           }
         })
       }
     })
 
     // Start node → explicitly configured outputs only (no auto-derived connections)
-    const rawStartIds = configDraft?.start_step_ids || []
+    const rawStartIds = isInspectorMode ? (opts.graphData!.start_step_ids || []) : (configDraft?.start_step_ids || [])
     const startIds: number[] = rawStartIds
       .map(toNum)
       .filter((sid: number) => stepMap.has(sid))
@@ -621,9 +710,39 @@ export const WorkflowDesigner: React.FC = () => {
     setEdges(newEdges)
   }, [draftSteps, configDraft, users, groups])
 
+  // Build instance status map from inspector data
+  const instanceStatusMap = useRef<Map<number, any>>(new Map())
   useEffect(() => {
-    buildGraph()
-  }, [buildGraph])
+    if (inspectorData?.steps) {
+      const m = new Map<number, any>()
+      inspectorData.steps.forEach((s: any) => {
+        m.set(s.step_id, { status: s.status, route_taken: s.route_taken || [], ...s })
+      })
+      instanceStatusMap.current = m
+    } else {
+      instanceStatusMap.current = new Map()
+    }
+  }, [inspectorData])
+
+  useEffect(() => {
+    buildGraph({
+      instanceStatusMap: instanceStatusMap.current,
+      graphData: inspectorData?.graph,
+    })
+  }, [buildGraph, inspectorData])
+
+  // Focus on a specific step node if requested
+  useEffect(() => {
+    if (focusStepId && nodes.length > 0) {
+      const nodeId = `step-${focusStepId}`
+      const node = nodes.find(n => n.id === nodeId)
+      if (node && reactFlowInstance.current) {
+        reactFlowInstance.current.fitView({ padding: 1.5, includeHiddenNodes: false })
+        // Trigger a click to open the detail panel
+        handleNodeClick(nodeId)
+      }
+    }
+  }, [focusStepId, nodes.length])
 
   const handleNodesChange = useCallback((changes: any[]) => {
     setNodes((nds) => {
@@ -656,6 +775,19 @@ export const WorkflowDesigner: React.FC = () => {
   }, [])
 
   const handleNodeClick = (nodeId: string) => {
+    if (readOnly && inspectorData) {
+      // Run inspector mode: show instance detail panel
+      if (!nodeId.startsWith('step-')) return
+      const stepId = parseInt(nodeId.replace('step-', ''))
+      const inst = inspectorData.steps.find((s: any) => s.step_id === stepId)
+      if (inst) {
+        setSelectedInstance(inst)
+        setAiDiagnoseResult(null)
+        setAiDiagnoseError('')
+      }
+      return
+    }
+
     if (nodeId === 'start') {
       setStartStepIds([...(configDraft?.start_step_ids || [])])
       setShowStartConfig(true)
@@ -718,6 +850,109 @@ export const WorkflowDesigner: React.FC = () => {
     setConfigDraft((prev: any) => ({ ...(prev || {}), start_step_ids: startStepIds }))
     setShowStartConfig(false)
     setIsDirty(true)
+  }
+
+  // AI diagnose for a failed step instance
+  const handleInstanceAiDiagnose = async () => {
+    if (!selectedInstance) return
+    setAiDiagnoseLoading(true)
+    setAiDiagnoseError('')
+    setAiDiagnoseResult(null)
+    try {
+      const res = await aiApi.explainError({
+        error_message: selectedInstance.error_message || 'Step failed',
+        step_type: selectedInstance.step_type,
+        step_config: selectedInstance.custom_data || {},
+        input_data_sample: selectedInstance.input_data,
+      })
+      setAiDiagnoseResult(res.data.result)
+    } catch (err: any) {
+      setAiDiagnoseError(err.response?.data?.detail || 'AI diagnose failed')
+    } finally {
+      setAiDiagnoseLoading(false)
+    }
+  }
+
+  // Render instance detail panel (readOnly mode)
+  const renderInstanceDetailPanel = () => {
+    if (!selectedInstance) return null
+    const inst = selectedInstance
+    const statusBadge = inst.status === 'completed' ? 'success' :
+      inst.status === 'failed' ? 'danger' :
+      inst.status === 'running' ? 'info' :
+      inst.status === 'skipped' ? 'secondary' : 'warning'
+
+    return (
+      <div className="card" style={{ marginTop: '1rem' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+          <h3 className="card-title" style={{ margin: 0 }}>
+            Step Instance Details
+          </h3>
+          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedInstance(null)}>✕ Close</button>
+        </div>
+
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+          <div><strong>Step:</strong> {inst.title || inst.step_type}</div>
+          <div><strong>Status:</strong> <span className={`badge badge-${statusBadge}`}>{inst.status}</span></div>
+          <div><strong>Position:</strong> {inst.position}</div>
+          <div><strong>Duration:</strong> {inst.duration_seconds != null ? `${inst.duration_seconds.toFixed(3)}s` : '-'}</div>
+          <div><strong>Started:</strong> {inst.started_at ? new Date(inst.started_at).toLocaleString() : '-'}</div>
+          <div><strong>Completed:</strong> {inst.completed_at ? new Date(inst.completed_at).toLocaleString() : '-'}</div>
+          <div><strong>Retries:</strong> {inst.retry_count} / {inst.max_retries}</div>
+          <div><strong>Route to:</strong> {inst.route_taken?.length ? inst.route_taken.join(', ') : '-'}</div>
+        </div>
+
+        {inst.last_error && (
+          <div style={{ marginBottom: '0.75rem' }}>
+            <strong>Last Error:</strong>
+            <pre style={{ background: '#fdf2f2', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', marginTop: '0.25rem', overflow: 'auto', maxHeight: '100px' }}>{inst.last_error}</pre>
+          </div>
+        )}
+
+        {inst.error_message && (
+          <div style={{ marginBottom: '0.75rem' }}>
+            <strong>Error:</strong>
+            <pre style={{ background: '#fdf2f2', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', marginTop: '0.25rem', overflow: 'auto', maxHeight: '100px' }}>{inst.error_message}</pre>
+            <button
+              className="btn btn-sm btn-warning"
+              onClick={handleInstanceAiDiagnose}
+              disabled={aiDiagnoseLoading}
+              style={{ marginTop: '0.5rem' }}
+            >
+              {aiDiagnoseLoading ? 'Analyzing...' : '🤖 AI Diagnose'}
+            </button>
+          </div>
+        )}
+
+        {aiDiagnoseError && <div className="error" style={{ marginTop: '0.5rem' }}>{aiDiagnoseError}</div>}
+
+        {aiDiagnoseResult && (
+          <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fef9e7', borderRadius: '6px', border: '1px solid #f9e79f' }}>
+            <strong>AI Analysis:</strong>
+            {aiDiagnoseResult.explanation && <p style={{ margin: '0.25rem 0' }}>{aiDiagnoseResult.explanation}</p>}
+            {aiDiagnoseResult.root_cause && <p style={{ margin: '0.25rem 0' }}><strong>Root cause:</strong> {aiDiagnoseResult.root_cause}</p>}
+            {aiDiagnoseResult.suggested_fix && <p style={{ margin: '0.25rem 0' }}><strong>Suggested fix:</strong> {aiDiagnoseResult.suggested_fix}</p>}
+          </div>
+        )}
+
+        <details style={{ marginBottom: '0.5rem' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input Data</summary>
+          <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.input_data, null, 2)}</pre>
+        </details>
+
+        <details style={{ marginBottom: '0.5rem' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Output Data</summary>
+          <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.output_data, null, 2)}</pre>
+        </details>
+
+        {inst.custom_data && Object.keys(inst.custom_data).length > 0 && (
+          <details>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Custom Data</summary>
+            <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '150px' }}>{JSON.stringify(inst.custom_data, null, 2)}</pre>
+          </details>
+        )}
+      </div>
+    )
   }
 
   // Save node to My Nodes library
@@ -1822,45 +2057,77 @@ export const WorkflowDesigner: React.FC = () => {
     )
   }
 
-  if (isLoading) {
+  if (isLoading && !readOnly) {
     return <div className="loading">Loading workflow...</div>
+  }
+
+  // Run inspector header
+  const renderInspectorHeader = () => {
+    if (!readOnly || !inspectorData) return null
+    const run = inspectorData.run
+    const wf = inspectorData.workflow
+    const statusBadge = run.status === 'completed' ? 'success' :
+      run.status === 'failed' ? 'danger' :
+      run.status === 'running' ? 'info' :
+      run.status === 'waiting' ? 'warning' : 'secondary'
+
+    return (
+      <div className="card-header">
+        <div>
+          <h2>Run Inspector: #{run.id} — {wf?.name || '(deleted workflow)'}</h2>
+          <p style={{ color: '#7f8c8d', marginTop: '0.5rem' }}>
+            Click a node to see its run details. Colored borders show step status; highlighted edges show the route taken.
+          </p>
+        </div>
+        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+          <span className={`badge badge-${statusBadge}`} style={{ fontSize: '0.9rem' }}>{run.status}</span>
+          <button className="btn btn-secondary" onClick={() => navigate(-1)}>← Back</button>
+        </div>
+      </div>
+    )
   }
 
   return (
     <ReactFlowProvider>
       <div>
-        <div className="card-header">
-        <div>
-          <h2>Design Workflow: {(workflow as any)?.name || 'Loading...'}</h2>
-          <p style={{ color: '#7f8c8d', marginTop: '0.5rem' }}>
-            Click a node to edit its settings and connections. Lines show what each step outputs to.
-          </p>
-          {isDirty && !saving && (
-            <p style={{ color: '#b9770e', marginTop: '0.25rem', fontSize: '0.85rem' }}>
-              Unsaved changes — click "Save Workflow" to persist or "Cancel" to discard.
-            </p>
-          )}
-        </div>
-        <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
-          <button className="btn btn-primary" onClick={() => setShowAddStep(!showAddStep)}>
-            + Add Step
-          </button>
-          <button className="btn btn-info" onClick={() => setShowMyNodesPanel(!showMyNodesPanel)}>
-            {showMyNodesPanel ? 'Hide' : 'My'} Nodes Library
-          </button>
-          <button className="btn btn-success" onClick={handleSave} disabled={saving || !isDirty}>
-            {saving ? 'Saving...' : 'Save Workflow'}
-          </button>
-          <button className="btn btn-secondary" onClick={handleCancel}>
-            {isDirty ? 'Cancel' : 'Back'}
-          </button>
-        </div>
-      </div>
+        {renderInspectorHeader()}
 
-      {saveError && <div className="error" style={{ marginBottom: '0.5rem' }}>{saveError}</div>}
-      {savedMessage && <div className="success" style={{ marginBottom: '0.5rem' }}>{savedMessage}</div>}
+        {!readOnly && (
+          <div className="card-header">
+            <div>
+              <h2>Design Workflow: {(workflow as any)?.name || 'Loading...'}</h2>
+              <p style={{ color: '#7f8c8d', marginTop: '0.5rem' }}>
+                Click a node to edit its settings and connections. Lines show what each step outputs to.
+              </p>
+              {isDirty && !saving && (
+                <p style={{ color: '#b9770e', marginTop: '0.25rem', fontSize: '0.85rem' }}>
+                  Unsaved changes — click "Save Workflow" to persist or "Cancel" to discard.
+                </p>
+              )}
+            </div>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'center' }}>
+              <button className="btn btn-primary" onClick={() => setShowAddStep(!showAddStep)}>
+                + Add Step
+              </button>
+              <button className="btn btn-info" onClick={() => setShowMyNodesPanel(!showMyNodesPanel)}>
+                {showMyNodesPanel ? 'Hide' : 'My'} Nodes Library
+              </button>
+              <button className="btn btn-success" onClick={handleSave} disabled={saving || !isDirty}>
+                {saving ? 'Saving...' : 'Save Workflow'}
+              </button>
+              <button className="btn btn-secondary" onClick={handleCancel}>
+                {isDirty ? 'Cancel' : 'Back'}
+              </button>
+            </div>
+          </div>
+        )}
 
-      {showAddStep && (
+      {!readOnly && (
+        <>
+          {saveError && <div className="error" style={{ marginBottom: '0.5rem' }}>{saveError}</div>}
+          {savedMessage && <div className="success" style={{ marginBottom: '0.5rem' }}>{savedMessage}</div>}
+
+          {showAddStep && (
         <div className="card">
           <h3 className="card-title">Add New Step</h3>
 
@@ -1919,22 +2186,25 @@ export const WorkflowDesigner: React.FC = () => {
             </button>
           </div>
         </div>
-      )}
+        )}
+      </>
+    )}
 
       <CanvasFlow
         nodes={nodes}
         edges={edges}
-        onNodesChange={handleNodesChange}
-        onNodeDragStop={handleNodeDragStop}
+        onNodesChange={readOnly ? () => {} : handleNodesChange}
+        onNodeDragStop={readOnly ? () => {} : handleNodeDragStop}
         onNodeClick={(_, node) => handleNodeClick(node.id)}
         onNodesInitialized={(instance) => { reactFlowInstance.current = instance }}
       />
 
-      {renderStepEditor()}
-      {renderStartConfig()}
+      {!readOnly && renderStepEditor()}
+      {!readOnly && renderStartConfig()}
+      {readOnly && renderInstanceDetailPanel()}
 
-      {/* My Nodes Library Panel */}
-      {showMyNodesPanel && (
+      {/* My Nodes Library Panel — edit mode only */}
+      {!readOnly && showMyNodesPanel && (
         <div className="card" style={{ marginTop: '1rem' }}>
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
             <h3 className="card-title" style={{ margin: 0 }}>My Nodes Library</h3>
@@ -1947,8 +2217,8 @@ export const WorkflowDesigner: React.FC = () => {
         </div>
       )}
 
-      {/* Save Node Modal (My Nodes or Marketplace) */}
-      {showSaveNodeModal && (
+      {/* Save Node Modal (My Nodes or Marketplace) — edit mode only */}
+      {!readOnly && showSaveNodeModal && (
         <div
           style={{
             position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,

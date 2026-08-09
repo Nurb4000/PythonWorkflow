@@ -8,7 +8,7 @@ All notable changes to the Python Workflow System.
 
 ### New Features
 
-#### Run Inspector backend support (plan S1–S5)
+#### Run Inspector backend + designer read-only mode (plan S1–S8)
 Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **Step metadata snapshot** — `step_instances` now snapshots `step_title`, `step_type`, `step_description` and `step_definition` at trigger time (migration `f6a7b8c9d0e1`, backfills existing runs), so instances stay renderable even after the workflow/step is deleted (consistent with the `workflow_name` snapshot).
 - **`route_taken` recorded** — each executed instance now stores the target step ids it routed to (graph mode, condition branches, and legacy linear next-step) in `custom_data["route_taken"]`, ready for edge highlighting in the viewer.
@@ -16,6 +16,8 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **Inspector endpoint** — `GET /runs/{id}/inspector` returns a combined payload: run, enriched steps, workflow info, and graph step definitions (falls back to instance snapshots when the workflow is deleted). Single round-trip for the viewer.
 - **Portal my-runs enrichment** — now includes `workflow_name` and `error_message` so portal users can see which workflow failed and why.
 - **WorkflowDetail runs-list fix** — backend returns `{runs, total}` but the page expected a bare array; fixed to extract `.runs`.
+- **Designer read-only mode** — `WorkflowDesigner` now accepts `readOnly`, `inspectorData`, and `focusStepId` props. In readOnly mode: disables dragging/editing, hides edit chrome (Add Step, Save, My Nodes), overlays node colors by instance status (completed=green, failed=red, running=blue, skipped=gray), highlights route_taken edges (dimmed/dashed for not-taken branches).
+- **Node-click instance detail panel** — in readOnly mode, clicking a step node opens a side panel showing: step title/type/position/status, timestamps + duration, retries, last_error, error_message with AI Diagnose button, expandable input/output/custom_data JSON.
 
 **Backend files:**
 | File | Purpose |
@@ -32,6 +34,7 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 | File | Purpose |
 |------|---------|
 | `frontend/src/services/api.ts` | `runApi.getInspector()` client |
+| `frontend/src/pages/WorkflowDesigner.tsx` | `readOnly` mode + run-state overlay + instance detail panel |
 | `frontend/src/pages/WorkflowDetail.tsx` | Fix runs-list: extract `.runs` from paginated response |
 
 ---
