@@ -21,9 +21,11 @@ interface PortalWorkflow {
 interface PortalRun {
   id: number
   workflow_id: number
+  workflow_name: string
   status: string
   started_at: string
   completed_at: string
+  error_message: string
   created_at: string
 }
 
@@ -269,30 +271,34 @@ export const Portal: React.FC = () => {
         ) : (
           <table className="table">
             <thead>
-              <tr>
-                <th>ID</th>
-                <th>Workflow</th>
-                <th>Status</th>
-                <th>Started</th>
-                <th>Duration</th>
-                <th></th>
-              </tr>
+               <tr>
+                 <th>ID</th>
+                 <th>Workflow</th>
+                 <th>Status</th>
+                 <th>Started</th>
+                 <th>Duration</th>
+                 <th>Error</th>
+                 <th></th>
+               </tr>
             </thead>
             <tbody>
-              {myRuns.slice(0, 10).map(run => (
-                <tr key={run.id}>
-                  <td>#{run.id}</td>
-                  <td>{runMap.get(run.workflow_id) || `Workflow #${run.workflow_id}`}</td>
-                  <td>
-                    <span className={`badge ${getStatusBadgeClass(run.status)}`}>{run.status}</span>
-                  </td>
-                  <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
-                  <td>{formatDuration(run.started_at, run.completed_at)}</td>
-                  <td>
-                    <Link to={`/runs/${run.id}`} className="btn btn-sm btn-secondary">Details</Link>
-                  </td>
-                </tr>
-              ))}
+               {myRuns.slice(0, 10).map(run => (
+                 <tr key={run.id}>
+                   <td>#{run.id}</td>
+                   <td>{run.workflow_name || runMap.get(run.workflow_id) || `Workflow #${run.workflow_id}`}</td>
+                   <td>
+                     <span className={`badge ${getStatusBadgeClass(run.status)}`}>{run.status}</span>
+                   </td>
+                   <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
+                   <td>{formatDuration(run.started_at, run.completed_at)}</td>
+                   <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                     {run.error_message ? <span style={{ color: '#e74c3c', fontSize: '0.8rem' }}>{run.error_message}</span> : '-'}
+                   </td>
+                   <td>
+                     <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">Graph</Link>
+                   </td>
+                 </tr>
+               ))}
             </tbody>
           </table>
         )}

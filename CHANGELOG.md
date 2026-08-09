@@ -8,7 +8,7 @@ All notable changes to the Python Workflow System.
 
 ### New Features
 
-#### Run Inspector backend + frontend graph viewer (plan S1–S11)
+#### Run Inspector — complete (plan S1–S16)
 Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **Step metadata snapshot** — `step_instances` now snapshots `step_title`, `step_type`, `step_description` and `step_definition` at trigger time (migration `f6a7b8c9d0e1`, backfills existing runs), so instances stay renderable even after the workflow/step is deleted (consistent with the `workflow_name` snapshot).
 - **`route_taken` recorded** — each executed instance now stores the target step ids it routed to (graph mode, condition branches, and legacy linear next-step) in `custom_data["route_taken"]`, ready for edge highlighting in the viewer.
@@ -21,6 +21,8 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **RunMonitor rebuilt around the graph** — `/runs/:runId` now fetches the inspector endpoint and renders `WorkflowDesigner` in readOnly mode with run-state overlay. Stats cards (status, duration, created, completed/failed counts) remain at top. Raw details (input/output JSON, step table) available as a collapsible fallback.
 - **Live polling** — while run status is running/waiting/pending, the inspector data refetches every 3s; stops on terminal status.
 - **Cancel & Re-run actions** — `DELETE /runs/{id}` global cancel endpoint (works even when workflow_id is null); `POST /runs/{id}/rerun` re-triggers the same workflow with original input_data and navigates to the new run. Cancel button shown for running/pending runs; Re-run button shown when workflow still exists. "Jump to first failure" link auto-focuses the failed node in the graph.
+- **Deep-linked from all entry points** — admin runs table ("Graph" button), admin dashboard recent runs (run id + Graph button), portal my-runs (now shows workflow_name, error_message, Graph button), workflow detail runs table (fixed).
+- **Debug extras in instance detail panel** — Input→Output delta table (highlights changed keys), API response status badge (extracted from output/custom_data when available), run timeline sidebar (all steps sorted by position; click to switch between step instances).
 
 **Backend files:**
 | File | Purpose |
@@ -39,7 +41,11 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 | `frontend/src/services/api.ts` | `runApi.getInspector()`, `cancelGlobal()`, `rerun()` clients |
 | `frontend/src/pages/WorkflowDesigner.tsx` | `readOnly` mode + run-state overlay + instance detail panel |
 | `frontend/src/pages/RunMonitor.tsx` | Rebuilt: inspector fetch, graph view, polling, cancel/re-run actions |
+| `frontend/src/pages/WorkflowDesigner.tsx` | `readOnly` mode + run-state overlay + instance detail panel + debug extras (delta, timeline, API status) |
 | `frontend/src/pages/WorkflowDetail.tsx` | Fix runs-list: extract `.runs` from paginated response |
+| `frontend/src/pages/AdminDashboard.tsx` | Recent runs: link to graph view + Graph button |
+| `frontend/src/pages/Portal.tsx` | My-runs: workflow_name, error_message, Graph button |
+| `frontend/src/pages/WorkflowRunsAdmin.tsx` | "Graph" button (primary) in actions column |
 
 ---
 

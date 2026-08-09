@@ -935,6 +935,43 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
           </div>
         )}
 
+        {/* Input→Output delta */}
+        <details style={{ marginBottom: '0.5rem' }}>
+          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input → Output Delta</summary>
+          <div style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+            {(() => {
+              const input = inst.input_data || {}
+              const output = inst.output_data || {}
+              const allKeys = new Set([...Object.keys(input), ...Object.keys(output)])
+              if (allKeys.size === 0) return <span style={{ color: '#95a5a6' }}>No data</span>
+              return (
+                <table className="table" style={{ fontSize: '0.75rem', margin: 0 }}>
+                  <thead><tr><th>Key</th><th>Input</th><th>Output</th><th>Changed</th></tr></thead>
+                  <tbody>
+                    {Array.from(allKeys).map(key => {
+                      const inVal = input[key]
+                      const outVal = output[key]
+                      const changed = JSON.stringify(inVal) !== JSON.stringify(outVal)
+                      return (
+                        <tr key={key} style={{ background: changed ? '#fef9e7' : 'transparent' }}>
+                          <td><code>{key}</code></td>
+                          <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {typeof inVal === 'object' ? JSON.stringify(inVal) : (inVal ?? '-')}
+                          </td>
+                          <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                            {typeof outVal === 'object' ? JSON.stringify(outVal) : (outVal ?? '-')}
+                          </td>
+                          <td>{changed ? <span style={{ color: '#e67e22' }}>→</span> : <span style={{ color: '#95a5a6' }}>=</span>}</td>
+                        </tr>
+                      )
+                    })}
+                  </tbody>
+                </table>
+              )
+            })()}
+          </div>
+        </details>
+
         <details style={{ marginBottom: '0.5rem' }}>
           <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input Data</summary>
           <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.input_data, null, 2)}</pre>
@@ -945,10 +982,63 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
           <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.output_data, null, 2)}</pre>
         </details>
 
+        {/* API response status (if available in output or custom_data) */}
+        {(() => {
+          const output = inst.output_data || {}
+          const customData = inst.custom_data || {}
+          const statusCode = output.status_code ?? output.response_status ?? customData.http_status_code ?? customData.response_status_code
+          const responseTime = output.response_time_ms ?? customData.response_time_ms ?? customData.duration_ms
+          if (statusCode != null) {
+            return (
+              <div style={{ marginBottom: '0.5rem', padding: '0.5rem', background: '#e8f6f3', borderRadius: '4px', fontSize: '0.8rem' }}>
+                <strong>API Response:</strong>{' '}
+                <span className={`badge ${statusCode >= 200 && statusCode < 300 ? 'badge-success' : 'badge-danger'}`}>
+                  {statusCode}
+                </span>
+                {responseTime != null && <span style={{ marginLeft: '0.5rem' }}>{responseTime}ms</span>}
+              </div>
+            )
+          }
+          return null
+        })()}
+
         {inst.custom_data && Object.keys(inst.custom_data).length > 0 && (
           <details>
             <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Custom Data</summary>
             <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '150px' }}>{JSON.stringify(inst.custom_data, null, 2)}</pre>
+          </details>
+        )}
+
+        {/* Step timeline — shows all steps for this run in order */}
+        {inspectorData && (
+          <details style={{ marginTop: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Run Timeline (all steps)</summary>
+            <div style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+              {inspectorData.steps
+                .sort((a: any, b: any) => a.position - b.position)
+                .map((s: any) => {
+                  const isActive = s.id === inst.id
+                  return (
+                    <div
+                      key={s.id}
+                      style={{
+                        display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0',
+                        background: isActive ? '#eaf2f8' : 'transparent', cursor: 'pointer',
+                        borderRadius: '3px',
+                      }}
+                      onClick={() => setSelectedInstance(s)}
+                    >
+                      <span className={`badge ${s.status === 'completed' ? 'badge-success' : s.status === 'failed' ? 'badge-danger' : s.status === 'running' ? 'badge-info' : s.status === 'skipped' ? 'badge-secondary' : 'badge-warning'}`} style={{ fontSize: '0.65rem', minWidth: '60px', textAlign: 'center' }}>
+                        {s.status}
+                      </span>
+                      <span style={{ flex: 1 }}>{s.title || s.step_type}</span>
+                      <span style={{ color: '#95a5a6', fontSize: '0.7rem' }}>
+                        {s.duration_seconds != null ? `${s.duration_seconds.toFixed(2)}s` : '-'}
+                      </span>
+                    </div>
+                  )
+                })}
+            </div>
           </details>
         )}
       </div>

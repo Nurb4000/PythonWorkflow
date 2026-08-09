@@ -1,5 +1,6 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { adminApi } from '../services/api'
 import { ScheduleManager } from '../components/ScheduleManager'
 
@@ -152,41 +153,45 @@ export const AdminDashboard: React.FC = () => {
         <table className="table">
           <thead>
             <tr>
-              <th>ID</th>
-              <th>Workflow</th>
-              <th>Status</th>
-              <th>Triggered By</th>
-              <th>Started</th>
-              <th>Completed</th>
-              <th>Duration</th>
-              <th>Error</th>
-            </tr>
-          </thead>
-          <tbody>
-            {runs?.map((run: Run) => (
-              <tr key={run.id}>
-                <td>#{run.id}</td>
-                <td>{run.workflow_name || (run.workflow_id != null ? `#${run.workflow_id}` : 'Unknown')}</td>
-                <td>
-                  <span className={`badge ${getStatusBadgeClass(run.status)}`}>
-                    {run.status}
-                  </span>
-                </td>
-                <td>{run.triggered_by}</td>
-                <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
-                <td>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '-'}</td>
-                <td>{calculateDuration(run.started_at, run.completed_at)}</td>
-                <td style={{ 
-                  color: run.error_message ? '#e74c3c' : 'inherit',
-                  maxWidth: '200px',
-                  overflow: 'hidden',
-                  textOverflow: 'ellipsis',
-                  whiteSpace: 'nowrap'
-                }}>
-                  {run.error_message || '-'}
-                </td>
-              </tr>
-            ))}
+               <th>ID</th>
+               <th>Workflow</th>
+               <th>Status</th>
+               <th>Triggered By</th>
+               <th>Started</th>
+               <th>Completed</th>
+               <th>Duration</th>
+               <th>Error</th>
+               <th>Actions</th>
+             </tr>
+           </thead>
+           <tbody>
+             {runs?.map((run: Run) => (
+               <tr key={run.id}>
+                 <td><Link to={`/runs/${run.id}`}>#{run.id}</Link></td>
+                 <td>{run.workflow_name || (run.workflow_id != null ? `#${run.workflow_id}` : 'Unknown')}</td>
+                 <td>
+                   <span className={`badge ${getStatusBadgeClass(run.status)}`}>
+                     {run.status}
+                   </span>
+                 </td>
+                 <td>{run.triggered_by}</td>
+                 <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
+                 <td>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '-'}</td>
+                 <td>{calculateDuration(run.started_at, run.completed_at)}</td>
+                 <td style={{ 
+                   color: run.error_message ? '#e74c3c' : 'inherit',
+                   maxWidth: '200px',
+                   overflow: 'hidden',
+                   textOverflow: 'ellipsis',
+                   whiteSpace: 'nowrap'
+                 }}>
+                   {run.error_message || '-'}
+                 </td>
+                 <td>
+                   <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">Graph</Link>
+                 </td>
+               </tr>
+             ))}
           </tbody>
         </table>
       </div>
