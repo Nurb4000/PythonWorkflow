@@ -135,8 +135,9 @@ Add `/cmdb` routes wrapped in `<RoleRoute roles={['admin', 'developer', 'cmdb_ma
 
 ## Phase Breakdown
 
-### Phase 1: Backend Core — Models, API, Migration
+### Phase 1: Backend Core — Models, API, Migration ✅ COMPLETE
 **Goal**: CMDB data layer is functional via API.
+**Status**: Implemented and tested (commit `8905307`, 2026-08-09).
 
 | # | Task | Files | Details |
 |---|------|-------|---------|
@@ -174,6 +175,12 @@ Relationships:
 - `ci_data` on CI must conform to its type's `field_schema` (required fields, type checks)
 - Relationship cannot point to same CI (self-loop), cannot link deleted types
 - `key` on CIType is auto-generated from `name` (slugified) if not provided
+
+**Notes from implementation:**
+- Also included `/cmdb/search`, `/cmdb/items/{id}/graph`, and `/cmdb/items/bulk-import` endpoints (originally planned for Phase 4) since they were straightforward to add
+- Bulk import uses application-level JSON matching (not PostgreSQL JSONB operators) for compatibility with async SQLAlchemy
+- CI type deletion is soft-delete (`is_active = False`), blocked if items exist
+- `dry_run` mode on bulk import uses explicit `db.rollback()` to prevent persistence
 
 ---
 
@@ -244,13 +251,13 @@ Result: `$input.server_ci` contains the full CI record.
 
 | # | Task | Files | Details |
 |---|------|-------|---------|
-| 4.1 | Bulk import endpoint | `backend/app/api/cmdb.py` | `POST /cmdb/items/bulk-import` — Accepts array of CI records; upsert by type+key field; returns summary |
-| 4.2 | Bulk import validation | Same | Dry-run mode (`?dry_run=true`) returns validation errors without writing |
+| 4.1 | ~~Bulk import endpoint~~ | — | **Moved to Phase 1** ✅ |
+| 4.2 | ~~Bulk import validation (dry_run)~~ | — | **Moved to Phase 1** ✅ |
 | 4.3 | API token scoping | `backend/app/api/auth.py` | Allow API tokens to be scoped to "cmdb_read" / "cmdb_write" permissions |
 | 4.4 | Export endpoint | `backend/app/api/cmdb.py` | `GET /cmdb/items/export?format=json\|csv&type_id=N` — Export CIs for backup/sync |
 | 4.5 | Webhook trigger: CI events | `backend/app/api/cmdb.py` + `webhooks.py` | When a CI is created/updated/deleted, optionally fire a configured workflow (like form submission triggers) |
-| 4.6 | Search API | `backend/app/api/cmdb.py` | `GET /cmdb/search?q=term&type_id=N` — Full-text search across CI names and ci_data values |
-| 4.7 | Relationship graph API | `backend/app/api/cmdb.py` | `GET /cmdb/items/{id}/graph?depth=2` — Returns adjacency for impact analysis |
+| 4.6 | ~~Search API~~ | — | **Moved to Phase 1** ✅ |
+| 4.7 | ~~Relationship graph API~~ | — | **Moved to Phase 1** ✅ |
 
 **Bulk import format:**
 ```json
