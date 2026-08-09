@@ -588,7 +588,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     // Instance status map: stepId -> {status, route_taken}
     const instMap = opts?.instanceStatusMap || new Map()
 
-    const startPos = nodePositions.current['start'] || { x: 250, y: 0 }
+    const startPos = nodePositions.current['start'] || (configDraft?.start_node_pos as { x: number; y: number } | undefined) || { x: 250, y: 0 }
     newNodes.push({
       id: 'start',
       type: 'start',
@@ -698,7 +698,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       })
     })
 
-    const endPos = nodePositions.current['end'] || { x: 250, y: 100 + ((steps.length || 1) * 140) }
+    const endPos = nodePositions.current['end'] || (configDraft?.end_node_pos as { x: number; y: number } | undefined) || { x: 250, y: 100 + ((steps.length || 1) * 140) }
     newNodes.push({
       id: 'end',
       type: 'end',
@@ -769,6 +769,13 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
           ...s,
           definition: { ...s.definition, pos_x: node.position.x, pos_y: node.position.y }
         }
+      }))
+      setIsDirty(true)
+    }
+    if (node.id === 'start' || node.id === 'end') {
+      setConfigDraft((prev: any) => ({
+        ...(prev || {}),
+        [node.id === 'start' ? 'start_node_pos' : 'end_node_pos']: { x: node.position.x, y: node.position.y }
       }))
       setIsDirty(true)
     }
