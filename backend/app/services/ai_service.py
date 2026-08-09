@@ -4,9 +4,9 @@ AI integration service for generating workflow steps, node assistance, and error
 import json
 import logging
 from typing import Dict, Any, Optional, List
-from pathlib import Path
 import httpx
 from app.api.system_settings import settings as system_settings
+from app.core.config import resolve_project_root
 
 logger = logging.getLogger(__name__)
 
@@ -56,8 +56,7 @@ class AIService:
     def _load_knowledge_base(self) -> Dict[str, str]:
         """Load knowledge base files into a dict keyed by domain path"""
         kb = {}
-        project_root = Path(__file__).resolve().parent.parent.parent.parent
-        kb_root = project_root / "knowledge-base"
+        kb_root = resolve_project_root() / "knowledge-base"
 
         for directory in ["steering", "nodes", "queries", "forms", "debugging", "admin"]:
             dir_path = kb_root / directory
@@ -110,7 +109,7 @@ class AIService:
         """Generate a complete workflow from description"""
         template = None
         if template_name:
-            project_root = Path(__file__).resolve().parent.parent.parent.parent
+            project_root = resolve_project_root()
             templates_path = project_root / "knowledge-base" / "templates"
             if templates_path.exists():
                 for file in templates_path.glob("*.json"):

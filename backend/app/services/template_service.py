@@ -8,6 +8,7 @@ from pathlib import Path
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
+from app.core.config import resolve_project_root
 from app.models.schemas import Workflow, WorkflowStep
 from app.schemas.workflow import WorkflowCreate
 
@@ -18,7 +19,7 @@ class TemplateService:
     """Manage workflow templates"""
     
     def __init__(self):
-        project_root = Path(__file__).resolve().parent.parent.parent.parent
+        project_root = resolve_project_root()
         self.templates_path = project_root / "knowledge-base" / "templates"
         self._templates: List[Dict[str, Any]] = []
         self._load_templates()

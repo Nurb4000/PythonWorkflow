@@ -1,6 +1,7 @@
 """
 Application settings and configuration
 """
+from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
 
@@ -46,3 +47,18 @@ class Settings(BaseSettings):
 
 
 settings = Settings()
+
+
+def resolve_project_root() -> Path:
+    """Return the directory that contains the ``knowledge-base`` folder.
+
+    Walks up from the app package so it works both in the dev checkout
+    (``<repo>/backend/app/...``) and inside the container where the code is
+    mounted at ``/app/...`` and the knowledge base sits at ``/app/knowledge-base``.
+    """
+    current = Path(__file__).resolve().parent  # app/core
+    while current != current.parent:
+        if (current / "knowledge-base").is_dir():
+            return current
+        current = current.parent
+    return Path(__file__).resolve().parent.parent.parent.parent
