@@ -8,7 +8,7 @@ All notable changes to the Python Workflow System.
 
 ### New Features
 
-#### Run Inspector backend + designer read-only mode (plan S1–S8)
+#### Run Inspector backend + frontend graph viewer (plan S1–S11)
 Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **Step metadata snapshot** — `step_instances` now snapshots `step_title`, `step_type`, `step_description` and `step_definition` at trigger time (migration `f6a7b8c9d0e1`, backfills existing runs), so instances stay renderable even after the workflow/step is deleted (consistent with the `workflow_name` snapshot).
 - **`route_taken` recorded** — each executed instance now stores the target step ids it routed to (graph mode, condition branches, and legacy linear next-step) in `custom_data["route_taken"]`, ready for edge highlighting in the viewer.
@@ -18,6 +18,9 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **WorkflowDetail runs-list fix** — backend returns `{runs, total}` but the page expected a bare array; fixed to extract `.runs`.
 - **Designer read-only mode** — `WorkflowDesigner` now accepts `readOnly`, `inspectorData`, and `focusStepId` props. In readOnly mode: disables dragging/editing, hides edit chrome (Add Step, Save, My Nodes), overlays node colors by instance status (completed=green, failed=red, running=blue, skipped=gray), highlights route_taken edges (dimmed/dashed for not-taken branches).
 - **Node-click instance detail panel** — in readOnly mode, clicking a step node opens a side panel showing: step title/type/position/status, timestamps + duration, retries, last_error, error_message with AI Diagnose button, expandable input/output/custom_data JSON.
+- **RunMonitor rebuilt around the graph** — `/runs/:runId` now fetches the inspector endpoint and renders `WorkflowDesigner` in readOnly mode with run-state overlay. Stats cards (status, duration, created, completed/failed counts) remain at top. Raw details (input/output JSON, step table) available as a collapsible fallback.
+- **Live polling** — while run status is running/waiting/pending, the inspector data refetches every 3s; stops on terminal status.
+- **Cancel & Re-run actions** — `DELETE /runs/{id}` global cancel endpoint (works even when workflow_id is null); `POST /runs/{id}/rerun` re-triggers the same workflow with original input_data and navigates to the new run. Cancel button shown for running/pending runs; Re-run button shown when workflow still exists. "Jump to first failure" link auto-focuses the failed node in the graph.
 
 **Backend files:**
 | File | Purpose |
@@ -26,15 +29,16 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 | `backend/alembic/versions/f6a7b8c9d0e1_add_step_metadata_snapshot_on_instances.py` | Snapshot columns + backfill |
 | `backend/app/services/workflow_engine.py` | Populate snapshot in `trigger_workflow`; `_record_route`/`_linear_next`; route recording in linear + branching paths |
 | `backend/app/schemas/workflow.py` | Enriched `StepInstanceResponse` |
-| `backend/app/api/workflow_runs.py` | `GET /runs/{id}/inspector` combined endpoint |
+| `backend/app/api/workflow_runs.py` | `GET /runs/{id}/inspector`, `DELETE /runs/{id}` (cancel), `POST /runs/{id}/rerun` |
 | `backend/app/api/portal.py` | my-runs: added `workflow_name`, `error_message` |
 | `backend/tests/test_run_inspector.py` | 8 tests (snapshot, route_taken graph/condition/linear, response shape, inspector payload, snapshot fallback) |
 
 **Frontend files:**
 | File | Purpose |
 |------|---------|
-| `frontend/src/services/api.ts` | `runApi.getInspector()` client |
+| `frontend/src/services/api.ts` | `runApi.getInspector()`, `cancelGlobal()`, `rerun()` clients |
 | `frontend/src/pages/WorkflowDesigner.tsx` | `readOnly` mode + run-state overlay + instance detail panel |
+| `frontend/src/pages/RunMonitor.tsx` | Rebuilt: inspector fetch, graph view, polling, cancel/re-run actions |
 | `frontend/src/pages/WorkflowDetail.tsx` | Fix runs-list: extract `.runs` from paginated response |
 
 ---

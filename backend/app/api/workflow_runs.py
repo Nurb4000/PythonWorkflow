@@ -174,6 +174,73 @@ async def get_run_steps_by_id(
     return instances
 
 
+@runs_router.delete("/runs/{run_id}")
+async def cancel_run_global(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Cancel a running workflow run (global endpoint, no workflow id needed)."""
+    stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
+    result = await db.execute(stmt)
+    run = result.scalar_one_or_none()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    if not await user_can_access_workflow(db, current_user, run.workflow_id):
+        raise HTTPException(status_code=403, detail="You do not have permission to cancel this run")
+
+    if run.status not in ["pending", "running"]:
+        raise HTTPException(status_code=400, detail=f"Run cannot be cancelled (status: {run.status})")
+
+    from datetime import datetime
+    run.status = "cancelled"
+    run.completed_at = datetime.utcnow()
+    await db.commit()
+
+    return {"message": "Run cancelled successfully", "id": run.id}
+
+
+@runs_router.post("/runs/{run_id}/rerun")
+async def rerun_run(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Re-trigger the same workflow with the original input data."""
+    from app.services.workflow_engine import WorkflowEngine
+    from app.schemas.workflow import WorkflowRunCreate
+
+    stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
+    result = await db.execute(stmt)
+    run = result.scalar_one_or_none()
+
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+
+    if run.workflow_id is None:
+        raise HTTPException(status_code=400, detail="Cannot re-run: original workflow has been deleted")
+
+    if not await user_can_access_workflow(db, current_user, run.workflow_id):
+        raise HTTPException(status_code=403, detail="You do not have permission to re-run this workflow")
+
+    engine = WorkflowEngine()
+    new_run = await engine.trigger_workflow(
+        db,
+        run.workflow_id,
+        WorkflowRunCreate(
+            input_data=run.input_data or {},
+            triggered_by=f"rerun:{current_user.username}",
+            timeout_seconds=run.timeout_seconds,
+            max_retries=run.max_retries,
+            failure_hooks=run.failure_hooks or [],
+        ),
+    )
+
+    return WorkflowRunResponse.model_validate(new_run)
+
+
 @runs_router.get("/runs/{run_id}/inspector")
 async def get_run_inspector(
     run_id: int,
