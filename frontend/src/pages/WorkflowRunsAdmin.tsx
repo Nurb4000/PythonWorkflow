@@ -6,7 +6,7 @@ import { RunsTable, ColumnDef } from '../components/RunsTable'
 
 interface Run {
   id: number
-  workflow_id: number
+  workflow_id: number | null
   workflow_name: string
   status: string
   triggered_by: string
@@ -63,7 +63,7 @@ export const WorkflowRunsAdmin: React.FC = () => {
   })
 
   const cancelMutation = useMutation({
-    mutationFn: (run: Run) => runApi.cancel(run.workflow_id, run.id),
+    mutationFn: (run: Run) => runApi.cancel(run.workflow_id!, run.id),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['admin-runs-all'] })
   })
 
@@ -88,7 +88,7 @@ export const WorkflowRunsAdmin: React.FC = () => {
   const workflows = useMemo(() => {
     const map = new Map<number, string>()
     ;(runs || []).forEach(r => {
-      if (!map.has(r.workflow_id)) map.set(r.workflow_id, r.workflow_name)
+      if (r.workflow_id != null && !map.has(r.workflow_id)) map.set(r.workflow_id, r.workflow_name || `#${r.workflow_id}`)
     })
     return Array.from(map.entries())
       .sort((a, b) => a[1].localeCompare(b[1]))
@@ -112,8 +112,10 @@ export const WorkflowRunsAdmin: React.FC = () => {
     {
       key: 'workflow',
       label: 'Workflow',
-      render: r => <Link to={`/workflows/${r.workflow_id}`}>{r.workflow_name || `#${r.workflow_id}`}</Link>,
-      csv: r => r.workflow_name || `#${r.workflow_id}`
+      render: r => r.workflow_id
+        ? <Link to={`/workflows/${r.workflow_id}`}>{r.workflow_name || `#${r.workflow_id}`}</Link>
+        : <span>{r.workflow_name || 'Unknown workflow'}</span>,
+      csv: r => r.workflow_name || (r.workflow_id ? `#${r.workflow_id}` : 'Unknown workflow')
     },
     {
       key: 'status',
@@ -198,8 +200,10 @@ export const WorkflowRunsAdmin: React.FC = () => {
   const actions = (run: Run) => (
     <div style={{ display: 'flex', gap: '0.35rem' }}>
       <Link to={`/runs/${run.id}`} className="btn btn-sm btn-secondary">Details</Link>
-      <Link to={`/workflows/${run.workflow_id}/design`} className="btn btn-sm btn-secondary">Edit</Link>
-      {ACTIVE_STATUSES.includes(run.status) && (
+      {run.workflow_id != null && (
+        <Link to={`/workflows/${run.workflow_id}/design`} className="btn btn-sm btn-secondary">Edit</Link>
+      )}
+      {ACTIVE_STATUSES.includes(run.status) && run.workflow_id != null && (
         <button
           className="btn btn-sm btn-danger"
           onClick={() => cancelMutation.mutate(run)}

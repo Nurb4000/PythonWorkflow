@@ -213,6 +213,7 @@ class WorkflowEngine:
             workflow_id=workflow_id,
             status="pending",
             triggered_by=run_data.triggered_by,
+            workflow_name=workflow.name or "",
             input_data=run_data.input_data,
             timeout_seconds=run_data.timeout_seconds,
             max_retries=run_data.max_retries,

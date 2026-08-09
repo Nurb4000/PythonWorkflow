@@ -197,8 +197,11 @@ async def list_all_runs(
 ):
     """List all workflow runs with workflow name and step/node summary"""
     stmt = (
-        select(WorkflowRun, Workflow.name.label("workflow_name"))
-        .join(Workflow, Workflow.id == WorkflowRun.workflow_id)
+        select(
+            WorkflowRun,
+            func.coalesce(WorkflowRun.workflow_name, Workflow.name).label("workflow_name")
+        )
+        .outerjoin(Workflow, Workflow.id == WorkflowRun.workflow_id)
     )
     
     if status:
@@ -213,7 +216,7 @@ async def list_all_runs(
                 stmt = stmt.where(
                     or_(
                         WorkflowRun.id == run_id,
-                        Workflow.name.contains(q),
+                        func.coalesce(WorkflowRun.workflow_name, Workflow.name).contains(q),
                         WorkflowRun.triggered_by.contains(q),
                         WorkflowRun.status.contains(q)
                     )
@@ -221,7 +224,7 @@ async def list_all_runs(
             except ValueError:
                 stmt = stmt.where(
                     or_(
-                        Workflow.name.contains(q),
+                        func.coalesce(WorkflowRun.workflow_name, Workflow.name).contains(q),
                         WorkflowRun.triggered_by.contains(q),
                         WorkflowRun.status.contains(q)
                     )

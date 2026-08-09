@@ -34,7 +34,7 @@ class Workflow(Base):
 
     # Relationships
     steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan")
-    runs = relationship("WorkflowRun", back_populates="workflow", cascade="all, delete-orphan")
+    runs = relationship("WorkflowRun", back_populates="workflow")
     allowed_groups = relationship("Group", secondary=workflow_permissions, back_populates="workflows")
     # entry_form relationship can be added later if needed (avoids circular import)
 
@@ -58,16 +58,17 @@ class WorkflowStep(Base):
 
     # Relationships
     workflow = relationship("Workflow", back_populates="steps")
-    instances = relationship("StepInstance", back_populates="step", cascade="all, delete-orphan")
+    instances = relationship("StepInstance", back_populates="step")
 
 
 class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
 
     id = Column(Integer, primary_key=True, index=True)
-    workflow_id = Column(Integer, ForeignKey("workflows.id"), nullable=False)
+    workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True)
     status = Column(String(20), default="pending")  # pending, running, completed, failed, cancelled, waiting, timeout
     triggered_by = Column(String(100), default="manual")  # manual, schedule, api, webhook
+    workflow_name = Column(String(255), default="", server_default="")  # Snapshot of the workflow name at run creation
     input_data = Column(JSON, default=dict)  # Initial input data
     output_data = Column(JSON, default=dict)  # Final output data
     error_message = Column(Text, default="")
@@ -90,7 +91,7 @@ class StepInstance(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     workflow_run_id = Column(Integer, ForeignKey("workflow_runs.id"), nullable=False)
-    step_id = Column(Integer, ForeignKey("workflow_steps.id"), nullable=False)
+    step_id = Column(Integer, ForeignKey("workflow_steps.id", ondelete="SET NULL"), nullable=True)
     status = Column(String(20), default="pending")  # pending, running, completed, failed, skipped
     input_data = Column(JSON, default=dict)
     output_data = Column(JSON, default=dict)

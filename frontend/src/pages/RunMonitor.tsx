@@ -18,7 +18,8 @@ interface StepInstance {
 
 interface Run {
   id: number
-  workflow_id: number
+  workflow_id: number | null
+  workflow_name: string
   status: string
   triggered_by: string
   input_data: any
@@ -140,7 +141,10 @@ export const RunMonitor: React.FC = () => {
         <div>
           <h2>Run #{run.id}</h2>
           <p style={{ color: '#7f8c8d', marginTop: '0.5rem' }}>
-            Workflow ID: {run.workflow_id} | Triggered by: {run.triggered_by}
+            {run.workflow_name
+              ? `Workflow: ${run.workflow_name}${run.workflow_id != null ? ` (#${run.workflow_id})` : ''}`
+              : `Workflow ID: ${run.workflow_id ?? 'n/a'}`}
+            {' | '}Triggered by: {run.triggered_by}
             {run.status === 'waiting' && <span className="badge badge-warning" style={{ marginLeft: '0.5rem' }}>Paused (human task)</span>}
           </p>
         </div>
@@ -148,9 +152,11 @@ export const RunMonitor: React.FC = () => {
           {run.status === 'running' && (
             <Link to={`/runs/${run.id}/cancel`} className="btn btn-danger">Cancel Run</Link>
           )}
-          <Link to={`/workflows/${run.workflow_id}`} className="btn btn-secondary">
-            Back to Workflow
-          </Link>
+          {run.workflow_id != null && (
+            <Link to={`/workflows/${run.workflow_id}`} className="btn btn-secondary">
+              Back to Workflow
+            </Link>
+          )}
         </div>
       </div>
 

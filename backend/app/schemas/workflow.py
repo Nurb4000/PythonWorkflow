@@ -101,7 +101,8 @@ class WorkflowRunCreate(BaseModel):
 
 class WorkflowRunResponse(BaseModel):
     id: int
-    workflow_id: int
+    workflow_id: Optional[int] = None
+    workflow_name: Optional[str] = None
     status: str
     triggered_by: str
     input_data: Dict[str, Any]

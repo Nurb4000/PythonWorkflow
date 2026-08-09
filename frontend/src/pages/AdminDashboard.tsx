@@ -13,7 +13,8 @@ interface Stats {
 
 interface Run {
   id: number
-  workflow_id: number
+  workflow_id: number | null
+  workflow_name?: string
   status: string
   triggered_by: string
   started_at: string
@@ -152,7 +153,7 @@ export const AdminDashboard: React.FC = () => {
           <thead>
             <tr>
               <th>ID</th>
-              <th>Workflow ID</th>
+              <th>Workflow</th>
               <th>Status</th>
               <th>Triggered By</th>
               <th>Started</th>
@@ -165,7 +166,7 @@ export const AdminDashboard: React.FC = () => {
             {runs?.map((run: Run) => (
               <tr key={run.id}>
                 <td>#{run.id}</td>
-                <td>{run.workflow_id}</td>
+                <td>{run.workflow_name || (run.workflow_id != null ? `#${run.workflow_id}` : 'Unknown')}</td>
                 <td>
                   <span className={`badge ${getStatusBadgeClass(run.status)}`}>
                     {run.status}
