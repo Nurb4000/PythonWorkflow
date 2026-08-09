@@ -65,6 +65,8 @@ A form task pauses workflow execution and creates a task assigned to a user or g
    - The task page renders the form, prefilled with any task data
    - Filling in the form and clicking **Complete Task & Save Data** submits the data, completes the task, and continues the workflow
 
+> **Prefill from earlier steps:** Human task / approval forms are automatically pre-filled with any data accumulated earlier in the run (e.g. a user's entry-form submission, or the result of a previous form task). Only keys matching the form's own field names are copied, and metadata / intermediate step outputs are ignored. A per-step **Task Data (JSON)** block on the step still takes precedence over the automatic prefill. This makes the common "collect data up front, then review it in a later step" pattern work with zero configuration — just use a form with the same field names in both places.
+
 ### Working on a Form Task
 
 - **Open** status — anyone with permission can click **Take Task** to claim ownership. The form is shown read-only until taken.

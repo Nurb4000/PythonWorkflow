@@ -424,6 +424,145 @@ const FORM_SCHEMA = {
     await page.close();
   });
 
+  // ---------- Part D: entry data prefills later human-task forms ----------
+  const chainForm = await api('POST', '/forms', adminToken, undefined, {
+    name: 'E2E Chain ' + unique,
+    schema: JSON.stringify(FORM_SCHEMA),
+  });
+  const wf4 = await api('POST', '/workflows/', adminToken, {
+    name: 'E2E Chain WF ' + unique,
+    steps: [
+      { step_type: 'human_task', definition: { assigned_to_user_id: me.id, assigned_group_id: null, form_id: chainForm.id, description: 'First review' } },
+      { step_type: 'human_task', definition: { assigned_to_user_id: me.id, assigned_group_id: null, form_id: chainForm.id, description: 'Second review' } },
+    ],
+  });
+  await api('PUT', '/workflows/' + wf4.id, adminToken, {
+    environment: 'production',
+    is_published: true,
+    is_active: true,
+    portal_visible: true,
+    entry_form_id: chainForm.id,
+  });
+
+  async function readFormValues(page) {
+    return page.evaluate(() => {
+      const labels = [...document.querySelectorAll('.form-label')];
+      const find = (t) => {
+        const l = labels.find((x) => x.textContent.startsWith(t));
+        return l ? l.closest('.form-group') : null;
+      };
+      const notes = find('Notes').querySelector('textarea, input');
+      const amount = find('Amount').querySelector('input[type=number]');
+      const approved = find('Approved').querySelector('input[type=checkbox]');
+      return { notes: notes.value, amount: amount.value, approved: approved.checked };
+    });
+  }
+
+  async function takeAndCompleteTask(taskId, notesText) {
+    const { page } = await newPage(browser);
+    await login(page, 'user', 'user');
+    await page.goto(BASE + '/tasks/' + taskId, { waitUntil: 'networkidle0' });
+    await waitForText(page, 'Take Task');
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Take Task').click();
+    });
+    await waitForNoText(page, 'Take Task');
+    await sleep(600);
+    const filled = await page.evaluate((txt) => {
+      const labels = [...document.querySelectorAll('.form-label')];
+      const find = (t) => labels.find((x) => x.textContent.startsWith(t)).closest('.form-group');
+      const notes = find('Notes').querySelector('textarea, input');
+      const amount = find('Amount').querySelector('input[type=number]');
+      const nSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nSet.call(notes, txt);
+      notes.dispatchEvent(new Event('input', { bubbles: true }));
+      nSet.call(amount, '100');
+      amount.dispatchEvent(new Event('input', { bubbles: true }));
+    }, notesText);
+    await sleep(300);
+    await page.evaluate(() => {
+      [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Complete Task & Save Data').click();
+    });
+    await page.waitForFunction(() => document.body.innerText.includes('completed'), { timeout: 10000 });
+    await page.close();
+  }
+
+  async function waitForOpenTask(runId) {
+    for (let i = 0; i < 40; i++) {
+      const res = await api('GET', '/tasks?workflow_run_id=' + runId, adminToken);
+      const open = (res.tasks || []).find((t) => t.status === 'open');
+      if (open) return open;
+      await sleep(500);
+    }
+    throw new Error('no open task created for run ' + runId);
+  }
+
+  let chainRunId;
+
+  await step('D1: first staff task is prefilled from the portal entry', async () => {
+    const { page } = await newPage(browser);
+    await login(page, 'user', 'user');
+    await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
+    await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf4.name);
+    await page.evaluate((name) => {
+      const cards = [...document.querySelectorAll('.stat-card')];
+      const card = cards.find((c) => c.textContent.includes(name));
+      card.querySelector('button').click();
+    }, wf4.name);
+    await waitForText(page, 'Approved');
+    await page.evaluate((uniq) => {
+      const labels = [...document.querySelectorAll('.form-label')];
+      const find = (t) => labels.find((x) => x.textContent.startsWith(t)).closest('.form-group');
+      const notes = find('Notes').querySelector('input');
+      const approved = find('Approved').querySelector('input[type=checkbox]');
+      const nSet = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value').set;
+      nSet.call(notes, 'Portal entry ' + uniq);
+      notes.dispatchEvent(new Event('input', { bubbles: true }));
+      approved.click();
+    }, unique);
+    await sleep(300);
+    await page.evaluate(() => {
+      const overlay = [...document.querySelectorAll('div[style*="position: fixed"]')]
+        .find((el) => el.textContent.includes('Start Workflow'));
+      const btn = [...overlay.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Start Workflow');
+      btn.click();
+    });
+    await page.waitForFunction(() => document.body.innerText.includes('Started'), { timeout: 10000 });
+    await page.close();
+
+    for (let i = 0; i < 20; i++) {
+      const runs = await api('GET', '/admin/runs?workflow_id=' + wf4.id, adminToken);
+      if (runs && runs.length) { chainRunId = runs[0].id; break; }
+      await sleep(300);
+    }
+    if (!chainRunId) throw new Error('no run found for chain workflow');
+    const t1 = await waitForOpenTask(chainRunId);
+    const { page: p2 } = await newPage(browser);
+    await login(p2, 'user', 'user');
+    await p2.goto(BASE + '/tasks/' + t1.id, { waitUntil: 'networkidle0' });
+    await waitForText(p2, 'Take Task');
+    const pre = await readFormValues(p2);
+    if (!pre.notes.includes('Portal entry ' + unique)) throw new Error('task1 not prefilled from entry: ' + JSON.stringify(pre));
+    if (!pre.approved) throw new Error('task1 approved not prefilled from entry');
+    await p2.close();
+
+    await takeAndCompleteTask(t1.id, 'Staff decision ' + unique);
+  });
+
+  await step('D2: second staff task prefilled from first task result', async () => {
+    const t2 = await waitForOpenTask(chainRunId);
+    const { page } = await newPage(browser);
+    await login(page, 'user', 'user');
+    await page.goto(BASE + '/tasks/' + t2.id, { waitUntil: 'networkidle0' });
+    await waitForText(page, 'Take Task');
+    const pre = await readFormValues(page);
+    if (!pre.notes.includes('Staff decision ' + unique)) throw new Error('task2 not prefilled from task1 result: ' + JSON.stringify(pre));
+    if (pre.amount !== '100') throw new Error('task2 amount not prefilled: ' + JSON.stringify(pre));
+    await page.close();
+
+    await takeAndCompleteTask(t2.id, 'Final ' + unique);
+  });
+
   await browser.disconnect();
 
   console.log('\nRESULT: ' + passed.length + ' passed, ' + failed.length + ' failed');

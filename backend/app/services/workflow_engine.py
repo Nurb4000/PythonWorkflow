@@ -384,7 +384,7 @@ class WorkflowEngine:
                 instance.last_error = ""
                 
                 # Update run input for next steps
-                run.input_data.update(output_data)
+                run.input_data = {**(run.input_data or {}), **output_data}
                 
                 await db.commit()
                 return True
@@ -471,6 +471,19 @@ class WorkflowEngine:
                 except Exception as e:
                     logger.error(f"Failed to execute failure hook {hook.get('url')}: {str(e)}")
     
+    async def _prefill_from_run_data(self, db, form_id: int, input_data: Dict[str, Any]) -> Dict[str, Any]:
+        """Return the subset of run input data matching the form's field names,
+        so a human task form is pre-filled with values entered earlier in the run
+        (e.g. the user's entry-form submission)."""
+        from app.models.forms import Form
+        result = await db.execute(select(Form).where(Form.id == form_id))
+        form = result.scalar_one_or_none()
+        if not form or not form.schema_json:
+            return {}
+        schema = form.schema_json if isinstance(form.schema_json, dict) else {}
+        properties = schema.get("properties") or {}
+        return {key: value for key, value in (input_data or {}).items() if key in properties}
+
     async def _handle_human_step(self, db, run, instance, step) -> bool:
         """Handle human_task or approval steps - create task and pause workflow"""
         definition = step.definition or {}
@@ -479,6 +492,14 @@ class WorkflowEngine:
         assigned_to_user_id = definition.get("assigned_to_user_id")
         assigned_group_id = definition.get("assigned_group_id")
         form_id = definition.get("form_id")
+        
+        # Prefill the task form with data accumulated earlier in the run
+        # (e.g. an entry-form submission). Explicit per-step task_data wins.
+        task_data = dict(definition.get("task_data", {}) or {})
+        if form_id:
+            prefill = await self._prefill_from_run_data(db, form_id, run.input_data)
+            for key, value in prefill.items():
+                task_data.setdefault(key, value)
         
         # Create task
         task = Task(
@@ -490,7 +511,7 @@ class WorkflowEngine:
             assigned_to_user_id=assigned_to_user_id,
             assigned_group_id=assigned_group_id,
             form_id=form_id,
-            task_data=definition.get("task_data", {}),
+            task_data=task_data,
             result_data={}
         )
         
@@ -502,7 +523,7 @@ class WorkflowEngine:
         instance.output_data = {"task_id": task.id, "status": "pending_human_action"}
         instance.completed_at = datetime.utcnow()
         
-        run.input_data.update(instance.output_data)
+        run.input_data = {**(run.input_data or {}), **instance.output_data}
         # Mark workflow as waiting on human action (resume continues from here)
         run.status = "waiting"
         
@@ -558,6 +579,9 @@ class WorkflowEngine:
                             "status": "task_completed",
                         }
                         instance.completed_at = datetime.utcnow()
+                        # Feed the task result back into the run so later
+                        # human-task forms can be pre-filled with it too
+                        run.input_data = {**(run.input_data or {}), **(task.result_data or {})}
                         logger.info(f"Updated step instance {instance.id} output with task result")
             
             await db.commit()
@@ -622,8 +646,8 @@ class WorkflowEngine:
                     await execute_path(target, input_data)
                 return
 
-            run.input_data.update(input_data)
-            instance.input_data.update(run.input_data)
+            run.input_data = {**(run.input_data or {}), **input_data}
+            instance.input_data = {**(instance.input_data or {}), **run.input_data}
 
             success = await self._execute_single_step(db, run, instance, step)
             if not success:
