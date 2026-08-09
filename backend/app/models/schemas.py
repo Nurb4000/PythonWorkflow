@@ -92,6 +92,10 @@ class StepInstance(Base):
     id = Column(Integer, primary_key=True, index=True)
     workflow_run_id = Column(Integer, ForeignKey("workflow_runs.id"), nullable=False)
     step_id = Column(Integer, ForeignKey("workflow_steps.id", ondelete="SET NULL"), nullable=True)
+    step_title = Column(String(255), default="", server_default="")  # Snapshot of step title at run time
+    step_type = Column(String(50), default="", server_default="")  # Snapshot of step type at run time
+    step_description = Column(Text, default="", server_default="")  # Snapshot of step description
+    step_definition = Column(JSON, nullable=True)  # Snapshot of step definition at run time
     status = Column(String(20), default="pending")  # pending, running, completed, failed, skipped
     input_data = Column(JSON, default=dict)
     output_data = Column(JSON, default=dict)
@@ -107,6 +111,26 @@ class StepInstance(Base):
     # Relationships
     workflow_run = relationship("WorkflowRun", back_populates="step_instances")
     step = relationship("WorkflowStep", back_populates="instances")
+
+    @property
+    def title(self):
+        """Best-available step title (snapshot first, then type)."""
+        return self.step_title or self.step_type or ""
+
+    @property
+    def description(self):
+        return self.step_description or ""
+
+    @property
+    def route_taken(self):
+        """Target step ids this instance routed to (recorded at execution)."""
+        return list((self.custom_data or {}).get("route_taken") or [])
+
+    @property
+    def duration_seconds(self):
+        if self.started_at and self.completed_at:
+            return (self.completed_at - self.started_at).total_seconds()
+        return None
 
 
 class Task(Base):

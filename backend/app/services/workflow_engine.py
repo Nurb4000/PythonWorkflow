@@ -227,6 +227,10 @@ class WorkflowEngine:
             instance = StepInstance(
                 workflow_run_id=run.id,
                 step_id=step.id,
+                step_title=step.title or step.step_type or "",
+                step_type=step.step_type,
+                step_description=step.description or "",
+                step_definition=dict(step.definition or {}),
                 status="pending",
                 input_data=run_data.input_data.copy(),
                 position=step.position,
@@ -323,10 +327,14 @@ class WorkflowEngine:
                         if step.condition_expr and not self._evaluate_condition(step.condition_expr, instance.input_data):
                             instance.status = "skipped"
                             instance.completed_at = datetime.utcnow()
+                            self._record_route(instance, self._linear_next(step_instances, instance))
                             await db.commit()
                             continue
                         success = await self._execute_single_step(db, run, instance, step)
-                        if not success:
+                        if success:
+                            self._record_route(instance, self._linear_next(step_instances, instance))
+                            await db.commit()
+                        else:
                             break
                 else:
                     # Graph mode: follow explicit connections with parallel fan-out
@@ -629,6 +637,7 @@ class WorkflowEngine:
                     await db.commit()
                     return
                 step_targets = self._get_targets(step, run.input_data)
+                self._record_route(instance, step_targets)
                 valid_targets = [t for t in step_targets if t in instance_lookup and t not in visited]
                 for target in valid_targets:
                     await execute_path(target, run.input_data)
@@ -642,6 +651,7 @@ class WorkflowEngine:
                 await db.commit()
                 # Still get targets so workflow continues past disabled step
                 step_targets = self._get_targets(step, input_data)
+                self._record_route(instance, step_targets)
                 valid_targets = [t for t in step_targets if t in instance_lookup and t not in visited]
                 for target in valid_targets:
                     await execute_path(target, input_data)
@@ -654,6 +664,8 @@ class WorkflowEngine:
             if not success:
                 return
             step_targets = self._get_targets(step, run.input_data)
+            self._record_route(instance, step_targets)
+            await db.commit()
             valid_targets = [t for t in step_targets if t in instance_lookup and t not in visited]
             for target in valid_targets:
                 await execute_path(target, input_data)
@@ -698,6 +710,25 @@ class WorkflowEngine:
         if not ids and d.get("next_step_id"):
             ids = [d["next_step_id"]]
         return [i for i in ids]
+
+    def _record_route(self, instance: StepInstance, targets) -> None:
+        """Record which target step ids an instance routed to (run inspector)."""
+        if instance is None:
+            return
+        custom = dict(instance.custom_data or {})
+        custom["route_taken"] = [int(t) for t in targets]
+        instance.custom_data = custom
+
+    def _linear_next(self, instances, current) -> List[int]:
+        """Target step id of the next instance in linear (position) order."""
+        ordered = sorted(
+            (i.position or 0, i) for i in instances
+        )
+        current_pos = current.position or 0
+        for pos, inst in ordered:
+            if pos > current_pos and inst.step_id is not None:
+                return [inst.step_id]
+        return []
 
     def _normalize_condition(self, step: WorkflowStep) -> tuple:
         """Return (routes, default) for a condition step.

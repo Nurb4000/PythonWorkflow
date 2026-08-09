@@ -8,6 +8,27 @@ All notable changes to the Python Workflow System.
 
 ### New Features
 
+#### Run Inspector backend support (plan S1–S3)
+Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
+- **Step metadata snapshot** — `step_instances` now snapshots `step_title`, `step_type`, `step_description` and `step_definition` at trigger time (migration `f6a7b8c9d0e1`, backfills existing runs), so instances stay renderable even after the workflow/step is deleted (consistent with the `workflow_name` snapshot).
+- **`route_taken` recorded** — each executed instance now stores the target step ids it routed to (graph mode, condition branches, and legacy linear next-step) in `custom_data["route_taken"]`, ready for edge highlighting in the viewer.
+- **Enriched `StepInstanceResponse`** — adds `step_type`, `title`, `description`, `position`, `duration_seconds`, `route_taken`, `custom_data`; `step_id` is now optional (steps can be deleted).
+
+**Backend files:**
+| File | Purpose |
+|------|---------|
+| `backend/app/models/schemas.py` | `StepInstance` snapshot columns + `title`/`description`/`route_taken`/`duration_seconds` properties |
+| `backend/alembic/versions/f6a7b8c9d0e1_add_step_metadata_snapshot_on_instances.py` | Snapshot columns + backfill |
+| `backend/app/services/workflow_engine.py` | Populate snapshot in `trigger_workflow`; `_record_route`/`_linear_next`; route recording in linear + branching paths |
+| `backend/app/schemas/workflow.py` | Enriched `StepInstanceResponse` |
+| `backend/tests/test_run_inspector.py` | 6 tests (snapshot, route_taken graph/condition/linear, response shape) |
+
+---
+
+## [Unreleased] — 2026-08-09
+
+### New Features
+
 #### Workflow History Retention, Uploads Audit & Demo Seeding
 - **Retain runs after workflow deletion** — `WorkflowRun.workflow_name` snapshots the workflow name at run creation; `workflow_runs.workflow_id` and `step_instances.step_id` are now nullable with `ON DELETE SET NULL`, so deleting a workflow keeps run history identifiable. Admin runs list joins the (now optional) workflow and falls back to the snapshot name.
 - **Admin file-uploads audit + download access control** — `FormUpload` audit table records every upload (original name, stored name, content type, size, uploader); new `GET /admin/form-uploads` listing with `uploader_username`; downloads enforce role-based access (admin/developer always, uploader always, staff only when the file is referenced in their assigned tasks/runs); 25 MB upload cap.

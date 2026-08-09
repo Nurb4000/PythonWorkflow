@@ -123,16 +123,23 @@ class WorkflowRunResponse(BaseModel):
 class StepInstanceResponse(BaseModel):
     id: int
     workflow_run_id: int
-    step_id: int
+    step_id: Optional[int] = None
     status: str
+    step_type: str = ""
+    title: str = ""
+    description: str = ""
     input_data: Dict[str, Any]
     output_data: Dict[str, Any]
     error_message: str
     started_at: Optional[datetime]
     completed_at: Optional[datetime]
+    duration_seconds: Optional[float] = None
+    position: int = 0
     retry_count: int = 0
     max_retries: int = 0
     last_error: str = ""
+    route_taken: List[int] = []
+    custom_data: Dict[str, Any] = {}
 
     class Config:
         from_attributes = True
