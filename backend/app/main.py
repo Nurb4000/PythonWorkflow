@@ -52,6 +52,7 @@ DEMO_METADATA = {
 }
 
 _demo_seeded = False
+_demo_workflow_seeded = False
 
 app = FastAPI(
     title="Python Workflow System",
@@ -199,6 +200,21 @@ async def seed_marketplace_demos():
         logger.error(f"Marketplace demo seeding failed: {e}", exc_info=True)
 
 
+async def seed_demo_workflow_on_startup():
+    """Seed the demo 4-column intake workflow on startup (idempotent)"""
+    global _demo_workflow_seeded
+    if _demo_workflow_seeded:
+        return
+    try:
+        from app.services.demo_seed import seed_demo_workflow
+        async with async_session_factory() as db:
+            seeded = await seed_demo_workflow(db)
+            logger.info(f"Demo workflow seeding done. Seeded={seeded}")
+        _demo_workflow_seeded = True
+    except Exception as e:
+        logger.error(f"Demo workflow seeding failed: {e}", exc_info=True)
+
+
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and scheduler on startup"""
@@ -210,6 +226,7 @@ async def startup_event():
         await sql_view_service.sync_views(db)
     await scheduler_service.start_email_monitor()
     asyncio.create_task(seed_marketplace_demos())
+    asyncio.create_task(seed_demo_workflow_on_startup())
     logger.info("Application started")
 
 

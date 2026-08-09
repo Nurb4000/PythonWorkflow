@@ -4,6 +4,32 @@ All notable changes to the Python Workflow System.
 
 ---
 
+## [Unreleased] — 2026-08-09
+
+### New Features
+
+#### Workflow History Retention, Uploads Audit & Demo Seeding
+- **Retain runs after workflow deletion** — `WorkflowRun.workflow_name` snapshots the workflow name at run creation; `workflow_runs.workflow_id` and `step_instances.step_id` are now nullable with `ON DELETE SET NULL`, so deleting a workflow keeps run history identifiable. Admin runs list joins the (now optional) workflow and falls back to the snapshot name.
+- **Admin file-uploads audit + download access control** — `FormUpload` audit table records every upload (original name, stored name, content type, size, uploader); new `GET /admin/form-uploads` listing with `uploader_username`; downloads enforce role-based access (admin/developer always, uploader always, staff only when the file is referenced in their assigned tasks/runs); 25 MB upload cap.
+- **Task-form prefill** — human-task forms are pre-filled from run input data (explicit step `task_data` wins); fixes a latent JSON-persistence bug in run input updates.
+- **Seeded demo workflow** — startup seed (`app/services/demo_seed.py`) idempotently creates the "Demo: 4-Column Intake with Review" workflow (portal-visible, `environment="production"`, published), a 4-column entry form with Info Text labels, and a 2-column staff review form pre-filled from the entry. Fresh rebuilds get it automatically, like the marketplace demos.
+
+**Backend files:**
+| File | Purpose |
+|------|---------|
+| `backend/app/services/demo_seed.py` | Idempotent demo workflow + forms seeding |
+| `backend/alembic/versions/d4e5f6a7b8c9_snapshot_workflow_name_on_runs_and_retain.py` | Nullable workflow/step FKs + run name snapshot |
+| `backend/alembic/versions/e5f6a7b8c9d0_add_form_uploads_audit_table.py` | `form_uploads` audit table |
+| `backend/tests/test_demo_seed.py`, `test_run_workflow_name_retention.py`, `test_form_uploads.py`, `test_task_form_prefill.py` | Feature tests |
+
+**Frontend files:**
+| File | Purpose |
+|------|---------|
+| `frontend/src/pages/UploadsAdmin.tsx` | Admin uploads listing page (`/admin/uploads`) |
+| `frontend/src/pages/WorkflowRunsAdmin.tsx`, `RunMonitor.tsx`, `AdminDashboard.tsx` | Show snapshot workflow name; handle null workflow after deletion |
+
+---
+
 ## [Unreleased] — 2026-08-06
 
 ### New Features
