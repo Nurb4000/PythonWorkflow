@@ -14,6 +14,7 @@ from datetime import datetime, timedelta
 
 from app.core.database import get_db
 from app.models.auth import User
+from app.models.forms import FormUpload
 from app.models.schemas import Workflow, WorkflowRun, StepInstance, Schedule
 from app.schemas.workflow import RunStatsResponse, AuditLogEntry
 from app.api.auth import get_current_admin
@@ -465,3 +466,45 @@ async def test_schedule(
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Test trigger failed: {str(e)}")
+
+
+@router.get("/form-uploads")
+async def list_form_uploads(
+    q: Optional[str] = None,
+    limit: int = 200,
+    offset: int = 0,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all uploaded form files with uploader metadata (admin only)"""
+    stmt = (
+        select(FormUpload, User.username.label("uploader_username"))
+        .outerjoin(User, User.id == FormUpload.uploaded_by)
+    )
+    if q:
+        q = q.strip()
+        if q:
+            stmt = stmt.where(FormUpload.original_name.contains(q))
+
+    total_stmt = select(func.count()).select_from(stmt.subquery())
+    total = (await db.execute(total_stmt)).scalar_one()
+
+    stmt = stmt.order_by(FormUpload.created_at.desc()).limit(limit).offset(offset)
+    rows = (await db.execute(stmt)).all()
+
+    return {
+        "total": total,
+        "items": [
+            {
+                "id": upload.id,
+                "original_name": upload.original_name,
+                "stored_name": upload.stored_name,
+                "content_type": upload.content_type,
+                "size_bytes": upload.size_bytes,
+                "uploaded_by": upload.uploaded_by,
+                "uploader_username": uploader_username,
+                "created_at": upload.created_at,
+            }
+            for upload, uploader_username in rows
+        ],
+    }

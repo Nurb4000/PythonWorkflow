@@ -9,6 +9,7 @@ import { WorkflowDesigner } from './pages/WorkflowDesigner'
 import { RunMonitor } from './pages/RunMonitor'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { WorkflowRunsAdmin } from './pages/WorkflowRunsAdmin'
+import { UploadsAdmin } from './pages/UploadsAdmin'
 import { AdminTaskDashboard } from './pages/AdminTaskDashboard'
 import { RoleTaskDashboard } from './pages/RoleTaskDashboard'
 import { TaskDetail } from './pages/TaskDetail'
@@ -112,6 +113,7 @@ const RoleAwareNav: React.FC = () => {
       {user.role === 'admin' && <Link to="/admin">Dashboard</Link>}
       {user.role === 'admin' && <Link to="/admin/users">Users</Link>}
       {user.role === 'admin' && <Link to="/admin/runs">Runs</Link>}
+      {user.role === 'admin' && <Link to="/admin/uploads">Uploads</Link>}
       {user.role === 'admin' && <Link to="/settings">Settings</Link>}
 {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/data">Data Explorer</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/views">SQL Views</Link>}
@@ -292,6 +294,7 @@ const AppContent: React.FC = () => {
           <Route path="/admin" element={<RoleRoute roles={['admin']}><AdminDashboard /></RoleRoute>} />
           <Route path="/admin/users" element={<RoleRoute roles={['admin']}><UserManagement /></RoleRoute>} />
           <Route path="/admin/runs" element={<RoleRoute roles={['admin']}><WorkflowRunsAdmin /></RoleRoute>} />
+          <Route path="/admin/uploads" element={<RoleRoute roles={['admin']}><UploadsAdmin /></RoleRoute>} />
           <Route path="/admin/tasks" element={<RoleRoute roles={['admin']}><AdminTaskDashboard /></RoleRoute>} />
           <Route path="/tasks" element={<RoleRoute roles={['admin', 'developer', 'staff']}><RoleTaskDashboard role="developer" title="Tasks" /></RoleRoute>} />
           <Route path="/my-tasks" element={<ProtectedRoute><RoleTaskDashboard role="user" title="My Tasks" /></ProtectedRoute>} />

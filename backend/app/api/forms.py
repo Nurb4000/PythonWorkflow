@@ -7,11 +7,14 @@ import uuid
 from fastapi import APIRouter, HTTPException, Depends, Query, UploadFile, File as FileParam
 from fastapi.responses import FileResponse
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select, or_
 from typing import Optional, List
 from app.core.database import get_db
 from app.services.form_service import form_service
 from app.services.auth_service import auth_service
 from app.models.auth import User
+from app.models.forms import Form, FormUpload
+from app.models.schemas import Task, WorkflowRun
 from app.api.auth import get_current_user, get_current_developer
 
 router = APIRouter()
@@ -21,22 +24,92 @@ UPLOAD_DIR = os.path.join(
     "uploads", "form_uploads"
 )
 
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25 MB
+
+
+def _contains_ref(data, stored_name: str) -> bool:
+    """True if stored_name appears anywhere in nested form data (dict/list)."""
+    if isinstance(data, dict):
+        return any(_contains_ref(v, stored_name) for v in data.values())
+    if isinstance(data, list):
+        return any(_contains_ref(v, stored_name) for v in data)
+    return data == stored_name
+
+
+async def _file_accessible(db: AsyncSession, user: User, stored_name: str) -> bool:
+    """Who may download a file:
+    - admins/developers: always
+    - the uploader: always
+    - staff: if the file is referenced by a task assigned to them (or their group)
+      or by the run of a task assigned to them
+    """
+    if user.role in ("admin", "developer"):
+        return True
+
+    result = await db.execute(select(FormUpload).where(FormUpload.stored_name == stored_name))
+    upload = result.scalar_one_or_none()
+    if not upload:
+        return False
+    if upload.uploaded_by is not None and upload.uploaded_by == user.id:
+        return True
+
+    if user.role != "staff":
+        return False
+
+    conditions = [Task.assigned_to_user_id == user.id]
+    from app.models.auth import user_groups
+    group_result = await db.execute(
+        select(user_groups.c.group_id).where(user_groups.c.user_id == user.id)
+    )
+    group_ids = [row[0] for row in group_result.all()]
+    if group_ids:
+        conditions.append(Task.assigned_group_id.in_(group_ids))
+    tasks_result = await db.execute(select(Task).where(or_(*conditions)))
+    tasks = tasks_result.scalars().all()
+    for t in tasks:
+        if _contains_ref(t.task_data, stored_name) or _contains_ref(t.result_data, stored_name):
+            return True
+    run_ids = [t.workflow_run_id for t in tasks if t.workflow_run_id]
+    if run_ids:
+        runs_result = await db.execute(select(WorkflowRun).where(WorkflowRun.id.in_(run_ids)))
+        for run in runs_result.scalars().all():
+            if _contains_ref(run.input_data, stored_name) or _contains_ref(run.output_data, stored_name):
+                return True
+    return False
+
 
 @router.post("/forms/upload")
 async def upload_form_file(
     file: UploadFile = FileParam(...),
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """Upload an attachment for a form submission (authenticated users)"""
     try:
+        content = await file.read()
+        if len(content) > MAX_UPLOAD_BYTES:
+            raise HTTPException(
+                status_code=413,
+                detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit",
+            )
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         original = os.path.basename(file.filename or "file")
         stored = f"{uuid.uuid4().hex}_{original}"
         path = os.path.join(UPLOAD_DIR, stored)
-        content = await file.read()
         with open(path, "wb") as f:
             f.write(content)
+        upload = FormUpload(
+            original_name=original,
+            stored_name=stored,
+            content_type=file.content_type or "",
+            size_bytes=len(content),
+            uploaded_by=current_user.id,
+        )
+        db.add(upload)
+        await db.commit()
         return {"filename": stored, "original_name": original}
+    except HTTPException:
+        raise
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -44,15 +117,21 @@ async def upload_form_file(
 @router.get("/forms/download/{filename}")
 async def download_form_file(
     filename: str,
-    current_user: User = Depends(get_current_user)
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
     """Download an uploaded form attachment"""
     try:
         safe = os.path.basename(filename)
+        if not await _file_accessible(db, current_user, safe):
+            raise HTTPException(status_code=403, detail="You do not have access to this file")
         path = os.path.join(UPLOAD_DIR, safe)
         if not os.path.exists(path):
             raise HTTPException(status_code=404, detail="File not found")
-        return FileResponse(path, filename=safe)
+        result = await db.execute(select(FormUpload).where(FormUpload.stored_name == safe))
+        upload = result.scalar_one_or_none()
+        download_name = upload.original_name if upload else safe
+        return FileResponse(path, filename=download_name)
     except HTTPException:
         raise
     except Exception as e:

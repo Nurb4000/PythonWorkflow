@@ -45,6 +45,21 @@ class FormSubmission(Base):
     workflow_run = relationship("WorkflowRun")
 
 
+class FormUpload(Base):
+    __tablename__ = "form_uploads"
+
+    id = Column(Integer, primary_key=True, index=True)
+    original_name = Column(String(255), nullable=False)
+    stored_name = Column(String(255), nullable=False, unique=True, index=True)  # uuid_<original_name>
+    content_type = Column(String(255), default="")
+    size_bytes = Column(Integer, default=0)
+    uploaded_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    # Relationships
+    uploader = relationship("User", foreign_keys=[uploaded_by])
+
+
 class FormTemplate(Base):
     __tablename__ = "form_templates"
 

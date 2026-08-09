@@ -3,6 +3,12 @@ import axios from 'axios'
 
 const API_URL = '/api'
 
+// Stored upload names look like `<uuid>_<original name>`; show just the original.
+const originalUploadName = (storedName: string) => {
+  const idx = storedName.indexOf('_')
+  return idx >= 0 ? storedName.slice(idx + 1) : storedName
+}
+
 interface FormField {
   name: string
   type: string
@@ -126,7 +132,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
       const url = window.URL.createObjectURL(new Blob([res.data]))
       const a = document.createElement('a')
       a.href = url
-      a.download = filename
+      a.download = originalUploadName(filename)
       document.body.appendChild(a)
       a.click()
       a.remove()
@@ -257,7 +263,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
           readOnly ? (
             formData[key] ? (
               <button type="button" className="btn btn-sm btn-primary" onClick={() => downloadFile(formData[key])}>
-                ⬇ Download {formData[key]}
+                ⬇ Download {originalUploadName(formData[key])}
               </button>
             ) : (
               <small style={{ color: '#999' }}>No file uploaded</small>
