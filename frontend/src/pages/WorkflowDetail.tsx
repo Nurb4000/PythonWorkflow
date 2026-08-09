@@ -112,7 +112,7 @@ export const WorkflowDetail: React.FC = () => {
     queryKey: ['runs', workflowId],
     queryFn: async () => {
       const response = await runApi.list(workflowId)
-      return response.data
+      return response.data.runs || []
     },
     enabled: !!id
   })

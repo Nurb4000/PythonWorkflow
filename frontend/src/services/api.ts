@@ -85,7 +85,8 @@ export const runApi = {
   cancel: (workflowId: number, runId: number) => 
     api.delete(`/workflows/${workflowId}/runs/${runId}`),
   getRun: (runId: number) => api.get(`/runs/${runId}`),
-  getRunSteps: (runId: number) => api.get(`/runs/${runId}/steps`)
+  getRunSteps: (runId: number) => api.get(`/runs/${runId}/steps`),
+  getInspector: (runId: number) => api.get(`/runs/${runId}/inspector`)
 }
 
 // Admin APIs

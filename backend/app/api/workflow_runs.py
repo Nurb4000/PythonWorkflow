@@ -4,12 +4,12 @@ API endpoints for workflow runs (P6.2: pagination support)
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
-from typing import List, Optional
+from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db
 from app.models.auth import User
-from app.models.schemas import WorkflowRun, StepInstance
+from app.models.schemas import Workflow, WorkflowRun, StepInstance, WorkflowStep
 from app.api.auth import get_current_user, user_can_access_workflow
 from app.schemas.workflow import WorkflowRunResponse, StepInstanceResponse
 
@@ -172,3 +172,100 @@ async def get_run_steps_by_id(
     result = await db.execute(stmt)
     instances = result.scalars().all()
     return instances
+
+
+@runs_router.get("/runs/{run_id}/inspector")
+async def get_run_inspector(
+    run_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Combined run + steps + workflow graph payload for the Run Inspector.
+
+    Returns a single response with everything needed to render the graph view:
+    - run: WorkflowRunResponse
+    - steps: list of StepInstanceResponse (enriched)
+    - workflow: {id, name, environment} or null if deleted
+    - graph: {start_step_ids, steps: [...]} — step definitions for rendering
+      (falls back to instance snapshots when the workflow is gone)
+    """
+    # 1. Fetch run + access check
+    stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
+    result = await db.execute(stmt)
+    run = result.scalar_one_or_none()
+    if not run:
+        raise HTTPException(status_code=404, detail="Run not found")
+    if not await user_can_access_workflow(db, current_user, run.workflow_id):
+        raise HTTPException(status_code=403, detail="You do not have permission to access this run")
+
+    # 2. Fetch step instances
+    inst_stmt = (
+        select(StepInstance)
+        .where(StepInstance.workflow_run_id == run_id)
+        .order_by(StepInstance.position)
+    )
+    inst_result = await db.execute(inst_stmt)
+    instances = inst_result.scalars().all()
+
+    # 3. Workflow info + graph payload
+    workflow_info: Optional[Dict[str, Any]] = None
+    graph_steps: List[Dict[str, Any]] = []
+    start_step_ids: List[int] = []
+
+    if run.workflow_id is not None:
+        wf_stmt = select(Workflow).where(Workflow.id == run.workflow_id).options(selectinload(Workflow.steps))
+        wf_result = await db.execute(wf_stmt)
+        workflow = wf_result.scalar_one_or_none()
+        if workflow:
+            workflow_info = {
+                "id": workflow.id,
+                "name": workflow.name,
+                "environment": workflow.environment,
+            }
+            config = workflow.config or {}
+            start_step_ids = config.get("start_step_ids") or []
+            for ws in workflow.steps:
+                d = ws.definition or {}
+                graph_steps.append({
+                    "id": ws.id,
+                    "step_type": ws.step_type,
+                    "title": ws.title or "",
+                    "description": ws.description or "",
+                    "position": ws.position,
+                    "next_step_ids": d.get("next_step_ids") or [],
+                    "next_step_id": d.get("next_step_id"),
+                    "routes": d.get("routes") or [],
+                    "default_target_step_id": d.get("default_target_step_id"),
+                    "pos_x": d.get("pos_x"),
+                    "pos_y": d.get("pos_y"),
+                    "definition": d,
+                })
+
+    # 4. If workflow is gone, build graph from instance snapshots
+    if not graph_steps:
+        for inst in instances:
+            d = inst.step_definition or {}
+            graph_steps.append({
+                "id": inst.id,
+                "step_type": inst.step_type or "",
+                "title": inst.title or "",
+                "description": inst.description or "",
+                "position": inst.position,
+                "next_step_ids": d.get("next_step_ids") or [],
+                "next_step_id": d.get("next_step_id"),
+                "routes": d.get("routes") or [],
+                "default_target_step_id": d.get("default_target_step_id"),
+                "pos_x": d.get("pos_x"),
+                "pos_y": d.get("pos_y"),
+                "definition": d,
+            })
+
+    return {
+        "run": WorkflowRunResponse.model_validate(run),
+        "steps": [StepInstanceResponse.model_validate(i) for i in instances],
+        "workflow": workflow_info,
+        "graph": {
+            "start_step_ids": start_step_ids,
+            "steps": graph_steps,
+        },
+    }

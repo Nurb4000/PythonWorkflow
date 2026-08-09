@@ -269,3 +269,81 @@ class TestStepInstanceResponse:
 
         resp = StepInstanceResponse.model_validate(inst)
         assert resp.title == "delay"
+
+
+# ---------------------------------------------------------------------------
+# S4: inspector endpoint shape
+# ---------------------------------------------------------------------------
+class TestInspectorEndpoint:
+    @pytest.mark.asyncio
+    async def test_inspector_returns_graph_and_steps(self, engine, session):
+        wf = await create_workflow(
+            engine, session,
+            [
+                {"step_type": "delay", "definition": {"seconds": 0}},
+                {"step_type": "delay", "definition": {"seconds": 0}},
+            ],
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        a, b = sorted(wf.steps, key=lambda s: s.position)
+        a.definition = {**a.definition, "next_step_ids": [b.id]}
+        wf.config = {"start_step_ids": [a.id]}
+        await session.commit()
+
+        run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
+        run = await wait_run(session, run.id)
+        assert run.status == "completed"
+        await asyncio.sleep(0.3)
+
+        # Simulate what the inspector endpoint builds
+        from app.schemas.workflow import WorkflowRunResponse, StepInstanceResponse
+
+        run_resp = WorkflowRunResponse.model_validate(run)
+        instances = await instances_for(session, run.id)
+        steps_resp = [StepInstanceResponse.model_validate(i) for i in instances]
+
+        # Verify shape
+        assert run_resp.id == run.id
+        assert len(steps_resp) == 2
+        assert steps_resp[0].step_type == "delay"
+        assert steps_resp[0].title == "delay"  # fallback from step_type (no explicit title set)
+        assert steps_resp[0].route_taken == [b.id]
+        assert steps_resp[1].route_taken == []
+
+    @pytest.mark.asyncio
+    async def test_inspector_fallback_from_snapshots(self, engine, session):
+        """When workflow is deleted, graph falls back to instance snapshots."""
+        wf = await create_workflow(
+            engine, session,
+            [
+                {"step_type": "delay", "definition": {"seconds": 0}},
+            ],
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        step = wf.steps[0]
+        step.title = "Snapshot Step"
+        step.description = "Will survive deletion"
+        await session.commit()
+
+        run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
+        run = await wait_run(session, run.id)
+        assert run.status == "completed"
+        await asyncio.sleep(0.2)
+
+        # Delete the workflow — instances survive (SET NULL on FKs)
+        await session.delete(wf)
+        await session.commit()
+
+        # Verify snapshot survived
+        instances = await instances_for(session, run.id)
+        inst = instances[0]
+        assert inst.step_title == "Snapshot Step"
+        assert inst.step_type == "delay"
+        assert inst.step_description == "Will survive deletion"
+        assert inst.step_definition is not None
+        assert inst.step_definition.get("seconds") == 0
+
+        # Verify the run still references the deleted workflow
+        await session.refresh(run)
+        assert run.workflow_id is None  # SET NULL
+        assert run.workflow_name == "Inspector WF"  # snapshot survives

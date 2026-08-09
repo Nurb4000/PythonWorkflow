@@ -161,11 +161,13 @@ async def get_my_runs(
         {
             "id": r.id,
             "workflow_id": r.workflow_id,
+            "workflow_name": r.workflow_name or "",
             "status": r.status,
             "triggered_by": r.triggered_by,
             "started_at": r.started_at,
             "completed_at": r.completed_at,
-            "created_at": r.created_at
+            "error_message": r.error_message or "",
+            "created_at": r.created_at,
         }
         for r in runs
     ]

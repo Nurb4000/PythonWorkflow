@@ -8,11 +8,14 @@ All notable changes to the Python Workflow System.
 
 ### New Features
 
-#### Run Inspector backend support (plan S1–S3)
+#### Run Inspector backend support (plan S1–S5)
 Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 - **Step metadata snapshot** — `step_instances` now snapshots `step_title`, `step_type`, `step_description` and `step_definition` at trigger time (migration `f6a7b8c9d0e1`, backfills existing runs), so instances stay renderable even after the workflow/step is deleted (consistent with the `workflow_name` snapshot).
 - **`route_taken` recorded** — each executed instance now stores the target step ids it routed to (graph mode, condition branches, and legacy linear next-step) in `custom_data["route_taken"]`, ready for edge highlighting in the viewer.
 - **Enriched `StepInstanceResponse`** — adds `step_type`, `title`, `description`, `position`, `duration_seconds`, `route_taken`, `custom_data`; `step_id` is now optional (steps can be deleted).
+- **Inspector endpoint** — `GET /runs/{id}/inspector` returns a combined payload: run, enriched steps, workflow info, and graph step definitions (falls back to instance snapshots when the workflow is deleted). Single round-trip for the viewer.
+- **Portal my-runs enrichment** — now includes `workflow_name` and `error_message` so portal users can see which workflow failed and why.
+- **WorkflowDetail runs-list fix** — backend returns `{runs, total}` but the page expected a bare array; fixed to extract `.runs`.
 
 **Backend files:**
 | File | Purpose |
@@ -21,7 +24,15 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 | `backend/alembic/versions/f6a7b8c9d0e1_add_step_metadata_snapshot_on_instances.py` | Snapshot columns + backfill |
 | `backend/app/services/workflow_engine.py` | Populate snapshot in `trigger_workflow`; `_record_route`/`_linear_next`; route recording in linear + branching paths |
 | `backend/app/schemas/workflow.py` | Enriched `StepInstanceResponse` |
-| `backend/tests/test_run_inspector.py` | 6 tests (snapshot, route_taken graph/condition/linear, response shape) |
+| `backend/app/api/workflow_runs.py` | `GET /runs/{id}/inspector` combined endpoint |
+| `backend/app/api/portal.py` | my-runs: added `workflow_name`, `error_message` |
+| `backend/tests/test_run_inspector.py` | 8 tests (snapshot, route_taken graph/condition/linear, response shape, inspector payload, snapshot fallback) |
+
+**Frontend files:**
+| File | Purpose |
+|------|---------|
+| `frontend/src/services/api.ts` | `runApi.getInspector()` client |
+| `frontend/src/pages/WorkflowDetail.tsx` | Fix runs-list: extract `.runs` from paginated response |
 
 ---
 
