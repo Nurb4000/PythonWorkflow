@@ -263,16 +263,17 @@ Result: `$input.server_ci` contains the full CI record.
 
 ---
 
-### Phase 4: Automation APIs
+### Phase 4: Automation APIs ✅ COMPLETE
 **Goal**: External systems can feed CMDB data programmatically.
+**Status**: Implemented and tested (commit `a59e0b8`, 2026-08-10).
 
 | # | Task | Files | Details |
 |---|------|-------|---------|
 | 4.1 | ~~Bulk import endpoint~~ | — | **Moved to Phase 1** ✅ |
 | 4.2 | ~~Bulk import validation (dry_run)~~ | — | **Moved to Phase 1** ✅ |
-| 4.3 | API token scoping | `backend/app/api/auth.py` | Allow API tokens to be scoped to "cmdb_read" / "cmdb_write" permissions |
-| 4.4 | Export endpoint | `backend/app/api/cmdb.py` | `GET /cmdb/items/export?format=json\|csv&type_id=N` — Export CIs for backup/sync |
-| 4.5 | Webhook trigger: CI events | `backend/app/api/cmdb.py` + `webhooks.py` | When a CI is created/updated/deleted, optionally fire a configured workflow (like form submission triggers) |
+| 4.3 | API token scoping | `backend/app/api/auth.py` | `check_api_token_cmdb_permission()` validates cmdb_read/cmdb_write on API tokens |
+| 4.4 | Export endpoint | `backend/app/api/cmdb.py` | `GET /cmdb/items/export?format=json\|csv&type_id=N` — exports all CIs with dynamic columns |
+| 4.5 | Webhook trigger: CI events | `backend/app/api/cmdb.py` | POST/GET `/cmdb/types/{id}/webhook` — configure workflow to trigger on CI create/update/delete |
 | 4.6 | ~~Search API~~ | — | **Moved to Phase 1** ✅ |
 | 4.7 | ~~Relationship graph API~~ | — | **Moved to Phase 1** ✅ |
 
@@ -287,6 +288,13 @@ Result: `$input.server_ci` contains the full CI record.
   "upsert_key": "hostname"
 }
 ```
+
+**Notes from implementation:**
+- Export endpoint placed before `/items/{item_id}` routes to avoid FastAPI route conflict ("export" matching as item_id)
+- CSV export dynamically includes all ci_data keys across items as columns
+- Webhook configuration stored in `system_settings` table per CI type (key: `cmdb_webhook_workflow_{type_id}`)
+- Webhook triggers fire asynchronously via `scheduler_service.trigger_webhook()` on create/update/delete
+- API token scoping uses existing `APIToken.permissions` field (comma-separated); checks for `cmdb_read`, `cmdb_write`, or `cmdb_all`
 
 ---
 
@@ -311,8 +319,8 @@ Recommended order for implementing across sessions (respects token limits):
 1. **Session 1**: Phase 1 — Backend core (models, schemas, API, migration). ✅ COMPLETE
 2. **Session 2**: Phase 2 — Role + CI Type Manager + CI List pages + nav. ✅ COMPLETE
 3. **Session 3**: Phase 3 — Workflow node integration (cmdb_lookup, cmdb_update executors + frontend). ✅ COMPLETE
-4. **Session 4**: Phase 4 remaining — Export endpoint, webhook triggers, API token scoping. NEXT
-5. **Session 5**: Phase 5 — Polish (optional, as needed).
+4. **Session 4**: Phase 4 — Export endpoint, webhook triggers, API token scoping. ✅ COMPLETE
+5. **Session 5**: Phase 5 — Polish (history/audit trail, dashboard widgets, CI type templates). NEXT
 
 ---
 
