@@ -1,6 +1,8 @@
 """
 CMDB API endpoints — CI Types, Configuration Items, Relationships.
 """
+import json
+import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -21,6 +23,7 @@ from app.schemas.cmdb import (
 )
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 
 # ---------------------------------------------------------------------------
@@ -331,7 +334,65 @@ async def create_ci(
     await db.commit()
     await db.refresh(ci)
 
+    # Trigger webhook if configured
+    await _trigger_cmdb_webhook(db, "ci_created", ci)
+
     return _ci_to_dict(ci)
+
+
+# ---------------------------------------------------------------------------
+# Export (must be before /items/{item_id} to avoid route conflict)
+# ---------------------------------------------------------------------------
+
+@router.get("/items/export")
+async def export_cis(
+    format: str = Query("json", regex="^(json|csv)$"),
+    type_id: Optional[int] = None,
+    current_user: User = Depends(get_current_cmdb_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export CIs as JSON or CSV."""
+    from fastapi.responses import Response
+
+    stmt = select(ConfigurationItem).options(selectinload(ConfigurationItem.ci_type))
+    if type_id is not None:
+        stmt = stmt.where(ConfigurationItem.type_id == type_id)
+    stmt = stmt.order_by(ConfigurationItem.name)
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+
+    if format == "csv":
+        import io, csv
+        if not items:
+            return Response(content="", media_type="text/csv")
+
+        # Collect all field keys across items
+        all_keys = {"id", "type_id", "name", "status", "created_at", "updated_at"}
+        for ci in items:
+            all_keys.update((ci.ci_data or {}).keys())
+        fieldnames = sorted(all_keys)
+
+        output = io.StringIO()
+        writer = csv.DictWriter(output, fieldnames=fieldnames, extrasaction="ignore")
+        writer.writeheader()
+        for ci in items:
+            row = {
+                "id": ci.id,
+                "type_id": ci.type_id,
+                "name": ci.name,
+                "status": ci.status or "",
+                "created_at": ci.created_at.isoformat() if ci.created_at else "",
+                "updated_at": ci.updated_at.isoformat() if ci.updated_at else "",
+            }
+            row.update(ci.ci_data or {})
+            writer.writerow(row)
+
+        return Response(content=output.getvalue(), media_type="text/csv",
+                        headers={"Content-Disposition": f"attachment; filename=cmdb_export_{type_id or 'all'}.csv"})
+    else:
+        data = [_ci_detail_to_dict(i) for i in items]
+        return Response(content=json.dumps(data, indent=2, default=str), media_type="application/json",
+                        headers={"Content-Disposition": f"attachment; filename=cmdb_export_{type_id or 'all'}.json"})
 
 
 @router.get("/items/{item_id}")
@@ -385,8 +446,13 @@ async def update_ci(
         ci.custom_data = data.custom_data
 
     ci.updated_by = current_user.id
+    old_data = dict(ci.ci_data or {}) if data.ci_data is not None else None
     await db.commit()
     await db.refresh(ci)
+
+    # Trigger webhook if configured
+    if old_data is not None:
+        await _trigger_cmdb_webhook(db, "ci_updated", ci, old_data=old_data)
 
     return _ci_to_dict(ci)
 
@@ -404,8 +470,12 @@ async def delete_ci(
     if not ci:
         raise HTTPException(status_code=404, detail="Configuration item not found")
 
+    old_data = dict(ci.ci_data or {})
     await db.delete(ci)
     await db.commit()
+
+    # Trigger webhook if configured (pass ci data before deletion)
+    await _trigger_cmdb_webhook(db, "ci_deleted", ci, old_data=old_data)
 
     return {"message": f"Configuration item '{ci.name}' deleted"}
 
@@ -659,3 +729,123 @@ async def get_ci_graph(
             break
 
     return {"nodes": nodes, "edges": edges}
+
+
+# ---------------------------------------------------------------------------
+# ---------------------------------------------------------------------------
+# Webhook trigger on CI events
+# ---------------------------------------------------------------------------
+
+async def _trigger_cmdb_webhook(db: AsyncSession, event_type: str, ci: ConfigurationItem, old_data: Optional[Dict[str, Any]] = None):
+    """If the CI type has a webhook workflow configured, trigger it."""
+    try:
+        from app.models.schemas import Workflow
+        from app.models.system_settings import SystemSetting
+        from app.services.scheduler import scheduler_service
+
+        ci_type_id = ci.type_id
+        if not ci_type_id:
+            return
+
+        # Look up webhook workflow ID from system settings
+        setting_key = f"cmdb_webhook_workflow_{ci_type_id}"
+        stmt = select(SystemSetting).where(SystemSetting.key == setting_key)
+        result = await db.execute(stmt)
+        setting = result.scalar_one_or_none()
+        if not setting:
+            return
+
+        webhook_workflow_id = int(setting.value)
+
+        # Verify workflow exists
+        wf_stmt = select(Workflow).where(Workflow.id == webhook_workflow_id, Workflow.is_active == True)
+        wf_result = await db.execute(wf_stmt)
+        if not wf_result.scalar_one_or_none():
+            return
+
+        # Fetch CI type info
+        type_stmt = select(CIType).where(CIType.id == ci_type_id)
+        type_result = await db.execute(type_stmt)
+        ci_type = type_result.scalar_one_or_none()
+
+        payload = {
+            "event": event_type,
+            "ci_id": ci.id,
+            "ci_name": ci.name,
+            "ci_status": ci.status,
+            "ci_data": ci.ci_data or {},
+            "ci_type_name": ci_type.name if ci_type else "",
+            "ci_type_key": ci_type.key if ci_type else "",
+        }
+        if old_data:
+            payload["old_data"] = old_data
+
+        await scheduler_service.trigger_webhook(webhook_workflow_id, payload)
+    except Exception as e:
+        logger.warning(f"CMDB webhook trigger failed: {e}")
+
+
+@router.post("/types/{type_id}/webhook")
+async def configure_type_webhook(
+    type_id: int,
+    data: dict,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Configure a webhook workflow for CI events on this type.
+
+    Body: {"workflow_id": 123} or {"workflow_id": null} to disable
+    """
+    stmt = select(CIType).where(CIType.id == type_id)
+    result = await db.execute(stmt)
+    ct = result.scalar_one_or_none()
+    if not ct:
+        raise HTTPException(status_code=404, detail="CI type not found")
+
+    workflow_id = data.get("workflow_id")
+    # Store in ci_type config (we need to add a config column to CIType)
+    # For now, use a system_settings key per type
+    from app.models.system_settings import SystemSetting
+    setting_key = f"cmdb_webhook_workflow_{type_id}"
+
+    existing_stmt = select(SystemSetting).where(SystemSetting.key == setting_key)
+    existing_result = await db.execute(existing_stmt)
+    existing = existing_result.scalar_one_or_none()
+
+    if workflow_id is None:
+        # Disable webhook
+        if existing:
+            await db.delete(existing)
+    else:
+        if existing:
+            existing.value = str(workflow_id)
+        else:
+            new_setting = SystemSetting(key=setting_key, value=str(workflow_id))
+            db.add(new_setting)
+
+    await db.commit()
+
+    return {"message": "Webhook configured", "type_id": type_id, "workflow_id": workflow_id}
+
+
+@router.get("/types/{type_id}/webhook")
+async def get_type_webhook(
+    type_id: int,
+    current_user: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get the webhook workflow configured for this CI type."""
+    stmt = select(CIType).where(CIType.id == type_id)
+    result = await db.execute(stmt)
+    if not result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="CI type not found")
+
+    from app.models.system_settings import SystemSetting
+    setting_key = f"cmdb_webhook_workflow_{type_id}"
+    existing_stmt = select(SystemSetting).where(SystemSetting.key == setting_key)
+    existing_result = await db.execute(existing_stmt)
+    existing = existing_result.scalar_one_or_none()
+
+    workflow_id = int(existing.value) if existing else None
+
+    return {"type_id": type_id, "workflow_id": workflow_id}

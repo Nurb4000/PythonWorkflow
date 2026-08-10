@@ -60,6 +60,41 @@ async def get_current_cmdb_manager(user: User = Depends(get_current_user)) -> Us
     return user
 
 
+async def check_api_token_cmdb_permission(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db), require_write: bool = False) -> User:
+    """Check if API token has cmdb_read or cmdb_write permission.
+
+    For JWT tokens (regular users), falls through to role-based checks.
+    For API tokens, checks the permissions field on the APIToken record.
+    """
+    import hashlib
+    from app.models.auth import APIToken
+
+    # Try as API token first
+    token_hash = hashlib.sha256(token.encode()).hexdigest()
+    stmt = select(APIToken).where(APIToken.token_hash == token_hash, APIToken.is_active == True)
+    result = await db.execute(stmt)
+    api_token = result.scalar_one_or_none()
+
+    if api_token:
+        permissions = [p.strip() for p in (api_token.permissions or "").split(",") if p.strip()]
+        required_perm = "cmdb_write" if require_write else "cmdb_read"
+        if required_perm not in permissions and "cmdb_all" not in permissions:
+            raise HTTPException(status_code=403, detail=f"API token lacks '{required_perm}' permission")
+        # Update last used
+        api_token.last_used_at = datetime.utcnow()
+        await db.commit()
+        # Get user
+        user_stmt = select(User).where(User.id == api_token.user_id)
+        user_result = await db.execute(user_stmt)
+        user = user_result.scalar_one_or_none()
+        if not user or not user.is_active:
+            raise HTTPException(status_code=401, detail="User associated with token is inactive")
+        return user
+
+    # Not an API token — fall back to regular JWT auth (role-based)
+    return await get_current_user(token, db)
+
+
 async def user_can_access_workflow(db: AsyncSession, user: User, workflow_id: int) -> bool:
     """Admin/developer see all workflows; other roles only see workflows permitted to their groups"""
     if user.role in ("admin", "developer"):
