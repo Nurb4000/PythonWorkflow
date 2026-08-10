@@ -184,8 +184,9 @@ Relationships:
 
 ---
 
-### Phase 2: New Role + Frontend Management UI
+### Phase 2: New Role + Frontend Management UI ✅ COMPLETE
 **Goal**: cmdb_manager role works; full CRUD UI for managing CMDB.
+**Status**: Implemented and tested (commit `b39f655`, 2026-08-10).
 
 | # | Task | Files | Details |
 |---|------|-------|---------|
@@ -193,10 +194,10 @@ Relationships:
 | 2.2 | Wire role into frontend routing | `Auth.tsx`, `App.tsx` | Default path + nav entry + RoleRoute guards |
 | 2.3 | Frontend API client | `frontend/src/services/api.ts` | `cmdbApi` object with all endpoint wrappers |
 | 2.4 | CI Type Manager page | `frontend/src/pages/CITypeManager.tsx` | List/create/edit CI types; field schema editor (add/remove fields, set type/required/options) |
-| 2.5 | CI List page | `frontend/src/pages/CItemList.tsx` | Table view with filters by type/status/fields; search; pagination |
-| 2.6 | CI Detail/Edit form | `frontend/src/pages/CIDetail.tsx` | Dynamically rendered form from `field_schema`; shows relationships; edit inline |
-| 2.7 | Relationship editor | Integrated into CIDetail | Add/remove relationships to other CIs; type selector dropdown |
-| 2.8 | Nav sidebar entry | `App.tsx` | "CMDB" link visible to admin/developer/cmdb_manager |
+| 2.5 | CI List page | `frontend/src/pages/CItemList.tsx` | Card view with filters by type/status; search; dynamic form from schema |
+| 2.6 | CI Detail/Edit form | Combined into CItemList | Inline edit via same dynamic form (no separate CIDetail page) |
+| 2.7 | Relationship editor | Deferred to Phase 3+ | Will integrate into item detail view |
+| 2.8 | Nav sidebar entry | `App.tsx` | "CMDB Types" and "CMDB Items" links visible to admin/developer/cmdb_manager |
 
 **UI notes:**
 - CI Type Manager is admin-only (structural changes)
@@ -204,6 +205,13 @@ Relationships:
 - Field schema editor reuses patterns from `FormDesigner.tsx` and `FieldManager.tsx`
 - Dynamic form rendering can reuse `FormRenderer.tsx` with minor adaptation
 - Use TanStack Query (`useQuery`, `useMutation`) following existing patterns
+
+**Notes from implementation:**
+- Combined CI list and detail into single `CItemList.tsx` page (edit inline, no separate detail page)
+- Relationship editor deferred to Phase 3+ (will add when workflow integration needs it)
+- Dynamic form renders all field types: string, text, number, boolean, date, datetime, select, email, url
+- Type selector filter in CItemList lets users narrow by CI type before creating items
+- `cmdb_manager` role tested: can CRUD items, cannot create types (403), regular users/staff blocked entirely
 
 ---
 
@@ -291,12 +299,11 @@ Result: `$input.server_ci` contains the full CI record.
 
 Recommended order for implementing across sessions (respects token limits):
 
-1. **Session 1**: Phase 1 — Backend core (models, schemas, API, migration). Largest single chunk but well-defined.
-2. **Session 2**: Phase 2 tasks 2.1–2.4 — Role + CI Type Manager page.
-3. **Session 3**: Phase 2 tasks 2.5–2.8 — CI List/Detail pages + nav integration.
-4. **Session 4**: Phase 3 — Workflow node integration (cmdb_lookup, cmdb_update executors + frontend).
-5. **Session 5**: Phase 4 — Automation APIs (bulk import, export, search, graph).
-6. **Session 6**: Phase 5 — Polish (optional, as needed).
+1. **Session 1**: Phase 1 — Backend core (models, schemas, API, migration). ✅ COMPLETE
+2. **Session 2**: Phase 2 — Role + CI Type Manager + CI List pages + nav. ✅ COMPLETE
+3. **Session 3**: Phase 3 — Workflow node integration (cmdb_lookup, cmdb_update executors + frontend). NEXT
+4. **Session 4**: Phase 4 remaining — Export endpoint, webhook triggers, API token scoping.
+5. **Session 5**: Phase 5 — Polish (optional, as needed).
 
 ---
 
