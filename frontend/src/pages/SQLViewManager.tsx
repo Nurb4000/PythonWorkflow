@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { sqlViewApi } from '../services/api'
+import { sqlViewApi, aiApi, dataQueryApi } from '../services/api'
 
 interface SQLView {
   id: number
@@ -21,6 +21,22 @@ export const SQLViewManager: React.FC = () => {
   const [error, setError] = useState('')
   const [successMessage, setSuccessMessage] = useState('')
   const [previewSql, setPreviewSql] = useState('')
+
+  // AI assist state
+  const [aiMode, setAiMode] = useState<'generate' | 'explain' | 'fix' | null>(null)
+  const [aiPrompt, setAiPrompt] = useState('')
+  const [aiLoading, setAiLoading] = useState(false)
+  const [aiResponse, setAiResponse] = useState<string | null>(null)
+  const [aiError, setAiError] = useState('')
+
+  // Fetch available tables for AI context
+  const { data: tables } = useQuery({
+    queryKey: ['data-query-tables'],
+    queryFn: async () => {
+      const res = await dataQueryApi.listTables()
+      return res.data as Array<{ table: string; display_name: string; columns: Array<{ name: string; type: string }> }>
+    },
+  })
 
   const { data: views, isLoading } = useQuery({
     queryKey: ['sql-views'],
@@ -119,6 +135,75 @@ export const SQLViewManager: React.FC = () => {
     setPreviewSql(formData.definition_sql)
   }
 
+  // AI assist handlers
+  const handleAiAction = async () => {
+    if (!aiMode) return
+    setAiLoading(true)
+    setAiError('')
+    setAiResponse(null)
+
+    try {
+      let res: any
+      if (aiMode === 'generate') {
+        if (!aiPrompt.trim()) {
+          setAiError('Please describe what you want the view to do.')
+          return
+        }
+        res = await aiApi.assistQuery({
+          action: 'generate',
+          description: aiPrompt,
+          available_columns: tables?.map(t => ({ table: t.table, columns: t.columns.map(c => c.name) })).flat().map(c => c),
+        })
+      } else if (aiMode === 'explain') {
+        if (!formData.definition_sql.trim()) {
+          setAiError('Enter SQL to explain first.')
+          return
+        }
+        res = await aiApi.assistQuery({
+          action: 'explain',
+          sql: formData.definition_sql,
+        })
+      } else if (aiMode === 'fix') {
+        if (!formData.definition_sql.trim()) {
+          setAiError('Enter SQL to fix first.')
+          return
+        }
+        res = await aiApi.assistQuery({
+          action: 'fix',
+          sql: formData.definition_sql,
+          error_message: aiPrompt || 'Please review and improve this SQL',
+        })
+      }
+
+      const result = res?.data?.result
+      if (result) {
+        if (aiMode === 'generate' && result.sql) {
+          // Wrap in CREATE VIEW if needed
+          const sql = result.sql.trim().toUpperCase().startsWith('CREATE VIEW') ? result.sql : `CREATE VIEW ${formData.name || 'my_view'} AS\n${result.sql}`
+          setFormData(prev => ({ ...prev, definition_sql: sql }))
+          setAiResponse(result.explanation || 'SQL generated successfully.')
+        } else if (aiMode === 'fix' && result.fixed_sql) {
+          const fixed = result.fixed_sql.trim().toUpperCase().startsWith('CREATE VIEW') ? result.fixed_sql : `CREATE VIEW ${formData.name || 'my_view'} AS\n${result.fixed_sql}`
+          setFormData(prev => ({ ...prev, definition_sql: fixed }))
+          setAiResponse(result.explanation || 'SQL fixed successfully.')
+        } else {
+          setAiResponse(result.explanation || result.sql || JSON.stringify(result))
+        }
+      }
+    } catch (err: any) {
+      setAiError(err.response?.data?.detail || 'AI assist failed')
+    } finally {
+      setAiLoading(false)
+    }
+  }
+
+  const resetAi = () => {
+    setAiMode(null)
+    setAiPrompt('')
+    setAiResponse(null)
+    setAiError('')
+  }
+
   if (isLoading) return <div className="loading">Loading views...</div>
 
   return (
@@ -184,6 +269,63 @@ export const SQLViewManager: React.FC = () => {
                 Must be a CREATE VIEW statement. Only SELECT queries are allowed inside the view definition.
               </small>
             </div>
+
+            {/* AI Assist Panel */}
+            {!aiMode ? (
+              <div style={{ marginTop: '1rem', display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAiMode('generate')}>
+                  AI Generate View
+                </button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAiMode('explain')} disabled={!formData.definition_sql.trim()}>
+                  AI Explain SQL
+                </button>
+                <button type="button" className="btn btn-sm btn-secondary" onClick={() => setAiMode('fix')} disabled={!formData.definition_sql.trim()}>
+                  AI Fix/Improve SQL
+                </button>
+              </div>
+            ) : (
+              <div style={{ marginTop: '1rem', padding: '1rem', background: '#f8f9fa', borderRadius: '6px', border: '1px solid #dee2e6' }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.5rem' }}>
+                  <strong>{aiMode === 'generate' ? 'Generate View from Description' : aiMode === 'explain' ? 'Explain SQL' : 'Fix/Improve SQL'}</strong>
+                  <button type="button" className="btn btn-sm btn-secondary" onClick={resetAi}>Close</button>
+                </div>
+
+                {aiMode === 'generate' && (
+                  <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+                    <textarea
+                      className="form-textarea"
+                      rows={3}
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      placeholder="Describe what you want the view to do, e.g. &quot;Show total tasks per user with their group names&quot;"
+                    />
+                  </div>
+                )}
+
+                {aiMode === 'fix' && (
+                  <div className="form-group" style={{ marginBottom: '0.5rem' }}>
+                    <textarea
+                      className="form-textarea"
+                      rows={2}
+                      value={aiPrompt}
+                      onChange={(e) => setAiPrompt(e.target.value)}
+                      placeholder="Describe the issue or what to improve, e.g. &quot;Add a filter for active users only&quot;"
+                    />
+                  </div>
+                )}
+
+                <button type="button" className="btn btn-sm btn-primary" onClick={handleAiAction} disabled={aiLoading}>
+                  {aiLoading ? 'Thinking...' : (aiMode === 'generate' ? 'Generate' : aiMode === 'explain' ? 'Explain' : 'Fix')}
+                </button>
+
+                {aiError && <div className="error" style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>{aiError}</div>}
+                {aiResponse && (
+                  <div style={{ marginTop: '0.5rem', padding: '0.75rem', background: '#fff', borderRadius: '4px', border: '1px solid #d4edda', fontSize: '0.85rem' }}>
+                    {aiResponse}
+                  </div>
+                )}
+              </div>
+            )}
 
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
               <button type="submit" className="btn btn-success" disabled={createMutation.isPending || updateMutation.isPending}>
