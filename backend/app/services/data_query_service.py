@@ -7,10 +7,12 @@ from sqlalchemy import Column, Table, text as sa_text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.sql import select, func
 
-from app.models.auth import User, Group
+from app.models.auth import User, Group, AuditLog
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task, Schedule
 from app.models.forms import Form, FormSubmission, FormTemplate
 from app.models.custom_fields import CustomFieldDefinition
+from app.models.email_trigger import EmailProcessingLog
+from app.models.marketplace import MarketplaceItem, SavedNodeTemplate
 from app.models.cmdb import CIType, ConfigurationItem, CIRelationship, CIHistory
 
 logger = logging.getLogger(__name__)
@@ -31,6 +33,12 @@ QUERYABLE_TABLES: Dict[str, tuple] = {
     "configuration_items": (ConfigurationItem, "Configuration Items"),
     "ci_relationships": (CIRelationship, "CI Relationships"),
     "ci_history": (CIHistory, "CI History"),
+    "audit_logs": (AuditLog, "Audit Logs"),
+    "form_templates": (FormTemplate, "Form Templates"),
+    "custom_field_definitions": (CustomFieldDefinition, "Custom Field Definitions"),
+    "email_processing_log": (EmailProcessingLog, "Email Processing Log"),
+    "marketplace_items": (MarketplaceItem, "Marketplace Items"),
+    "saved_node_templates": (SavedNodeTemplate, "Saved Node Templates"),
 }
 
 # FK relationship map for chaining: (source_table, fk_column) -> (target_table, target_pk_column)
@@ -55,6 +63,13 @@ FK_MAP: List[tuple] = [
     ("ci_relationships", "target_ci_id", "configuration_items", "id"),
     ("ci_history", "ci_id", "configuration_items", "id"),
     ("ci_history", "changed_by", "users", "id"),
+    ("audit_logs", "user_id", "users", "id"),
+    ("custom_field_definitions", "created_by", "users", "id"),
+    ("email_processing_log", "workflow_id", "workflows", "id"),
+    ("email_processing_log", "run_id", "workflow_runs", "id"),
+    ("marketplace_items", "author_id", "users", "id"),
+    ("saved_node_templates", "user_id", "users", "id"),
+    ("saved_node_templates", "source_marketplace_item_id", "marketplace_items", "id"),
 ]
 
 # Build a lookup: (source_table, fk_column) -> (target_table, target_pk)
