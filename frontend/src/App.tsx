@@ -104,13 +104,13 @@ const RoleAwareNav: React.FC = () => {
   }
 
   const isPowerUser = user.role === 'admin' || user.role === 'developer'
-  const isStaffOrAdmin = user.role === 'admin' || user.role === 'staff'
+  const canSeeTasks = user.role === 'admin' || user.role === 'developer' || user.role === 'staff'
   const canAccessCmdb = user.role === 'admin' || user.role === 'developer' || user.role === 'cmdb_manager'
 
   return (
     <>
       {isPowerUser && <Link to="/workflows">Workflows</Link>}
-      {isStaffOrAdmin && <Link to="/tasks">Tasks</Link>}
+      {canSeeTasks && <Link to="/tasks">Tasks</Link>}
       {user.role === 'user' && <Link to="/my-tasks">My Tasks</Link>}
       <Link to="/offerings">Offerings</Link>
       <Link to="/my-submissions">My Submissions</Link>
