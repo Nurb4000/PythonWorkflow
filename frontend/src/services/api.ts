@@ -226,4 +226,29 @@ export const marketplaceApi = {
   getCategories: () => api.get('/marketplace/categories'),
 }
 
+// CMDB APIs
+export const cmdbApi = {
+  // CI Types
+  listTypes: (params?: any) => api.get('/cmdb/types', { params }),
+  getType: (id: number) => api.get(`/cmdb/types/${id}`),
+  createType: (data: any) => api.post('/cmdb/types', data),
+  updateType: (id: number, data: any) => api.put(`/cmdb/types/${id}`, data),
+  deleteType: (id: number) => api.delete(`/cmdb/types/${id}`),
+  // Configuration Items
+  listItems: (params?: any) => api.get('/cmdb/items', { params }),
+  getItem: (id: number) => api.get(`/cmdb/items/${id}`),
+  createItem: (data: any) => api.post('/cmdb/items', data),
+  updateItem: (id: number, data: any) => api.put(`/cmdb/items/${id}`, data),
+  deleteItem: (id: number) => api.delete(`/cmdb/items/${id}`),
+  getItemRelationships: (id: number) => api.get(`/cmdb/items/${id}/relationships`),
+  getItemGraph: (id: number, depth?: number) => api.get(`/cmdb/items/${id}/graph`, { params: { depth } }),
+  // Relationships
+  createRelationship: (data: any) => api.post('/cmdb/relationships', data),
+  deleteRelationship: (id: number) => api.delete(`/cmdb/relationships/${id}`),
+  // Bulk import
+  bulkImport: (data: any) => api.post('/cmdb/items/bulk-import', data),
+  // Search
+  search: (params?: any) => api.get('/cmdb/search', { params }),
+}
+
 export default api

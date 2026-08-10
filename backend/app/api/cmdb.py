@@ -11,7 +11,7 @@ from typing import Optional, List, Dict, Any
 from app.core.database import get_db
 from app.models.auth import User
 from app.models.cmdb import CIType, ConfigurationItem, CIRelationship
-from app.api.auth import get_current_developer, get_current_admin
+from app.api.auth import get_current_developer, get_current_admin, get_current_cmdb_manager
 from app.schemas.cmdb import (
     CITypeCreate, CITypeUpdate, CITypeResponse,
     CICreate, CIUpdate, CIResponse, CITypeDetailResponse,
@@ -269,7 +269,7 @@ async def list_cis(
     type_id: Optional[int] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """List configuration items with optional filters."""
@@ -299,7 +299,7 @@ async def list_cis(
 @router.post("/items", status_code=201)
 async def create_ci(
     data: CICreate,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a new configuration item."""
@@ -337,7 +337,7 @@ async def create_ci(
 @router.get("/items/{item_id}")
 async def get_ci(
     item_id: int,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Get a single configuration item with type info."""
@@ -356,7 +356,7 @@ async def get_ci(
 async def update_ci(
     item_id: int,
     data: CIUpdate,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Update a configuration item."""
@@ -394,7 +394,7 @@ async def update_ci(
 @router.delete("/items/{item_id}")
 async def delete_ci(
     item_id: int,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a configuration item."""
@@ -413,7 +413,7 @@ async def delete_ci(
 @router.get("/items/{item_id}/relationships")
 async def get_ci_relationships(
     item_id: int,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Get all relationships for a configuration item."""
@@ -443,7 +443,7 @@ async def get_ci_relationships(
 @router.post("/relationships", status_code=201)
 async def create_relationship(
     data: CIRelationshipCreate,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Create a relationship between two CIs."""
@@ -492,7 +492,7 @@ async def create_relationship(
 @router.delete("/relationships/{rel_id}")
 async def delete_relationship(
     rel_id: int,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Delete a relationship."""
@@ -515,7 +515,7 @@ async def delete_relationship(
 @router.post("/items/bulk-import")
 async def bulk_import_cis(
     data: CIBulkImportRequest,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Bulk import configuration items. Supports upsert by key field."""
@@ -590,7 +590,7 @@ async def bulk_import_cis(
 async def search_cis(
     q: str = Query(..., min_length=1, description="Search query"),
     type_id: Optional[int] = None,
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Full-text search across CI names and ci_data values."""
@@ -615,7 +615,7 @@ async def search_cis(
 async def get_ci_graph(
     item_id: int,
     depth: int = Query(1, ge=1, le=5),
-    current_user: User = Depends(get_current_developer),
+    current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
     """Return adjacency graph for impact analysis."""

@@ -53,6 +53,13 @@ async def get_current_developer(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+async def get_current_cmdb_manager(user: User = Depends(get_current_user)) -> User:
+    """Get current user who may manage CMDB data (admin, developer, or cmdb_manager)"""
+    if user.role not in ("admin", "developer", "cmdb_manager"):
+        raise HTTPException(status_code=403, detail="CMDB manager access required")
+    return user
+
+
 async def user_can_access_workflow(db: AsyncSession, user: User, workflow_id: int) -> bool:
     """Admin/developer see all workflows; other roles only see workflows permitted to their groups"""
     if user.role in ("admin", "developer"):

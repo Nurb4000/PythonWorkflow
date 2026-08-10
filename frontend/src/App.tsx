@@ -22,6 +22,8 @@ import { DataExplorer } from './pages/DataExplorer'
 import { WorkflowImportExport } from './pages/WorkflowImportExport'
 import { SQLViewManager } from './pages/SQLViewManager'
 import { Marketplace } from './pages/Marketplace'
+import { CITypeManager } from './pages/CITypeManager'
+import { CItemList } from './pages/CItemList'
 
 const API_URL = '/api'
 
@@ -102,6 +104,7 @@ const RoleAwareNav: React.FC = () => {
 
   const isPowerUser = user.role === 'admin' || user.role === 'developer'
   const isStaffOrAdmin = user.role === 'admin' || user.role === 'staff'
+  const canAccessCmdb = user.role === 'admin' || user.role === 'developer' || user.role === 'cmdb_manager'
 
   return (
     <>
@@ -118,6 +121,8 @@ const RoleAwareNav: React.FC = () => {
 {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/data">Data Explorer</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/views">SQL Views</Link>}
       {(user.role === 'admin' || user.role === 'developer') && <Link to="/marketplace">Marketplace</Link>}
+{canAccessCmdb && <Link to="/cmdb/types">CMDB Types</Link>}
+{canAccessCmdb && <Link to="/cmdb/items">CMDB Items</Link>}
 {user.role === 'admin' && <Link to="/admin/fields">Field Manager</Link>}
     </>
   )
@@ -306,6 +311,9 @@ const AppContent: React.FC = () => {
           <Route path="/admin/views" element={<RoleRoute roles={['admin', 'developer']}><SQLViewManager /></RoleRoute>} />
 <Route path="/admin/fields" element={<RoleRoute roles={['admin']}><FieldManager /></RoleRoute>} />
           <Route path="/marketplace" element={<RoleRoute roles={['admin', 'developer']}><Marketplace /></RoleRoute>} />
+          <Route path="/cmdb/types" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CITypeManager /></RoleRoute>} />
+          <Route path="/cmdb/items" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
+          <Route path="/cmdb/items/:id" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
           <Route path="/login" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
           <Route path="*" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
         </Routes>

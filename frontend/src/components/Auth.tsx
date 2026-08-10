@@ -9,6 +9,7 @@ export const roleDefaultPath = (role: string): string => {
   switch (role) {
     case 'admin': return '/admin'
     case 'developer': return '/workflows'
+    case 'cmdb_manager': return '/cmdb'
     case 'staff': return '/tasks'
     case 'user': return '/portal'
     default: return '/workflows'
