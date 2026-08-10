@@ -11,6 +11,7 @@ from app.models.auth import User, Group
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task, Schedule
 from app.models.forms import Form, FormSubmission, FormTemplate
 from app.models.custom_fields import CustomFieldDefinition
+from app.models.cmdb import CIType, ConfigurationItem, CIRelationship, CIHistory
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,10 @@ QUERYABLE_TABLES: Dict[str, tuple] = {
     "workflow_steps": (WorkflowStep, "Workflow Steps"),
     "forms": (Form, "Forms"),
     "schedules": (Schedule, "Schedules"),
+    "ci_types": (CIType, "CI Types"),
+    "configuration_items": (ConfigurationItem, "Configuration Items"),
+    "ci_relationships": (CIRelationship, "CI Relationships"),
+    "ci_history": (CIHistory, "CI History"),
 }
 
 # FK relationship map for chaining: (source_table, fk_column) -> (target_table, target_pk_column)
@@ -43,6 +48,13 @@ FK_MAP: List[tuple] = [
     ("form_submissions", "submitted_by", "users", "id"),
     ("form_submissions", "workflow_run_id", "workflow_runs", "id"),
     ("schedules", "workflow_id", "workflows", "id"),
+    ("configuration_items", "type_id", "ci_types", "id"),
+    ("configuration_items", "created_by", "users", "id"),
+    ("configuration_items", "updated_by", "users", "id"),
+    ("ci_relationships", "source_ci_id", "configuration_items", "id"),
+    ("ci_relationships", "target_ci_id", "configuration_items", "id"),
+    ("ci_history", "ci_id", "configuration_items", "id"),
+    ("ci_history", "changed_by", "users", "id"),
 ]
 
 # Build a lookup: (source_table, fk_column) -> (target_table, target_pk)
