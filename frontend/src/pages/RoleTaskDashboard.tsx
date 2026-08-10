@@ -25,7 +25,7 @@ interface Task {
   assigned_group: { id: number; name: string } | null
 }
 
-type Tab = 'open' | 'review' | 'owned' | 'completed' | 'closed' | 'all'
+type Tab = 'active' | 'open' | 'review' | 'owned' | 'completed' | 'closed' | 'all'
 
 const getStatusBadgeClass = (status: string) => {
   switch (status) {
@@ -45,7 +45,7 @@ interface RoleTaskDashboardProps {
 
 export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, title }) => {
   const { user } = useAuth()
-  const [tab, setTab] = useState<Tab>('all')
+  const [tab, setTab] = useState<Tab>('active')
   const queryClient = useQueryClient()
 
   const { data: tasks, isLoading, error: taskError } = useQuery({
@@ -68,9 +68,9 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
 
   const filtered = useMemo(() => {
     if (!tasks) return []
-    
+
     // Filter by tab status
-    let list = tab === 'all' ? tasks : tasks.filter(t => t.status === tab)
+    let list = tab === 'all' ? tasks : tab === 'active' ? tasks.filter(t => ['open', 'review', 'owned'].includes(t.status)) : tasks.filter(t => t.status === tab)
     
     // Role-based filtering
     if (role === 'user') {
@@ -179,7 +179,7 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
       <div className="card-header">
         <h2>{title}</h2>
         <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
-          {(['all', 'open', 'review', 'owned', 'completed', 'closed'] as Tab[]).map(t => (
+          {(['active', 'open', 'review', 'owned', 'completed', 'closed', 'all'] as Tab[]).map(t => (
             <button
               key={t}
               className={`btn btn-sm ${tab === t ? 'btn-primary' : 'btn-secondary'}`}

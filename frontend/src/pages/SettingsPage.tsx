@@ -479,9 +479,9 @@ export const SettingsPage: React.FC = () => {
       </div>
 
       <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Portal Banner</h3>
+        <h3 className="card-title">Offerings Banner</h3>
         <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
-          Optional banner displayed at the top of the portal for important notices. Hidden when disabled.
+          Optional banner displayed at the top of the Offerings page for important notices. Hidden when disabled.
         </p>
         <form onSubmit={handleBannerSave}>
           <div className="form-group" style={{ marginBottom: '0.75rem' }}>
@@ -492,7 +492,7 @@ export const SettingsPage: React.FC = () => {
                 onChange={(e) => setBannerForm({ ...bannerForm, banner_enabled: e.target.checked })}
                 style={{ width: '18px', height: '18px' }}
               />
-              <span className="form-label" style={{ margin: 0 }}>Show Banner on Portal</span>
+              <span className="form-label" style={{ margin: 0 }}>Show Banner on Offerings Page</span>
               {bannerForm.banner_enabled && (
                 <span className="badge badge-success" style={{ marginLeft: '0.5rem' }}>Visible</span>
               )}

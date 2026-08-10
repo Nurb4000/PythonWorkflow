@@ -298,17 +298,26 @@ Result: `$input.server_ci` contains the full CI record.
 
 ---
 
-### Phase 5: Polish + History Tracking (Optional)
+### Phase 5: Polish + History Tracking ✅ COMPLETE
 **Goal**: Audit trail, advanced features.
+**Status**: Implemented and tested (commit TBD, 2026-08-10).
 
 | # | Task | Files | Details |
 |---|------|-------|---------|
-| 5.1 | CIHistory model + migration | `models/cmdb.py`, alembic | Track field-level changes |
-| 5.2 | History API | `api/cmdb.py` | `GET /cmdb/items/{id}/history` |
-| 5.3 | History UI | `CIDetail.tsx` | Timeline view of changes |
-| 5.4 | CI type templates | `models/cmdb.py` + UI | Pre-built type definitions (Server, Switch, App, DB) for quick start |
-| 5.5 | Dashboard widgets | New page or AdminDashboard | CI counts by type/status, recent changes |
-| 5.6 | Permission refinement | `api/cmdb.py` | Per-type or per-CI ownership/scoping (future: restrict cmdb_managers to subsets) |
+| 5.1 | CIHistory model + migration | `models/cmdb.py`, alembic | `CIHistory` class with ci_id, changed_by, field_key, old_value, new_value, change_type. Migration `e2f3a4b5c6d7` creates table + indexes |
+| 5.2 | History API | `api/cmdb.py` | `GET /cmdb/items/{id}/history` — returns audit trail ordered by changed_at DESC. History auto-recorded on create/update/delete with field-level granularity |
+| 5.3 | History UI | `CItemList.tsx` | Timeline view appears when editing a CI. Shows change type badges, field-level diffs, timestamps, and user IDs |
+| 5.4 | CI type templates | `api/cmdb.py` + `CITypeManager.tsx` | 5 pre-built templates: Server, Network Device, Application, Database, Cloud Instance. One-click apply via `POST /cmdb/templates/{key}/apply` (admin only) |
+| 5.5 | Dashboard widgets | `AdminDashboard.tsx` | Collapsible "CMDB Overview" section with stats cards (types, items, recent changes), items by status badges, items by type table. Backend: `GET /cmdb/stats?days=N` |
+| 5.6 | Permission refinement | — | **Deferred** — future enhancement for per-type/per-CI scoping |
+
+**Notes from implementation:**
+- History recording uses `_record_full_history()` helper that diffs old/new ci_data field-by-field
+- Name and status changes are tracked separately from ci_data field changes
+- Create events store full ci_data as new_value; delete events store full ci_data as old_value
+- Templates are defined in `api/cmdb.py` as `CI_TYPE_TEMPLATES` constant (5 templates)
+- Stats endpoint uses `func.now() - timedelta(days=N)` for recent changes count
+- Dashboard widget follows existing `SystemLogsViewer` collapsible pattern
 
 ---
 
@@ -320,7 +329,9 @@ Recommended order for implementing across sessions (respects token limits):
 2. **Session 2**: Phase 2 — Role + CI Type Manager + CI List pages + nav. ✅ COMPLETE
 3. **Session 3**: Phase 3 — Workflow node integration (cmdb_lookup, cmdb_update executors + frontend). ✅ COMPLETE
 4. **Session 4**: Phase 4 — Export endpoint, webhook triggers, API token scoping. ✅ COMPLETE
-5. **Session 5**: Phase 5 — Polish (history/audit trail, dashboard widgets, CI type templates). NEXT
+5. **Session 5**: Phase 5 — Polish (history/audit trail, dashboard widgets, CI type templates). ✅ COMPLETE
+
+**All phases complete. CMDB feature is fully implemented.**
 
 ---
 
@@ -343,5 +354,5 @@ Recommended order for implementing across sessions (respects token limits):
 ## Open Questions
 
 - Should CI types support inheritance? (e.g., "Linux Server" extends "Server") — Deferred, not in initial scope.
-- Do we need soft-delete on CIs? Currently planning hard delete. Can add if audit requirements demand it.
-- Should the CMDB have its own permission model separate from user roles? (e.g., "this cmdb_manager can only edit 'server' type") — Phase 5 territory.
+- Do we need soft-delete on CIs? Currently using hard delete with full audit trail via CIHistory. Can add if needed.
+- Should the CMDB have its own permission model separate from user roles? (e.g., "this cmdb_manager can only edit 'server' type") — Deferred to future work.

@@ -1,9 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import axios from 'axios'
-import { Link } from 'react-router-dom'
 import { portalApi } from '../services/api'
 import { FormRenderer } from '../components/FormRenderer'
-import { getStatusBadgeClass, formatDuration } from './WorkflowRunsAdmin'
 
 interface PortalWorkflow {
   id: number
@@ -18,17 +16,6 @@ interface PortalWorkflow {
   entry_form_id?: number | null  // P3.3
 }
 
-interface PortalRun {
-  id: number
-  workflow_id: number
-  workflow_name: string
-  status: string
-  started_at: string
-  completed_at: string
-  error_message: string
-  created_at: string
-}
-
 interface PortalBanner {
   enabled: boolean
   title: string
@@ -38,7 +25,6 @@ interface PortalBanner {
 
 export const Portal: React.FC = () => {
   const [workflows, setWorkflows] = useState<PortalWorkflow[]>([])
-  const [myRuns, setMyRuns] = useState<PortalRun[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState<number | null>(null)
   const [toast, setToast] = useState<string | null>(null)
@@ -48,13 +34,11 @@ export const Portal: React.FC = () => {
 
   const load = useCallback(async () => {
     try {
-      const [wfResponse, runsResponse, bannerResponse] = await Promise.all([
+      const [wfResponse, bannerResponse] = await Promise.all([
         portalApi.listWorkflows(),
-        portalApi.myRuns(),
         axios.get('/api/portal/banner')
       ])
       setWorkflows(wfResponse.data)
-      setMyRuns(runsResponse.data)
       if (bannerResponse.data.enabled) {
         setBanner(bannerResponse.data)
       }
@@ -107,12 +91,6 @@ export const Portal: React.FC = () => {
     }
   }
 
-  const runMap = useMemo(() => {
-    const map = new Map<number, string>()
-    workflows.forEach(w => map.set(w.id, w.name))
-    return map
-  }, [workflows])
-
   const filteredWorkflows = useMemo(() => {
     if (!searchTerm.trim()) return workflows
     const q = searchTerm.toLowerCase()
@@ -123,7 +101,7 @@ export const Portal: React.FC = () => {
   }, [workflows, searchTerm])
 
   if (loading) {
-    return <div className="loading">Loading portal...</div>
+    return <div className="loading">Loading offerings...</div>
   }
 
   return (
@@ -261,48 +239,6 @@ export const Portal: React.FC = () => {
           )}
         </>
       )}
-
-      <div className="card" style={{ marginTop: '2rem' }}>
-        <div className="card-header">
-          <h3 className="card-title">My Submissions</h3>
-        </div>
-        {myRuns.length === 0 ? (
-          <p style={{ opacity: 0.6, padding: '1rem' }}>You haven't started any workflows yet.</p>
-        ) : (
-          <table className="table">
-            <thead>
-               <tr>
-                 <th>ID</th>
-                 <th>Workflow</th>
-                 <th>Status</th>
-                 <th>Started</th>
-                 <th>Duration</th>
-                 <th>Error</th>
-                 <th></th>
-               </tr>
-            </thead>
-            <tbody>
-               {myRuns.slice(0, 10).map(run => (
-                 <tr key={run.id}>
-                   <td>#{run.id}</td>
-                   <td>{run.workflow_name || runMap.get(run.workflow_id) || `Workflow #${run.workflow_id}`}</td>
-                   <td>
-                     <span className={`badge ${getStatusBadgeClass(run.status)}`}>{run.status}</span>
-                   </td>
-                   <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
-                   <td>{formatDuration(run.started_at, run.completed_at)}</td>
-                   <td style={{ maxWidth: '180px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                     {run.error_message ? <span style={{ color: '#e74c3c', fontSize: '0.8rem' }}>{run.error_message}</span> : '-'}
-                   </td>
-                   <td>
-                     <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">Graph</Link>
-                   </td>
-                 </tr>
-               ))}
-            </tbody>
-          </table>
-        )}
-      </div>
     </div>
   )
 }

@@ -149,3 +149,27 @@ class CIBulkImportRequest(BaseModel):
     records: List[CIBulkImportRecord] = Field(..., min_length=1)
     upsert_key: Optional[str] = None
     dry_run: bool = False
+
+
+# --- History Schemas ---
+class CIHistoryEntry(BaseModel):
+    id: int
+    ci_id: int
+    changed_by: Optional[int] = None
+    changed_at: datetime
+    field_key: Optional[str] = None
+    old_value: Optional[Dict[str, Any]] = None
+    new_value: Optional[Dict[str, Any]] = None
+    change_type: str
+
+    class Config:
+        from_attributes = True
+
+
+# --- Stats Schema ---
+class CMDBStatsResponse(BaseModel):
+    total_types: int = 0
+    total_items: int = 0
+    items_by_status: Dict[str, int] = {}
+    items_by_type: List[Dict[str, Any]] = []
+    recent_changes: int = 0

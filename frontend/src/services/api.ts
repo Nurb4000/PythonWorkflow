@@ -249,6 +249,13 @@ export const cmdbApi = {
   bulkImport: (data: any) => api.post('/cmdb/items/bulk-import', data),
   // Search
   search: (params?: any) => api.get('/cmdb/search', { params }),
+  // History
+  getItemHistory: (id: number, limit?: number) => api.get(`/cmdb/items/${id}/history`, { params: { limit } }),
+  // Stats
+  getStats: (days?: number) => api.get('/cmdb/stats', { params: { days } }),
+  // Templates
+  listTemplates: () => api.get('/cmdb/templates'),
+  applyTemplate: (key: string) => api.post(`/cmdb/templates/${key}/apply`),
 }
 
 export default api

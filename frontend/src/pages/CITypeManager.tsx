@@ -61,6 +61,7 @@ export const CITypeManager: React.FC = () => {
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
   const [optionInput, setOptionInput] = useState<Record<number, string>>({})
+  const [showTemplates, setShowTemplates] = useState(false)
 
   const { data: types, isLoading } = useQuery({
     queryKey: ['cmdb-types'],
@@ -107,6 +108,25 @@ export const CITypeManager: React.FC = () => {
     },
     onError: (err: any) => {
       setError(err.response?.data?.detail || 'Failed to delete CI type')
+      setTimeout(() => setError(''), 5000)
+    },
+  })
+
+  const { data: templates, isLoading: templatesLoading } = useQuery({
+    queryKey: ['cmdb-templates'],
+    queryFn: () => cmdbApi.listTemplates().then(r => r.data as any[]),
+    enabled: showTemplates,
+  })
+
+  const applyTemplateMutation = useMutation({
+    mutationFn: (key: string) => cmdbApi.applyTemplate(key),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['cmdb-types'] })
+      setSuccess('Template applied successfully')
+      setTimeout(() => setSuccess(''), 3000)
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to apply template')
       setTimeout(() => setError(''), 5000)
     },
   })
@@ -405,6 +425,54 @@ export const CITypeManager: React.FC = () => {
           </div>
         </div>
       )}
+
+      {/* Templates section */}
+      <div className="card" style={{ marginBottom: '1.5rem' }}>
+        <div className="card-header">
+          <h3 className="card-title">Pre-built Templates</h3>
+          <button
+            className={`btn btn-sm ${showTemplates ? 'btn-secondary' : 'btn-primary'}`}
+            onClick={() => setShowTemplates(!showTemplates)}
+          >
+            {showTemplates ? 'Hide Templates' : 'Show Templates'}
+          </button>
+        </div>
+
+        {showTemplates && (
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))', gap: '0.75rem', marginTop: '0.75rem' }}>
+            {templatesLoading ? (
+              <div className="loading">Loading templates...</div>
+            ) : templates?.map((template: any) => {
+              const exists = types?.some(t => t.key === template.key)
+              return (
+                <div key={template.key} style={{
+                  border: '1px solid #dee2e6', borderRadius: '8px', padding: '1rem',
+                  backgroundColor: exists ? '#f8f9fa' : '#fff',
+                  opacity: exists ? 0.7 : 1,
+                }}>
+                  <h4 style={{ margin: '0 0 0.25rem 0', fontSize: '1rem' }}>
+                    {template.icon && <span style={{ marginRight: '0.5rem' }}>{template.icon}</span>}
+                    {template.name}
+                    {exists && <span style={{ marginLeft: '0.5rem', fontSize: '0.75rem', color: '#6c757d' }}>(exists)</span>}
+                  </h4>
+                  <p style={{ margin: '0 0 0.75rem 0', fontSize: '0.85rem', color: '#6c757d' }}>
+                    {template.description} · {template.field_schema?.length || 0} fields
+                  </p>
+                  {isAdmin && (
+                    <button
+                      className="btn btn-sm btn-primary"
+                      onClick={() => applyTemplateMutation.mutate(template.key)}
+                      disabled={exists || applyTemplateMutation.isPending}
+                    >
+                      {exists ? 'Already Exists' : applyTemplateMutation.isPending ? 'Applying...' : 'Apply Template'}
+                    </button>
+                  )}
+                </div>
+              )
+            })}
+          </div>
+        )}
+      </div>
 
       <div style={{ display: 'grid', gap: '1rem' }}>
         {types?.map(type => (

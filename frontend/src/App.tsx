@@ -24,6 +24,7 @@ import { SQLViewManager } from './pages/SQLViewManager'
 import { Marketplace } from './pages/Marketplace'
 import { CITypeManager } from './pages/CITypeManager'
 import { CItemList } from './pages/CItemList'
+import { MySubmissions } from './pages/MySubmissions'
 
 const API_URL = '/api'
 
@@ -111,7 +112,8 @@ const RoleAwareNav: React.FC = () => {
       {isPowerUser && <Link to="/workflows">Workflows</Link>}
       {isStaffOrAdmin && <Link to="/tasks">Tasks</Link>}
       {user.role === 'user' && <Link to="/my-tasks">My Tasks</Link>}
-      <Link to="/portal">Portal</Link>
+      <Link to="/offerings">Offerings</Link>
+      <Link to="/my-submissions">My Submissions</Link>
       {(user.role === 'admin' || user.role === 'developer') && <a href="/forms" onClick={handleFormsClick} style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}>Forms</a>}
       {user.role === 'admin' && <Link to="/admin">Dashboard</Link>}
       {user.role === 'admin' && <Link to="/admin/users">Users</Link>}
@@ -304,7 +306,8 @@ const AppContent: React.FC = () => {
           <Route path="/tasks" element={<RoleRoute roles={['admin', 'developer', 'staff']}><RoleTaskDashboard role="developer" title="Tasks" /></RoleRoute>} />
           <Route path="/my-tasks" element={<ProtectedRoute><RoleTaskDashboard role="user" title="My Tasks" /></ProtectedRoute>} />
           <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetail /></ProtectedRoute>} />
-          <Route path="/portal" element={<ProtectedRoute><Portal /></ProtectedRoute>} />
+          <Route path="/offerings" element={<ProtectedRoute><Portal /></ProtectedRoute>} />
+          <Route path="/my-submissions" element={<ProtectedRoute><MySubmissions /></ProtectedRoute>} />
           <Route path="/forms" element={<ProtectedRoute><FormDesigner /></ProtectedRoute>} />
           <Route path="/settings" element={<RoleRoute roles={['admin']}><SettingsPage /></RoleRoute>} />
 <Route path="/admin/data" element={<RoleRoute roles={['admin', 'developer']}><DataExplorer /></RoleRoute>} />

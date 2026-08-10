@@ -92,12 +92,12 @@ class FormService:
     async def list_forms(self, db: AsyncSession, user: User, environment: Optional[str] = None) -> List[Form]:
         """List forms accessible to user"""
         
-        if user.role == "admin":
+        if user.role in ("admin", "developer"):
             stmt = select(Form)
             if environment:
                 stmt = stmt.where(Form.environment == environment)
         else:
-            # Users can only see published forms in production
+            # Non-developer users can only see published forms in production
             stmt = select(Form).where(
                 Form.is_published == True,
                 Form.environment == "production",

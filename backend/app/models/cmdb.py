@@ -53,6 +53,9 @@ class ConfigurationItem(Base):
         "CIRelationship", back_populates="target_ci",
         foreign_keys="CIRelationship.target_ci_id"
     )
+    history = relationship(
+        "CIHistory", back_populates="ci", cascade="all, delete-orphan"
+    )
 
 
 class CIRelationship(Base):
@@ -77,3 +80,24 @@ class CIRelationship(Base):
     target_ci = relationship(
         "ConfigurationItem", foreign_keys=[target_ci_id], back_populates="target_relationships"
     )
+
+
+class CIHistory(Base):
+    """Audit trail for CI changes — tracks field-level modifications."""
+    __tablename__ = "ci_history"
+
+    __table_args__ = (
+        Index("idx_ci_history_ci_id", "ci_id"),
+        Index("idx_ci_history_changed_at", "changed_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    ci_id = Column(Integer, ForeignKey("configuration_items.id", ondelete="CASCADE"), nullable=False, index=True)
+    changed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    changed_at = Column(DateTime(timezone=True), server_default=func.now())
+    field_key = Column(String(100), nullable=True)
+    old_value = Column(JSON, nullable=True)
+    new_value = Column(JSON, nullable=True)
+    change_type = Column(String(20), nullable=False, default="update")
+
+    ci = relationship("ConfigurationItem", back_populates="history")

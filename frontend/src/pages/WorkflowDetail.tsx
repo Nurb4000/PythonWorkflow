@@ -431,7 +431,7 @@ export const WorkflowDetail: React.FC = () => {
               {workflow.is_published ? 'Published' : 'Draft'}
             </span>
           </div>
-          <div className="stat-label">Portal Visibility</div>
+          <div className="stat-label">Offerings Visibility</div>
         </div>
         <div className="stat-card">
           <div className="stat-value">
@@ -477,9 +477,9 @@ export const WorkflowDetail: React.FC = () => {
 
       {canDevelop && (
         <div className="card">
-          <h3 className="card-title">Portal Settings</h3>
+          <h3 className="card-title">Offerings Settings</h3>
           <p style={{ color: '#7f8c8d', marginBottom: '1rem' }}>
-            Controls how this workflow appears on the public submission portal. Workflows must be
+            Controls how this workflow appears on the Offerings page. Workflows must be
             published and active to be listed.
           </p>
           <div style={{ display: 'flex', flexWrap: 'wrap', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
@@ -510,7 +510,7 @@ export const WorkflowDetail: React.FC = () => {
                 checked={portalSettings.visible}
                 onChange={(e) => setPortalSettings(s => ({ ...s, visible: e.target.checked }))}
               />
-              Visible on portal
+              Visible on Offerings page
             </label>
           </div>
           <div className="form-group">
@@ -520,7 +520,7 @@ export const WorkflowDetail: React.FC = () => {
               className="form-input"
               value={portalSettings.linkUrl}
               onChange={(e) => setPortalSettings(s => ({ ...s, linkUrl: e.target.value }))}
-              placeholder="https://example.com — replaces 'Submit' with 'Go To' on the portal"
+              placeholder="https://example.com — replaces 'Submit' with 'Go To' on the Offerings page"
               style={{ maxWidth: '500px' }}
             />
           </div>
@@ -537,7 +537,7 @@ export const WorkflowDetail: React.FC = () => {
                 <option key={f.id} value={f.id}>{f.name}{f.description ? ` — ${f.description}` : ''}</option>
               ))}
             </select>
-            <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input. Saved with "Save Portal Settings".</small>
+            <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input. Saved with "Save Offerings Settings".</small>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
@@ -545,7 +545,7 @@ export const WorkflowDetail: React.FC = () => {
               onClick={() => portalMutation.mutate()}
               disabled={portalMutation.isPending}
             >
-              {portalMutation.isPending ? 'Saving...' : 'Save Portal Settings'}
+              {portalMutation.isPending ? 'Saving...' : 'Save Offerings Settings'}
             </button>
           </div>
         </div>

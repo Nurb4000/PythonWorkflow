@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { adminApi } from '../services/api'
+import { adminApi, cmdbApi } from '../services/api'
 import { ScheduleManager } from '../components/ScheduleManager'
 
 interface Stats {
@@ -198,6 +198,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* System Logs */}
       <SystemLogsViewer />
+
+      {/* CMDB Dashboard */}
+      <CMDBDashboardWidget />
     </div>
   )
 }
@@ -340,6 +343,130 @@ const SystemLogsViewer: React.FC = () => {
               })
             )}
           </div>
+        </>
+      )}
+    </div>
+  )
+}
+
+interface CMDBStats {
+  total_types: number
+  total_items: number
+  items_by_status: Record<string, number>
+  items_by_type: Array<{type_id: number; type_name: string; icon: string; count: number}>
+  recent_changes: number
+}
+
+const CMDBDashboardWidget: React.FC = () => {
+  const [showCMDB, setShowCMDB] = useState(false)
+  const [days, setDays] = useState(30)
+
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['cmdb-stats', days],
+    queryFn: async () => {
+      const res = await cmdbApi.getStats(days)
+      return res.data as CMDBStats
+    },
+    enabled: showCMDB,
+  })
+
+  return (
+    <div className="card" style={{ marginTop: '2rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">CMDB Overview</h3>
+        <button
+          className={`btn btn-sm ${showCMDB ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => setShowCMDB(!showCMDB)}
+        >
+          {showCMDB ? 'Hide CMDB' : 'View CMDB'}
+        </button>
+      </div>
+
+      {showCMDB && (
+        <>
+          <div style={{ display: 'flex', gap: '1rem', alignItems: 'center', marginBottom: '1rem' }}>
+            <label>Changes in last:</label>
+            <select
+              className="form-select"
+              value={days}
+              onChange={(e) => setDays(Number(e.target.value))}
+              style={{ width: 'auto' }}
+            >
+              <option value={7}>7 days</option>
+              <option value={30}>30 days</option>
+              <option value={90}>90 days</option>
+            </select>
+          </div>
+
+          {isLoading ? (
+            <div className="loading">Loading CMDB stats...</div>
+          ) : stats ? (
+            <>
+              <div className="stats-grid">
+                <div className="stat-card">
+                  <div className="stat-value">{stats.total_types}</div>
+                  <div className="stat-label">CI Types</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-value">{stats.total_items}</div>
+                  <div className="stat-label">Total Items</div>
+                </div>
+                <div className="stat-card">
+                  <div className="stat-value" style={{ color: '#17a2b8' }}>{stats.recent_changes}</div>
+                  <div className="stat-label">Recent Changes</div>
+                </div>
+              </div>
+
+              {Object.keys(stats.items_by_status).length > 0 && (
+                <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+                  <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Items by Status</h4>
+                  <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap' }}>
+                    {Object.entries(stats.items_by_status).map(([status, count]) => {
+                      const colors: Record<string, string> = {
+                        active: '#28a745',
+                        maintenance: '#ffc107',
+                        retired: '#6c757d',
+                        decommissioned: '#dc3545',
+                      }
+                      return (
+                        <div key={status} style={{
+                          display: 'flex', alignItems: 'center', gap: '0.4rem',
+                          padding: '4px 12px', borderRadius: '16px',
+                          backgroundColor: (colors[status] || '#6c757d') + '22',
+                          border: `1px solid ${colors[status] || '#6c757d'}`,
+                        }}>
+                          <span style={{ fontWeight: 'bold', color: colors[status] || '#6c757d' }}>{count}</span>
+                          <span style={{ fontSize: '0.85rem', textTransform: 'capitalize' }}>{status}</span>
+                        </div>
+                      )
+                    })}
+                  </div>
+                </div>
+              )}
+
+              {stats.items_by_type.length > 0 && (
+                <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+                  <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Items by Type</h4>
+                  <table className="table" style={{ fontSize: '0.85rem' }}>
+                    <thead>
+                      <tr>
+                        <th>Type</th>
+                        <th style={{ textAlign: 'right' }}>Items</th>
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {stats.items_by_type.map((t) => (
+                        <tr key={t.type_id}>
+                          <td>{t.icon ? t.icon + ' ' : ''}{t.type_name}</td>
+                          <td style={{ textAlign: 'right', fontWeight: 'bold' }}>{t.count}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
+            </>
+          ) : null}
         </>
       )}
     </div>

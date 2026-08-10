@@ -11,7 +11,7 @@ export const roleDefaultPath = (role: string): string => {
     case 'developer': return '/workflows'
     case 'cmdb_manager': return '/cmdb'
     case 'staff': return '/tasks'
-    case 'user': return '/portal'
+    case 'user': return '/offerings'
     default: return '/workflows'
   }
 }

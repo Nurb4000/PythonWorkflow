@@ -12,13 +12,14 @@ from typing import Optional, List, Dict, Any
 
 from app.core.database import get_db
 from app.models.auth import User
-from app.models.cmdb import CIType, ConfigurationItem, CIRelationship
+from app.models.cmdb import CIType, ConfigurationItem, CIRelationship, CIHistory
 from app.api.auth import get_current_developer, get_current_admin, get_current_cmdb_manager
 from app.schemas.cmdb import (
     CITypeCreate, CITypeUpdate, CITypeResponse,
     CICreate, CIUpdate, CIResponse, CITypeDetailResponse,
     CIRelationshipCreate, CIRelationshipResponse,
     CIBulkImportRequest, CIBulkImportRecord,
+    CIHistoryEntry, CMDBStatsResponse,
     ALLOWED_FIELD_TYPES,
 )
 
@@ -105,6 +106,32 @@ def _validate_field_schema(field_schema: list) -> List[str]:
             errors.append(f"Field {i}: select fields must have at least one option")
 
     return errors
+
+
+async def _record_history(db: AsyncSession, ci_id: int, changed_by: Optional[int], change_type: str, field_key: Optional[str], old_value: Any, new_value: Any):
+    """Record a single history entry for a CI change."""
+    entry = CIHistory(
+        ci_id=ci_id,
+        changed_by=changed_by,
+        field_key=field_key,
+        old_value=old_value if isinstance(old_value, dict) else (old_value if old_value is None else {"value": old_value}),
+        new_value=new_value if isinstance(new_value, dict) else (new_value if new_value is None else {"value": new_value}),
+        change_type=change_type,
+    )
+    db.add(entry)
+
+
+async def _record_full_history(db: AsyncSession, ci_id: int, changed_by: Optional[int], change_type: str, old_ci_data: Dict[str, Any], new_ci_data: Dict[str, Any]):
+    """Record field-level history for CI data changes."""
+    all_keys = set(list(old_ci_data.keys()) + list(new_ci_data.keys()))
+    for key in all_keys:
+        old_val = old_ci_data.get(key)
+        new_val = new_ci_data.get(key)
+        if old_val != new_val:
+            await _record_history(db, ci_id, changed_by, change_type, key, old_val, new_val)
+
+    if not all_keys and change_type in ("create", "delete"):
+        await _record_history(db, ci_id, changed_by, change_type, None, old_ci_data or None, new_ci_data or None)
 
 
 # ---------------------------------------------------------------------------
@@ -331,6 +358,11 @@ async def create_ci(
         updated_by=current_user.id,
     )
     db.add(ci)
+    await db.flush()
+
+    # Record creation history
+    await _record_history(db, ci.id, current_user.id, "create", None, None, dict(ci.ci_data or {}))
+
     await db.commit()
     await db.refresh(ci)
 
@@ -429,6 +461,10 @@ async def update_ci(
     if not ci:
         raise HTTPException(status_code=404, detail="Configuration item not found")
 
+    old_ci_data = dict(ci.ci_data or {})
+    old_name = ci.name
+    old_status = ci.status
+
     if data.name is not None:
         ci.name = data.name
     if data.status is not None:
@@ -446,13 +482,23 @@ async def update_ci(
         ci.custom_data = data.custom_data
 
     ci.updated_by = current_user.id
-    old_data = dict(ci.ci_data or {}) if data.ci_data is not None else None
+
+    # Record field-level history for name/status changes
+    if data.name is not None and data.name != old_name:
+        await _record_history(db, ci.id, current_user.id, "update", "name", old_name, data.name)
+    if data.status is not None and data.status != old_status:
+        await _record_history(db, ci.id, current_user.id, "update", "status", old_status, data.status)
+
+    # Record field-level history for ci_data changes
+    if data.ci_data is not None:
+        await _record_full_history(db, ci.id, current_user.id, "update", old_ci_data, dict(data.ci_data))
+
     await db.commit()
     await db.refresh(ci)
 
     # Trigger webhook if configured
-    if old_data is not None:
-        await _trigger_cmdb_webhook(db, "ci_updated", ci, old_data=old_data)
+    if data.ci_data is not None:
+        await _trigger_cmdb_webhook(db, "ci_updated", ci, old_data=old_ci_data)
 
     return _ci_to_dict(ci)
 
@@ -471,6 +517,10 @@ async def delete_ci(
         raise HTTPException(status_code=404, detail="Configuration item not found")
 
     old_data = dict(ci.ci_data or {})
+
+    # Record deletion history before removing the CI
+    await _record_history(db, ci.id, current_user.id, "delete", None, old_data, None)
+
     await db.delete(ci)
     await db.commit()
 
@@ -504,6 +554,36 @@ async def get_ci_relationships(
     result = await db.execute(stmt)
     rels = result.scalars().all()
     return [_rel_to_dict(r) for r in rels]
+
+
+@router.get("/items/{item_id}/history")
+async def get_ci_history(
+    item_id: int,
+    limit: int = Query(100, ge=1, le=1000),
+    current_user: User = Depends(get_current_cmdb_manager),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get audit history for a configuration item."""
+    ci_stmt = select(ConfigurationItem).where(ConfigurationItem.id == item_id)
+    ci_result = await db.execute(ci_stmt)
+    if not ci_result.scalar_one_or_none():
+        raise HTTPException(status_code=404, detail="Configuration item not found")
+
+    stmt = select(CIHistory).where(CIHistory.ci_id == item_id)
+    stmt = stmt.order_by(CIHistory.changed_at.desc()).limit(limit)
+    result = await db.execute(stmt)
+    entries = result.scalars().all()
+
+    return [{
+        "id": e.id,
+        "ci_id": e.ci_id,
+        "changed_by": e.changed_by,
+        "changed_at": e.changed_at.isoformat() if e.changed_at else None,
+        "field_key": e.field_key,
+        "old_value": e.old_value,
+        "new_value": e.new_value,
+        "change_type": e.change_type,
+    } for e in entries]
 
 
 # ---------------------------------------------------------------------------
@@ -849,3 +929,191 @@ async def get_type_webhook(
     workflow_id = int(existing.value) if existing else None
 
     return {"type_id": type_id, "workflow_id": workflow_id}
+
+
+# ---------------------------------------------------------------------------
+# Stats endpoint
+# ---------------------------------------------------------------------------
+
+@router.get("/stats")
+async def get_cmdb_stats(
+    days: int = Query(30, ge=1, le=365),
+    current_user: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get CMDB statistics for dashboard widgets."""
+    from datetime import timedelta
+
+    total_types = (await db.execute(select(func.count(CIType.id)).where(CIType.is_active == True))).scalar() or 0
+    total_items = (await db.execute(select(func.count(ConfigurationItem.id)))).scalar() or 0
+
+    # Items by status
+    status_result = await db.execute(
+        select(ConfigurationItem.status, func.count(ConfigurationItem.id).label("cnt"))
+        .group_by(ConfigurationItem.status)
+    )
+    items_by_status = {row[0]: row[1] for row in status_result.all()}
+
+    # Items by type
+    type_result = await db.execute(
+        select(
+            CIType.id, CIType.name, CIType.icon,
+            func.count(ConfigurationItem.id).label("cnt")
+        )
+        .outerjoin(ConfigurationItem, ConfigurationItem.type_id == CIType.id)
+        .where(CIType.is_active == True)
+        .group_by(CIType.id, CIType.name, CIType.icon)
+        .order_by(func.count(ConfigurationItem.id).desc())
+    )
+    items_by_type = [{"type_id": r[0], "type_name": r[1], "icon": r[2] or "", "count": r[3]} for r in type_result.all()]
+
+    # Recent changes count
+    cutoff = func.now() - timedelta(days=days)
+    recent_changes = (await db.execute(
+        select(func.count(CIHistory.id)).where(CIHistory.changed_at >= cutoff)
+    )).scalar() or 0
+
+    return {
+        "total_types": total_types,
+        "total_items": total_items,
+        "items_by_status": items_by_status,
+        "items_by_type": items_by_type,
+        "recent_changes": recent_changes,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Templates endpoint
+# ---------------------------------------------------------------------------
+
+CI_TYPE_TEMPLATES = [
+    {
+        "name": "Server",
+        "key": "server",
+        "icon": "",
+        "description": "Physical or virtual server",
+        "field_schema": [
+            {"key": "hostname", "label": "Hostname", "type": "string", "required": True},
+            {"key": "ip_address", "label": "IP Address", "type": "string", "required": False, "validation": "ipv4"},
+            {"key": "cpu_cores", "label": "CPU Cores", "type": "number", "required": False},
+            {"key": "ram_gb", "label": "RAM (GB)", "type": "number", "required": False},
+            {"key": "os", "label": "Operating System", "type": "select", "options": ["Ubuntu 20.04", "Ubuntu 22.04", "RHEL 8", "RHEL 9", "Windows Server 2019", "Windows Server 2022"]},
+            {"key": "environment", "label": "Environment", "type": "select", "options": ["dev", "staging", "prod"]},
+            {"key": "datacenter", "label": "Data Center", "type": "string", "required": False},
+            {"key": "install_date", "label": "Install Date", "type": "date"},
+            {"key": "notes", "label": "Notes", "type": "text"},
+        ],
+    },
+    {
+        "name": "Network Device",
+        "key": "network_device",
+        "icon": "",
+        "description": "Switch, router, firewall, or load balancer",
+        "field_schema": [
+            {"key": "hostname", "label": "Hostname", "type": "string", "required": True},
+            {"key": "management_ip", "label": "Management IP", "type": "string", "required": True, "validation": "ipv4"},
+            {"key": "device_type", "label": "Device Type", "type": "select", "options": ["switch", "router", "firewall", "load_balancer", "access_point"]},
+            {"key": "vendor", "label": "Vendor", "type": "string", "required": False},
+            {"key": "model", "label": "Model", "type": "string", "required": False},
+            {"key": "firmware_version", "label": "Firmware Version", "type": "string", "required": False},
+            {"key": "location", "label": "Location", "type": "string", "required": False},
+            {"key": "serial_number", "label": "Serial Number", "type": "string", "required": False},
+            {"key": "notes", "label": "Notes", "type": "text"},
+        ],
+    },
+    {
+        "name": "Application",
+        "key": "application",
+        "icon": "",
+        "description": "Software application or service",
+        "field_schema": [
+            {"key": "app_name", "label": "Application Name", "type": "string", "required": True},
+            {"key": "version", "label": "Version", "type": "string", "required": False},
+            {"key": "owner", "label": "Owner / Team", "type": "string", "required": False},
+            {"key": "url", "label": "URL", "type": "url", "required": False},
+            {"key": "environment", "label": "Environment", "type": "select", "options": ["dev", "staging", "prod"]},
+            {"key": "tech_stack", "label": "Technology Stack", "type": "text", "required": False},
+            {"key": "license_type", "label": "License Type", "type": "select", "options": ["open_source", "commercial", "internal"]},
+            {"key": "deploy_date", "label": "Deploy Date", "type": "date"},
+            {"key": "notes", "label": "Notes", "type": "text"},
+        ],
+    },
+    {
+        "name": "Database",
+        "key": "database",
+        "icon": "",
+        "description": "Database instance or cluster",
+        "field_schema": [
+            {"key": "db_name", "label": "Database Name", "type": "string", "required": True},
+            {"key": "engine", "label": "Engine", "type": "select", "options": ["PostgreSQL", "MySQL", "MongoDB", "Redis", "Oracle", "SQL Server"]},
+            {"key": "version", "label": "Version", "type": "string", "required": False},
+            {"key": "host", "label": "Host", "type": "string", "required": False},
+            {"key": "port", "label": "Port", "type": "number", "required": False},
+            {"key": "environment", "label": "Environment", "type": "select", "options": ["dev", "staging", "prod"]},
+            {"key": "storage_gb", "label": "Storage (GB)", "type": "number", "required": False},
+            {"key": "backup_enabled", "label": "Backup Enabled", "type": "boolean"},
+            {"key": "owner", "label": "Owner / Team", "type": "string", "required": False},
+            {"key": "notes", "label": "Notes", "type": "text"},
+        ],
+    },
+    {
+        "name": "Cloud Instance",
+        "key": "cloud_instance",
+        "icon": "",
+        "description": "Cloud VM or container instance",
+        "field_schema": [
+            {"key": "instance_id", "label": "Instance ID", "type": "string", "required": True},
+            {"key": "provider", "label": "Cloud Provider", "type": "select", "options": ["AWS", "Azure", "GCP", "DigitalOcean"]},
+            {"key": "region", "label": "Region", "type": "string", "required": False},
+            {"key": "instance_type", "label": "Instance Type", "type": "string", "required": False},
+            {"key": "public_ip", "label": "Public IP", "type": "string", "required": False, "validation": "ipv4"},
+            {"key": "private_ip", "label": "Private IP", "type": "string", "required": False, "validation": "ipv4"},
+            {"key": "environment", "label": "Environment", "type": "select", "options": ["dev", "staging", "prod"]},
+            {"key": "launch_date", "label": "Launch Date", "type": "date"},
+            {"key": "monthly_cost", "label": "Estimated Monthly Cost ($)", "type": "number", "required": False},
+            {"key": "tags", "label": "Tags", "type": "text", "required": False},
+            {"key": "notes", "label": "Notes", "type": "text"},
+        ],
+    },
+]
+
+
+@router.get("/templates")
+async def list_templates(
+    current_user: User = Depends(get_current_developer),
+):
+    """List pre-built CI type templates."""
+    return CI_TYPE_TEMPLATES
+
+
+@router.post("/templates/{template_key}/apply", status_code=201)
+async def apply_template(
+    template_key: str,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Apply a pre-built CI type template (admin only)."""
+    template = next((t for t in CI_TYPE_TEMPLATES if t["key"] == template_key), None)
+    if not template:
+        raise HTTPException(status_code=404, detail=f"Template '{template_key}' not found")
+
+    existing = await db.execute(select(CIType).where(CIType.key == template["key"]))
+    if existing.scalar_one_or_none():
+        raise HTTPException(status_code=409, detail=f"CI type '{template['name']}' already exists")
+
+    schema_errors = _validate_field_schema(template["field_schema"])
+    if schema_errors:
+        raise HTTPException(status_code=500, detail=f"Template validation error: {'; '.join(schema_errors)}")
+
+    ct = CIType(
+        name=template["name"],
+        key=template["key"],
+        description=template["description"] or "",
+        icon=template.get("icon", "") or "",
+        field_schema=template["field_schema"],
+    )
+    db.add(ct)
+    await db.commit()
+    await db.refresh(ct)
+
+    return _type_to_dict(ct)

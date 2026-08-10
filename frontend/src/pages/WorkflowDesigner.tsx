@@ -1807,11 +1807,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                     handleUpdateStepField('form_name', f?.name || '')
                   }}>
                   <option value="">-- Select form --</option>
-                  {(forms || []).filter(f => f.is_published).map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
+                  {(forms || []).map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}{f.is_published ? '' : ' (draft)'}</option>
                   ))}
                 </select>
-                <small style={{ color: '#666' }}>Only published forms are available. Publish a form in the Form Designer to use it here.</small>
               </div>
             </>
           )
@@ -1850,8 +1849,8 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                     handleUpdateStepField('form_name', f?.name || '')
                   }}>
                   <option value="">-- No form --</option>
-                  {(forms || []).filter(f => f.is_published).map((f) => (
-                    <option key={f.id} value={f.id}>{f.name}</option>
+                  {(forms || []).map((f) => (
+                    <option key={f.id} value={f.id}>{f.name}{f.is_published ? '' : ' (draft)'}</option>
                   ))}
                 </select>
               </div>

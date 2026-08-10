@@ -33,6 +33,17 @@ interface CIItem {
   updated_at: string
 }
 
+interface CIHistoryEntry {
+  id: number
+  ci_id: number
+  changed_by: number | null
+  changed_at: string
+  field_key: string | null
+  old_value: any
+  new_value: any
+  change_type: string
+}
+
 const STATUS_OPTIONS = ['active', 'maintenance', 'retired', 'decommissioned']
 
 export const CItemList: React.FC = () => {
@@ -47,6 +58,7 @@ export const CItemList: React.FC = () => {
   const [formName, setFormName] = useState('')
   const [formStatus, setFormStatus] = useState('active')
   const [formData, setFormData] = useState<Record<string, any>>({})
+  const [showHistory, setShowHistory] = useState(false)
 
   const { data: types, isLoading: typesLoading } = useQuery({
     queryKey: ['cmdb-types'],
@@ -63,6 +75,16 @@ export const CItemList: React.FC = () => {
       const res = await cmdbApi.listItems(params)
       return res.data as CIItem[]
     },
+  })
+
+  const { data: history, isLoading: historyLoading } = useQuery({
+    queryKey: ['cmdb-history', editingItem?.id],
+    queryFn: async () => {
+      if (!editingItem) return []
+      const res = await cmdbApi.getItemHistory(editingItem.id)
+      return res.data as CIHistoryEntry[]
+    },
+    enabled: !!editingItem && showHistory,
   })
 
   const createMutation = useMutation({
@@ -118,6 +140,7 @@ export const CItemList: React.FC = () => {
     setFormStatus('active')
     setFormData({})
     setEditingItem(null)
+    setShowHistory(false)
   }
 
   const handleCreate = () => {
@@ -137,6 +160,7 @@ export const CItemList: React.FC = () => {
     setFormStatus(item.status)
     setFormData({ ...item.ci_data })
     setShowForm(true)
+    setShowHistory(false)
     setError('')
   }
 
@@ -365,6 +389,71 @@ export const CItemList: React.FC = () => {
             </button>
             <button className="btn btn-secondary" onClick={() => { setShowForm(false); resetForm() }}>Cancel</button>
           </div>
+        </div>
+      )}
+
+      {/* History timeline */}
+      {editingItem && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <div className="card-header">
+            <h3 className="card-title">Change History</h3>
+            <button
+              className={`btn btn-sm ${showHistory ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={() => setShowHistory(!showHistory)}
+            >
+              {showHistory ? 'Hide History' : 'View History'}
+            </button>
+          </div>
+
+          {showHistory && (
+            <div style={{ maxHeight: '400px', overflowY: 'auto' }}>
+              {historyLoading ? (
+                <div className="loading" style={{ padding: '1rem' }}>Loading history...</div>
+              ) : history && history.length > 0 ? (
+                <div style={{ position: 'relative', paddingLeft: '1.5rem' }}>
+                  <div style={{ position: 'absolute', left: '0.6rem', top: 0, bottom: 0, width: '2px', backgroundColor: '#dee2e6' }} />
+                  {history.map((entry, idx) => (
+                    <div key={entry.id} style={{ position: 'relative', marginBottom: '1rem', paddingLeft: '1rem' }}>
+                      <div style={{
+                        position: 'absolute', left: '-1.75rem', top: '0.25rem',
+                        width: '12px', height: '12px', borderRadius: '50%',
+                        backgroundColor: entry.change_type === 'create' ? '#28a745' : entry.change_type === 'delete' ? '#dc3545' : '#007bff',
+                        border: '2px solid #fff',
+                      }} />
+                      <div style={{ fontSize: '0.8rem', color: '#6c757d' }}>
+                        {new Date(entry.changed_at).toLocaleString()} · By user #{entry.changed_by}
+                        <span style={{
+                          display: 'inline-block', marginLeft: '0.5rem', padding: '1px 6px',
+                          borderRadius: '8px', fontSize: '0.7rem', textTransform: 'uppercase',
+                          backgroundColor: entry.change_type === 'create' ? '#d4edda' : entry.change_type === 'delete' ? '#f8d7da' : '#cce5ff',
+                          color: entry.change_type === 'create' ? '#155724' : entry.change_type === 'delete' ? '#721c24' : '#004085',
+                        }}>
+                          {entry.change_type}
+                        </span>
+                      </div>
+                      <div style={{ fontSize: '0.85rem', marginTop: '0.25rem' }}>
+                        {entry.field_key ? (
+                          <span>
+                            <strong>{entry.field_key}</strong>:{' '}
+                            {entry.old_value !== null && entry.old_value !== undefined ? String(entry.old_value) : '—'}
+                            {' → '}
+                            {entry.new_value !== null && entry.new_value !== undefined ? String(entry.new_value) : '—'}
+                          </span>
+                        ) : (
+                          <span>
+                            {entry.change_type === 'create' ? `CI created with ${Object.keys(entry.new_value || {}).length} fields` :
+                             entry.change_type === 'delete' ? 'CI deleted' : 'CI modified'}
+                          </span>
+                        )}
+                      </div>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div style={{ padding: '1rem', textAlign: 'center', color: '#6c757d' }}>No change history recorded.</div>
+              )}
+            </div>
+          )}
         </div>
       )}
 

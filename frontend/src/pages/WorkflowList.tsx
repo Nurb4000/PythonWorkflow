@@ -261,7 +261,7 @@ export const WorkflowList: React.FC = () => {
               <option value="created_at">Created Date</option>
               <option value="runs_count">Run Count</option>
               <option value="steps_count">Step Count</option>
-              <option value="portal_order">Portal Order</option>
+              <option value="portal_order">Offerings Order</option>
             </select>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -299,7 +299,7 @@ export const WorkflowList: React.FC = () => {
               <th>Description</th>
               <th>Steps</th>
               <th>Runs</th>
-              <th>Portal Order</th>
+              <th>Offerings Order</th>
               <th>Visible To</th>
               <th>Status</th>
               <th>Published</th>

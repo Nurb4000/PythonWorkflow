@@ -33,6 +33,7 @@ export const TaskDetail: React.FC = () => {
   
   const [resultData, setResultData] = useState<any>({})
   const [rejectReason, setRejectReason] = useState('')
+  const [showRawData, setShowRawData] = useState(false)
 
   const { data: task, isLoading } = useQuery({
     queryKey: ['task', taskId],
@@ -135,21 +136,35 @@ export const TaskDetail: React.FC = () => {
           </div>
         )}
 
-        {Object.keys(task.task_data).length > 0 && (
+        {(Object.keys(task.task_data).length > 0 || Object.keys(task.result_data).length > 0) && (
           <div style={{ marginTop: '1rem' }}>
-            <strong>Task Data:</strong>
-            <pre style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>
-              {JSON.stringify(task.task_data, null, 2)}
-            </pre>
-          </div>
-        )}
-
-        {Object.keys(task.result_data).length > 0 && (
-          <div style={{ marginTop: '1rem' }}>
-            <strong>Result Data:</strong>
-            <pre style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>
-              {JSON.stringify(task.result_data, null, 2)}
-            </pre>
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={() => setShowRawData(!showRawData)}
+              style={{ marginBottom: showRawData ? '0.5rem' : 0 }}
+            >
+              {showRawData ? '▾ Hide Raw Data' : '▸ Show Raw Data (Task/Result JSON)'}
+            </button>
+            {showRawData && (
+              <>
+                {Object.keys(task.task_data).length > 0 && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <strong>Task Data:</strong>
+                    <pre style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>
+                      {JSON.stringify(task.task_data, null, 2)}
+                    </pre>
+                  </div>
+                )}
+                {Object.keys(task.result_data).length > 0 && (
+                  <div style={{ marginTop: '0.5rem' }}>
+                    <strong>Result Data:</strong>
+                    <pre style={{ background: '#f5f5f5', padding: '1rem', borderRadius: '4px', overflow: 'auto' }}>
+                      {JSON.stringify(task.result_data, null, 2)}
+                    </pre>
+                  </div>
+                )}
+              </>
+            )}
           </div>
         )}
       </div>
