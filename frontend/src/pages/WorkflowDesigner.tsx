@@ -14,7 +14,7 @@ import ReactFlow, {
   ReactFlowProvider,
   useUpdateNodeInternals
 } from 'react-flow-renderer'
-import { workflowApi, authApi, aiApi, dataQueryApi, marketplaceApi } from '../services/api'
+import { workflowApi, authApi, aiApi, dataQueryApi, marketplaceApi, cmdbApi } from '../services/api'
 import { QueryBuilder, VisualQuery, TableInfo } from '../components/QueryBuilder'
 import axios from 'axios'
 import 'react-flow-renderer/dist/style.css'
@@ -70,7 +70,9 @@ const stepTypeToNodeType = (stepType: string): string => {
     webhook: 'webhook',
     custom_code: 'customCode',
     calculation: 'calculation',
-    report: 'report'
+    report: 'report',
+    cmdb_lookup: 'cmdbLookup',
+    cmdb_update: 'cmdbUpdate'
   }
   return map[stepType] || stepType
 }
@@ -129,6 +131,12 @@ function getNodeStyle(stepType: string, instanceStatus?: string) {
     case 'report':
       style = { ...base, background: '#e8eaf6', border: '2px solid #3f51b5' }
       break
+    case 'cmdbLookup':
+      style = { ...base, background: '#e0f2f1', border: '2px solid #00695c' }
+      break
+    case 'cmdbUpdate':
+      style = { ...base, background: '#e8f5e9', border: '2px solid #2e7d32' }
+      break
     case 'start':
       style = { ...base, background: '#27ae60', border: 'none', color: 'white', borderRadius: '20px' }
       break
@@ -170,6 +178,10 @@ function nodeLabel(stepType: string, data: any) {
       const hasVisual = !!data.visual_query
       return `📊 ${data.title || (data.report_type === 'sql_query' ? 'SQL Query' : 'Report')}${hasVisual ? ' (visual)' : ''}`
     }
+    case 'cmdb_lookup':
+      return `🔍 CMDB Lookup: ${data.ci_type_name || data.output_var || '...'}`
+    case 'cmdb_update':
+      return `✏️ CMDB Update: ${data.ci_id || data.output_var || '...'}`
     default: return stepType
   }
 }
@@ -289,6 +301,16 @@ const nodeTypes = {
     icon: '📊', title: 'Report',
     subtitle: data.report_type === 'sql_query' ? 'SQL Query' : (data.report_type || 'Table Report'),
     style: getNodeStyle('report', data.instanceStatus)
+  }),
+  cmdbLookup: ({ data }: any) => renderStepNode(data, {
+    icon: '🔍', title: 'CMDB Lookup',
+    subtitle: data.ci_type_name || `Output: ${data.output_var || 'cmdb_result'}`,
+    style: getNodeStyle('cmdbLookup', data.instanceStatus)
+  }),
+  cmdbUpdate: ({ data }: any) => renderStepNode(data, {
+    icon: '✏️', title: 'CMDB Update',
+    subtitle: data.ci_id ? `CI #${data.ci_id}` : (data.output_var || 'Update CI'),
+    style: getNodeStyle('cmdbUpdate', data.instanceStatus)
   })
 }
 
@@ -501,6 +523,15 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     queryFn: async () => {
       const res = await dataQueryApi.listTables()
       return res.data as TableInfo[]
+    },
+  })
+
+  // CMDB types for cmdb_lookup and cmdb_update steps
+  const { data: cmdbTypes } = useQuery({
+    queryKey: ['cmdb-types'],
+    queryFn: async () => {
+      const res = await cmdbApi.listTypes()
+      return res.data as Array<{ id: number; name: string; key: string; icon: string; field_schema: any[] }>
     },
   })
 
@@ -1986,6 +2017,188 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               )}
             </>
           )
+        case 'cmdb_lookup':
+          return (
+            <>
+              <div className="form-group">
+                <label className="form-label">CI Type *</label>
+                <select className="form-select" value={editingDef.ci_type_id || ''}
+                  onChange={(e) => {
+                    const val = e.target.value ? Number(e.target.value) : null
+                    handleUpdateStepField('ci_type_id', val)
+                    const selectedType = cmdbTypes?.find(t => t.id === val)
+                    handleUpdateStepField('ci_type_name', selectedType?.name || '')
+                  }}>
+                  <option value="">-- Select CI Type --</option>
+                  {cmdbTypes?.map(t => (
+                    <option key={t.id} value={t.id}>{t.icon ? t.icon + ' ' : ''}{t.name} ({t.key})</option>
+                  ))}
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Output Variable Name</label>
+                <input className="form-input" type="text" value={editingDef.output_var || 'cmdb_result'}
+                  onChange={(e) => handleUpdateStepField('output_var', e.target.value)}
+                  placeholder="cmdb_result" />
+                <small style={{ color: '#7f8c8d' }}>Result will be available as $input.{editingDef.output_var || 'cmdb_result'} in downstream steps</small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Match Mode</label>
+                <select className="form-select" value={editingDef.match_mode || 'first'}
+                  onChange={(e) => handleUpdateStepField('match_mode', e.target.value)}>
+                  <option value="first">First Match (single item)</option>
+                  <option value="all">All Matches (array of items)</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 'bold' }}>Lookup Criteria</label>
+                <small style={{ color: '#7f8c8d' }}>Match CIs where these field conditions are all true. Use $input.field_name for dynamic values.</small>
+                {(editingDef.lookup_fields || []).map((lf: any, idx: number) => (
+                  <div key={idx} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                    <select className="form-select" value={lf.field_key || ''}
+                      onChange={(e) => {
+                        const fields = [...(editingDef.lookup_fields || [])]
+                        fields[idx] = { ...fields[idx], field_key: e.target.value }
+                        handleUpdateStepField('lookup_fields', fields)
+                      }}
+                      style={{ flex: 1 }}>
+                      <option value="">-- Field --</option>
+                      {(cmdbTypes?.find(t => t.id === editingDef.ci_type_id)?.field_schema || []).map((fs: any) => (
+                        <option key={fs.key} value={fs.key}>{fs.label} ({fs.key})</option>
+                      ))}
+                      <option value="name">name (CI name)</option>
+                      <option value="status">status (CI status)</option>
+                    </select>
+                    <select className="form-select" value={lf.operator || '='}
+                      onChange={(e) => {
+                        const fields = [...(editingDef.lookup_fields || [])]
+                        fields[idx] = { ...fields[idx], operator: e.target.value }
+                        handleUpdateStepField('lookup_fields', fields)
+                      }}
+                      style={{ flex: '0 0 100px' }}>
+                      <option value="=">=</option>
+                      <option value="!=">!=</option>
+                      <option value="contains">contains</option>
+                      <option value="starts_with">starts with</option>
+                      <option value="ends_with">ends with</option>
+                      <option value=">">&gt;</option>
+                      <option value="<">&lt;</option>
+                      <option value=">=">&gt;=</option>
+                      <option value="<=">&lt;=</option>
+                    </select>
+                    <input className="form-input" type="text" value={lf.value || ''}
+                      onChange={(e) => {
+                        const fields = [...(editingDef.lookup_fields || [])]
+                        fields[idx] = { ...fields[idx], value: e.target.value }
+                        handleUpdateStepField('lookup_fields', fields)
+                      }}
+                      placeholder="value or $input.field"
+                      style={{ flex: 1 }} />
+                    <button className="btn btn-sm" style={{ color: '#dc3545' }}
+                      onClick={() => {
+                        const fields = (editingDef.lookup_fields || []).filter((_: any, i: number) => i !== idx)
+                        handleUpdateStepField('lookup_fields', fields)
+                      }}>✕</button>
+                  </div>
+                ))}
+                <button className="btn btn-sm btn-secondary" onClick={() => {
+                  const fields = [...(editingDef.lookup_fields || []), { field_key: '', operator: '=', value: '' }]
+                  handleUpdateStepField('lookup_fields', fields)
+                }}>+ Add Criterion</button>
+              </div>
+            </>
+          )
+        case 'cmdb_update':
+          return (
+            <>
+              <div className="form-group">
+                <label className="form-label">CI ID</label>
+                <input className="form-input" type="text" value={editingDef.ci_id || ''}
+                  onChange={(e) => handleUpdateStepField('ci_id', e.target.value)}
+                  placeholder="123 or $input.cmdb_result.id" />
+                <small style={{ color: '#7f8c8d' }}>Direct CI ID, or reference from upstream step (e.g. $input.lookup.item.id)</small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">CI Type (for lookup fallback)</label>
+                <select className="form-select" value={editingDef.ci_type_id || ''}
+                  onChange={(e) => handleUpdateStepField('ci_type_id', e.target.value ? Number(e.target.value) : null)}>
+                  <option value="">-- Not set --</option>
+                  {cmdbTypes?.map(t => (
+                    <option key={t.id} value={t.id}>{t.icon ? t.icon + ' ' : ''}{t.name} ({t.key})</option>
+                  ))}
+                </select>
+                <small style={{ color: '#7f8c8d' }}>If ci_id is not set, finds CI matching these criteria</small>
+              </div>
+              {editingDef.ci_type_id && (
+                <div className="form-group">
+                  <label className="form-label" style={{ fontWeight: 'bold' }}>Lookup Criteria (fallback)</label>
+                  {(editingDef.lookup_fields || []).map((lf: any, idx: number) => (
+                    <div key={idx} style={{ display: 'flex', gap: '0.5rem', marginBottom: '0.5rem', alignItems: 'center' }}>
+                      <select className="form-select" value={lf.field_key || ''}
+                        onChange={(e) => {
+                          const fields = [...(editingDef.lookup_fields || [])]
+                          fields[idx] = { ...fields[idx], field_key: e.target.value }
+                          handleUpdateStepField('lookup_fields', fields)
+                        }}
+                        style={{ flex: 1 }}>
+                        <option value="">-- Field --</option>
+                        {(cmdbTypes?.find(t => t.id === editingDef.ci_type_id)?.field_schema || []).map((fs: any) => (
+                          <option key={fs.key} value={fs.key}>{fs.label} ({fs.key})</option>
+                        ))}
+                        <option value="name">name</option>
+                        <option value="status">status</option>
+                      </select>
+                      <input className="form-input" type="text" value={lf.value || ''}
+                        onChange={(e) => {
+                          const fields = [...(editingDef.lookup_fields || [])]
+                          fields[idx] = { ...fields[idx], value: e.target.value }
+                          handleUpdateStepField('lookup_fields', fields)
+                        }}
+                        placeholder="$input.field"
+                        style={{ flex: 1 }} />
+                      <button className="btn btn-sm" style={{ color: '#dc3545' }}
+                        onClick={() => {
+                          const fields = (editingDef.lookup_fields || []).filter((_: any, i: number) => i !== idx)
+                          handleUpdateStepField('lookup_fields', fields)
+                        }}>✕</button>
+                    </div>
+                  ))}
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const fields = [...(editingDef.lookup_fields || []), { field_key: '', value: '' }]
+                    handleUpdateStepField('lookup_fields', fields)
+                  }}>+ Add Criterion</button>
+                </div>
+              )}
+              <div className="form-group">
+                <label className="form-label">Status Override</label>
+                <select className="form-select" value={editingDef.status || ''}
+                  onChange={(e) => handleUpdateStepField('status', e.target.value || null)}>
+                  <option value="">-- Keep current --</option>
+                  <option value="active">Active</option>
+                  <option value="maintenance">Maintenance</option>
+                  <option value="retired">Retired</option>
+                  <option value="decommissioned">Decommissioned</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Name Override</label>
+                <input className="form-input" type="text" value={editingDef.name || ''}
+                  onChange={(e) => handleUpdateStepField('name', e.target.value || null)}
+                  placeholder="Leave empty to keep current name" />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Field Updates (JSON)</label>
+                <textarea className="form-textarea" rows={4}
+                  value={typeof editingDef.updates === 'object' ? JSON.stringify(editingDef.updates, null, 2) : (editingDef.updates || '')}
+                  onChange={(e) => {
+                    try { handleUpdateStepField('updates', JSON.parse(e.target.value)) }
+                    catch { handleUpdateStepField('updates', e.target.value) }
+                  }}
+                  placeholder='{"hostname": "$input.new_hostname", "environment": "prod"}' />
+                <small style={{ color: '#7f8c8d' }}>JSON object mapping CI field keys to new values. Use $input.* for dynamic values.</small>
+              </div>
+            </>
+          )
         default:
           return (
             <div className="form-group">
@@ -2280,6 +2493,14 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             </button>
             <button className="btn btn-primary" onClick={() => handleAddStep('report', { report_type: 'sql_query', title: '', sql_query: '', sql_limit: 100 })}>
               📊 Report
+            </button>
+            <button className="btn btn-primary" onClick={() => handleAddStep('cmdb_lookup', { ci_type_id: null, lookup_fields: [], output_var: 'cmdb_result', match_mode: 'first' })}
+              style={{ background: '#00695c' }}>
+              🔍 CMDB Lookup
+            </button>
+            <button className="btn btn-primary" onClick={() => handleAddStep('cmdb_update', { ci_id: '', updates: {}, status: null, name: null })}
+              style={{ background: '#2e7d32' }}>
+              ✏️ CMDB Update
             </button>
           </div>
         </div>

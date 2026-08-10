@@ -40,6 +40,8 @@ class WorkflowEngine:
             ReadonlyFormExecutor,
             AIConditionExecutor,
             ProgrammableDelayExecutor,
+            CmdbLookupExecutor,
+            CmdbUpdateExecutor,
         )
         
         self.step_executors = {
@@ -56,6 +58,8 @@ class WorkflowEngine:
             "readonly_form": ReadonlyFormExecutor(),  # P5.3
             "ai_condition": AIConditionExecutor(),  # P5.2
             "programmable_delay": ProgrammableDelayExecutor(),  # P5.5
+            "cmdb_lookup": CmdbLookupExecutor(),  # CMDB Phase 3
+            "cmdb_update": CmdbUpdateExecutor(),  # CMDB Phase 3
         }
     
     async def create_workflow(self, db: AsyncSession, workflow_data: WorkflowCreate,

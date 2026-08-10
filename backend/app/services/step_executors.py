@@ -8,7 +8,7 @@ from typing import Dict, Any, Optional
 import httpx
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import text as sa_text
+from sqlalchemy import text as sa_text, select
 
 logger = logging.getLogger(__name__)
 
@@ -836,5 +836,272 @@ class ProgrammableDelayExecutor(BaseExecutor):
                     "cron_expression": cron_expr,
                     "executed_at": datetime.utcnow().isoformat(),
                 }
-        
-        raise ValueError(f"Unknown delay type: {delay_type}")
+
+
+class CmdbLookupExecutor(BaseExecutor):
+    """Look up CMDB configuration items by type and field criteria.
+
+    step_definition:
+      ci_type_id: int — the CI type to search within
+      lookup_fields: list of {field_key, operator, value} — match criteria
+        operators: =, !=, >, <, >=, <=, contains, starts_with, ends_with
+        value can reference $input.* for dynamic lookups
+      output_var: str — key name to store result under in output_data
+      match_mode: "first" (default) or "all" — return first match or all matches
+    """
+
+    def _interpolate_value(self, value: Any, input_data: Dict[str, Any]) -> Any:
+        if isinstance(value, str) and value.startswith("$input."):
+            field = value[7:]
+            return input_data.get(field, value)
+        elif isinstance(value, dict):
+            return {k: self._interpolate_value(v, input_data) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._interpolate_value(item, input_data) for item in value]
+        return value
+
+    def _match_field(self, ci_value: Any, operator: str, lookup_value: Any) -> bool:
+        op = operator.lower().strip()
+        if op == "=" or op == "eq":
+            return str(ci_value) == str(lookup_value)
+        elif op == "!=" or op == "neq":
+            return str(ci_value) != str(lookup_value)
+        elif op in (">", "gt"):
+            try:
+                return float(ci_value) > float(lookup_value)
+            except (ValueError, TypeError):
+                return str(ci_value) > str(lookup_value)
+        elif op in ("<", "lt"):
+            try:
+                return float(ci_value) < float(lookup_value)
+            except (ValueError, TypeError):
+                return str(ci_value) < str(lookup_value)
+        elif op in (">=", "gte"):
+            try:
+                return float(ci_value) >= float(lookup_value)
+            except (ValueError, TypeError):
+                return str(ci_value) >= str(lookup_value)
+        elif op in ("<=", "lte"):
+            try:
+                return float(ci_value) <= float(lookup_value)
+            except (ValueError, TypeError):
+                return str(ci_value) <= str(lookup_value)
+        elif op == "contains":
+            return str(lookup_value).lower() in str(ci_value).lower()
+        elif op == "starts_with":
+            return str(ci_value).lower().startswith(str(lookup_value).lower())
+        elif op == "ends_with":
+            return str(ci_value).lower().endswith(str(lookup_value).lower())
+        return str(ci_value) == str(lookup_value)
+
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        if not db:
+            raise ValueError("cmdb_lookup requires a database session")
+
+        ci_type_id = step_definition.get("ci_type_id")
+        if not ci_type_id:
+            raise ValueError("cmdb_lookup requires ci_type_id in definition")
+
+        lookup_fields = step_definition.get("lookup_fields", [])
+        output_var = step_definition.get("output_var", "cmdb_result")
+        match_mode = step_definition.get("match_mode", "first")
+
+        from app.models.cmdb import ConfigurationItem, CIType
+
+        # Verify type exists
+        type_stmt = select(CIType).where(CIType.id == ci_type_id)
+        type_result = await db.execute(type_stmt)
+        ci_type = type_result.scalar_one_or_none()
+        if not ci_type:
+            raise ValueError(f"CI type with id {ci_type_id} not found")
+
+        # Fetch all CIs of this type
+        items_stmt = select(ConfigurationItem).where(ConfigurationItem.type_id == ci_type_id)
+        items_result = await db.execute(items_stmt)
+        all_items = items_result.scalars().all()
+
+        # Filter by lookup criteria
+        matched = []
+        for item in all_items:
+            ci_data = item.ci_data or {}
+            all_match = True
+            for criterion in lookup_fields:
+                field_key = criterion.get("field_key", "")
+                operator = criterion.get("operator", "=")
+                raw_value = criterion.get("value", "")
+                lookup_value = self._interpolate_value(raw_value, input_data)
+
+                ci_value = ci_data.get(field_key)
+                if ci_value is None:
+                    # Check item.name and status as fallback
+                    if field_key == "name":
+                        ci_value = item.name
+                    elif field_key == "status":
+                        ci_value = item.status
+                    else:
+                        all_match = False
+                        break
+
+                if not self._match_field(ci_value, operator, lookup_value):
+                    all_match = False
+                    break
+
+            if all_match:
+                matched.append({
+                    "id": item.id,
+                    "type_id": item.type_id,
+                    "name": item.name,
+                    "status": item.status,
+                    "ci_data": item.ci_data or {},
+                })
+
+        result = {
+            "ci_type_name": ci_type.name,
+            "ci_type_key": ci_type.key,
+            "match_count": len(matched),
+            "lookup_fields": lookup_fields,
+            "executed_at": datetime.utcnow().isoformat(),
+        }
+
+        if match_mode == "all":
+            result["items"] = matched
+            result[output_var] = matched
+        elif matched:
+            single = matched[0]
+            result["item"] = single
+            result[output_var] = single
+        else:
+            result["items"] = []
+            result[output_var] = None
+            result["message"] = "No matching CIs found"
+
+        return result
+
+
+class CmdbUpdateExecutor(BaseExecutor):
+    """Update a CMDB configuration item by ID or lookup.
+
+    step_definition:
+      ci_id: int or $input.* reference — direct CI id to update
+      lookup_fields: list of {field_key, operator, value} — alternative: find CI by criteria
+      updates: dict of field_key → new_value — fields to update in ci_data
+      status: str — optional: update the CI's status field directly
+      name: str — optional: update the CI's name
+    """
+
+    def _interpolate_value(self, value: Any, input_data: Dict[str, Any]) -> Any:
+        if isinstance(value, str) and value.startswith("$input."):
+            field = value[7:]
+            return input_data.get(field, value)
+        elif isinstance(value, dict):
+            return {k: self._interpolate_value(v, input_data) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._interpolate_value(item, input_data) for item in value]
+        return value
+
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        if not db:
+            raise ValueError("cmdb_update requires a database session")
+
+        from app.models.cmdb import ConfigurationItem, CIType
+
+        ci_id_raw = step_definition.get("ci_id")
+        ci_id = self._interpolate_value(ci_id_raw, input_data)
+
+        item = None
+
+        # Direct ID lookup
+        if ci_id is not None:
+            try:
+                ci_id_int = int(ci_id)
+                stmt = select(ConfigurationItem).where(ConfigurationItem.id == ci_id_int)
+                result = await db.execute(stmt)
+                item = result.scalar_one_or_none()
+            except (ValueError, TypeError):
+                pass
+
+        # Fallback: lookup by criteria
+        if not item and step_definition.get("lookup_fields"):
+            lookup_fields = step_definition["lookup_fields"]
+            # Find the CI type from first lookup field or ci_type_id
+            ci_type_id = step_definition.get("ci_type_id")
+            if not ci_type_id:
+                raise ValueError("cmdb_update requires ci_id, ci_type_id+lookup_fields, or both")
+
+            items_stmt = select(ConfigurationItem).where(ConfigurationItem.type_id == ci_type_id)
+            items_result = await db.execute(items_stmt)
+            all_items = items_result.scalars().all()
+
+            for candidate in all_items:
+                ci_data = candidate.ci_data or {}
+                all_match = True
+                for criterion in lookup_fields:
+                    field_key = criterion.get("field_key", "")
+                    operator = criterion.get("operator", "=")
+                    raw_value = criterion.get("value", "")
+                    lookup_value = self._interpolate_value(raw_value, input_data)
+
+                    ci_value = ci_data.get(field_key)
+                    if ci_value is None:
+                        if field_key == "name":
+                            ci_value = candidate.name
+                        elif field_key == "status":
+                            ci_value = candidate.status
+                        else:
+                            all_match = False
+                            break
+
+                    op = operator.lower().strip()
+                    if op in ("=", "eq"):
+                        match = str(ci_value) == str(lookup_value)
+                    elif op in ("!=", "neq"):
+                        match = str(ci_value) != str(lookup_value)
+                    else:
+                        match = str(ci_value) == str(lookup_value)
+
+                    if not match:
+                        all_match = False
+                        break
+
+                if all_match:
+                    item = candidate
+                    break
+
+        if not item:
+            raise ValueError(f"Configuration item not found (ci_id={ci_id_raw})")
+
+        # Apply updates
+        old_data = dict(item.ci_data or {})
+        new_data = dict(old_data)
+
+        updates = self._interpolate_value(step_definition.get("updates", {}), input_data)
+        if updates:
+            new_data.update(updates)
+
+        item.ci_data = new_data
+
+        if "status" in step_definition:
+            item.status = self._interpolate_value(step_definition["status"], input_data)
+        if "name" in step_definition:
+            item.name = self._interpolate_value(step_definition["name"], input_data)
+
+        await db.commit()
+        await db.refresh(item)
+
+        # Fetch type info
+        type_stmt = select(CIType).where(CIType.id == item.type_id)
+        type_result = await db.execute(type_stmt)
+        ci_type = type_result.scalar_one_or_none()
+
+        return {
+            "updated": True,
+            "ci_id": item.id,
+            "ci_name": item.name,
+            "ci_status": item.status,
+            "ci_data": item.ci_data or {},
+            "ci_type_name": ci_type.name if ci_type else "",
+            "ci_type_key": ci_type.key if ci_type else "",
+            "fields_updated": list(updates.keys()) if updates else [],
+            "old_values": {k: old_data.get(k) for k in updates} if updates else {},
+            "executed_at": datetime.utcnow().isoformat(),
+        }
