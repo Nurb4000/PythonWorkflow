@@ -215,8 +215,9 @@ Relationships:
 
 ---
 
-### Phase 3: Workflow Node Integration
+### Phase 3: Workflow Node Integration ✅ COMPLETE
 **Goal**: Workflow steps can look up, filter, and reference CMDB data.
+**Status**: Core step types implemented and tested (commit `f3bbff9`, 2026-08-10).
 
 | # | Task | Files | Details |
 |---|------|-------|---------|
@@ -226,8 +227,8 @@ Relationships:
 | 3.4 | Step editor UI | `WorkflowDesigner.tsx` (inside `renderStepEditor`) | Form: select CI type → pick lookup fields → set match criteria → choose output field name |
 | 3.5 | New step type: `cmdb_update` | `step_executors.py` | Updates an existing CI's fields by ID or lookup |
 | 3.6 | Register + frontend for cmdb_update | Same pattern as 3.1-3.4 | |
-| 3.7 | Condition step: CMDB filter | `WorkflowDesigner.tsx` | In condition editor, allow referencing CMDB types as data sources (like database_query visual builder) |
-| 3.8 | Human task: CMDB assignment | `WorkflowDesigner.tsx` | When assigning tasks, allow filtering users/groups by CMDB attributes (e.g., "assign to owner of this server") |
+| 3.7 | ~~Condition step: CMDB filter~~ | — | **Deferred** — can be done via cmdb_lookup + condition combo |
+| 3.8 | ~~Human task: CMDB assignment~~ | — | **Deferred** — future enhancement |
 
 **`cmdb_lookup` step definition example:**
 ```json
@@ -251,6 +252,14 @@ Result: `$input.server_ci` contains the full CI record.
   }
 }
 ```
+
+**Notes from implementation:**
+- `cmdb_lookup` supports operators: `=`, `!=`, `>`, `<`, `>=`, `<=`, `contains`, `starts_with`, `ends_with`
+- `match_mode`: `"first"` returns single item; `"all"` returns array of matching items
+- `$input.*` interpolation works on lookup values, CI ID, status, name, and update fields
+- `cmdb_update` supports direct ID or fallback lookup by criteria (ci_type_id + lookup_fields)
+- Frontend editor dynamically populates field dropdowns from selected CI type's field_schema
+- Both step types appear in the "Add Step" modal with distinct colors (teal for lookup, green for update)
 
 ---
 
@@ -301,8 +310,8 @@ Recommended order for implementing across sessions (respects token limits):
 
 1. **Session 1**: Phase 1 — Backend core (models, schemas, API, migration). ✅ COMPLETE
 2. **Session 2**: Phase 2 — Role + CI Type Manager + CI List pages + nav. ✅ COMPLETE
-3. **Session 3**: Phase 3 — Workflow node integration (cmdb_lookup, cmdb_update executors + frontend). NEXT
-4. **Session 4**: Phase 4 remaining — Export endpoint, webhook triggers, API token scoping.
+3. **Session 3**: Phase 3 — Workflow node integration (cmdb_lookup, cmdb_update executors + frontend). ✅ COMPLETE
+4. **Session 4**: Phase 4 remaining — Export endpoint, webhook triggers, API token scoping. NEXT
 5. **Session 5**: Phase 5 — Polish (optional, as needed).
 
 ---
