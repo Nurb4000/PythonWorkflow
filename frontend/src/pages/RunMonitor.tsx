@@ -2,6 +2,7 @@ import React, { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { runApi, aiApi } from '../services/api'
+import { useAuth } from '../components/Auth'
 import { WorkflowDesigner } from './WorkflowDesigner'
 
 export const RunMonitor: React.FC = () => {
@@ -9,6 +10,8 @@ export const RunMonitor: React.FC = () => {
   const runIdNum = parseInt(runId!)
   const navigate = useNavigate()
   const queryClient = useQueryClient()
+  const { user } = useAuth()
+  const canManage = user?.role === 'admin' || user?.role === 'developer'
   const [searchParams] = useSearchParams()
   const focusStepId = searchParams.get('focus') ? parseInt(searchParams.get('focus')!) : undefined
 
@@ -194,7 +197,7 @@ export const RunMonitor: React.FC = () => {
 
       {/* Action buttons */}
       <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-        {(run.status === 'running' || run.status === 'pending') && (
+        {canManage && (run.status === 'running' || run.status === 'pending') && (
           <button
             className="btn btn-danger"
             onClick={() => cancelMutation.mutate()}
@@ -203,7 +206,7 @@ export const RunMonitor: React.FC = () => {
             {cancelMutation.isPending ? 'Cancelling...' : 'Cancel Run'}
           </button>
         )}
-        {run.workflow_id != null && (
+        {canManage && run.workflow_id != null && (
           <button
             className="btn btn-info"
             onClick={() => rerunMutation.mutate()}
@@ -212,7 +215,7 @@ export const RunMonitor: React.FC = () => {
             {rerunMutation.isPending ? 'Re-running...' : 'Re-run with same input'}
           </button>
         )}
-        {run.workflow_id != null && (
+        {canManage && run.workflow_id != null && (
           <Link to={`/workflows/${run.workflow_id}`} className="btn btn-secondary">
             Back to Workflow
           </Link>
