@@ -540,6 +540,127 @@ class MarketplaceService:
         else:
             return self._audit_node_content(item.content)
 
+    async def get_workflow_graph(
+        self,
+        db: AsyncSession,
+        item_id: int,
+    ) -> Dict[str, Any]:
+        """Parse workflow content and return graph-ready data for visual preview."""
+        item = await self.get_item(db, item_id)
+        if not item:
+            raise ValueError(f"Marketplace item {item_id} not found")
+
+        if item.status != "published":
+            raise ValueError(f"Item {item_id} is not published (status={item.status})")
+
+        if item.item_type != "workflow":
+            raise ValueError(f"Item {item_id} is not a workflow (type={item.item_type})")
+
+        try:
+            if item.content_format == "json":
+                data = json.loads(item.content)
+                wf = data.get("workflow", {})
+                steps = data.get("steps", [])
+                start_refs = wf.get("config", {}).get("start_step_ids", [])
+            else:
+                data = self._parse_xml_for_graph(item.content)
+                wf = data.get("workflow", {})
+                steps = data.get("steps", [])
+                start_refs = wf.get("config", {}).get("start_step_ids", [])
+        except Exception as e:
+            return {"start_step_ids": [], "steps": [], "error": str(e)}
+
+        # Build refId -> numeric ID mapping (1-based sequential)
+        ref_to_id: Dict[str, int] = {}
+        for i, step in enumerate(steps, start=1):
+            ref = step.get("refId", step.get("id", f"step-{i}"))
+            ref_to_id[ref] = i
+
+        # Remap steps to numeric IDs
+        graph_steps = []
+        for i, step in enumerate(steps, start=1):
+            definition = dict(step.get("definition", {}))
+            # Remap next_step_ids
+            if "next_step_ids" in definition and isinstance(definition["next_step_ids"], list):
+                definition["next_step_ids"] = [
+                    ref_to_id.get(ref, -1) for ref in definition["next_step_ids"]
+                ]
+            # Remap single step refs
+            for field in ("next_step_id", "data_source_step_id", "default_target_step_id"):
+                if field in definition and isinstance(definition[field], str):
+                    definition[field] = ref_to_id.get(definition[field], definition[field])
+            # Remap routes[].target_step_id
+            if "routes" in definition and isinstance(definition["routes"], list):
+                for route in definition["routes"]:
+                    if "target_step_id" in route and isinstance(route["target_step_id"], str):
+                        route["target_step_id"] = ref_to_id.get(route["target_step_id"], route["target_step_id"])
+
+            graph_steps.append({
+                "id": i,
+                "step_type": step.get("type", step.get("step_type", "unknown")),
+                "definition": definition,
+                "position": step.get("position", i - 1),
+                "title": step.get("title", ""),
+                "description": step.get("description", ""),
+            })
+
+        # Remap start_step_ids
+        remapped_starts = []
+        for ref in start_refs:
+            if ref in ref_to_id:
+                remapped_starts.append(ref_to_id[ref])
+
+        return {
+            "start_step_ids": remapped_starts,
+            "steps": graph_steps,
+        }
+
+    def _parse_xml_for_graph(self, content: str) -> Dict[str, Any]:
+        """Parse XML workflow package into structured data for graph rendering."""
+        from xml.etree import ElementTree as ET
+
+        root = ET.fromstring(content)
+        data: Dict[str, Any] = {
+            "workflow": {},
+            "steps": [],
+        }
+
+        wf_el = root.find("Workflow")
+        if wf_el is not None:
+            data["workflow"]["name"] = wf_el.get("name", "")
+
+            # Config / start_step_ids
+            config_el = wf_el.find("Config")
+            if config_el is not None:
+                start_ids_el = config_el.find("StartStepIds")
+                if start_ids_el is not None and start_ids_el.text:
+                    parsed_ids = [s.strip() for s in start_ids_el.text.split(",") if s.strip()]
+                    data["workflow"]["config"] = {"start_step_ids": parsed_ids}
+
+            # Steps
+            steps_el = wf_el.find("Steps")
+            if steps_el is not None:
+                for step_el in steps_el.findall("Step"):
+                    ref_id = step_el.get("id", "")
+                    step_data = {
+                        "refId": ref_id,
+                        "type": step_el.get("type", ""),
+                        "position": int(step_el.get("position", "0")),
+                        "title": (step_el.findtext("Title") or ""),
+                        "description": (step_el.findtext("Description") or ""),
+                    }
+                    def_el = step_el.find("Definition")
+                    if def_el is not None and def_el.text:
+                        try:
+                            step_data["definition"] = json.loads(def_el.text)
+                        except json.JSONDecodeError:
+                            step_data["definition"] = {}
+                    else:
+                        step_data["definition"] = {}
+                    data["steps"].append(step_data)
+
+        return data
+
     def _audit_workflow_content(self, content: str, content_format: str) -> Dict[str, Any]:
         """Extract audit info from a workflow package."""
         audit: Dict[str, Any] = {

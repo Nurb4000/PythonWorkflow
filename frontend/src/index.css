@@ -27,11 +27,12 @@ code {
 .navbar {
   background: #2c3e50;
   color: white;
-  padding: 1rem 2rem;
+  padding: 0.75rem 2rem;
   display: flex;
   justify-content: space-between;
   align-items: center;
   box-shadow: 0 2px 4px rgba(0,0,0,0.1);
+  gap: 1rem;
 }
 
 .nav-brand h1 {
@@ -41,7 +42,9 @@ code {
 
 .nav-links {
   display: flex;
-  gap: 2rem;
+  gap: 1.5rem;
+  align-items: center;
+  flex-wrap: nowrap;
 }
 
 .nav-links a {

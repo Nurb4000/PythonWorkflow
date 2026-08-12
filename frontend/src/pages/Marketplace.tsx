@@ -3,6 +3,7 @@ import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link, useNavigate } from 'react-router-dom'
 import { marketplaceApi } from '../services/api'
 import { useAuth } from '../components/Auth'
+import { MarketplaceFlowPreview } from '../components/MarketplaceFlowPreview'
 
 interface MarketplaceItem {
   id: number
@@ -83,6 +84,7 @@ export const Marketplace: React.FC = () => {
     match_users_by_email: true,
   })
   const [error, setError] = useState('')
+  const [detailTab, setDetailTab] = useState<'details' | 'flow' | 'security'>('details')
 
   const limit = 20
 
@@ -242,6 +244,7 @@ export const Marketplace: React.FC = () => {
     setInstallResult(null)
     setError('')
     setEditMode(false)
+    setDetailTab('details')
     setEditForm({
       name: itemDetail.name || '',
       description: itemDetail.description || '',
@@ -263,6 +266,7 @@ export const Marketplace: React.FC = () => {
     setInstallConfirmed(false)
     setInstallResult(null)
     setError('')
+    setDetailTab('details')
   }
 
   const handleInstall = () => {
@@ -596,7 +600,7 @@ export const Marketplace: React.FC = () => {
         >
           <div
             className="card"
-            style={{ maxWidth: '700px', width: '100%', maxHeight: '85vh', overflow: 'auto' }}
+            style={{ maxWidth: selectedItem?.item_type === 'workflow' ? '900px' : '700px', width: '100%', maxHeight: '85vh', overflow: 'auto' }}
             onClick={(e) => e.stopPropagation()}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -660,6 +664,36 @@ export const Marketplace: React.FC = () => {
               </div>
             </div>
 
+            {/* Detail tabs */}
+            {itemDetail && !itemDetailLoading && (
+              <div style={{ display: 'flex', gap: 0, borderBottom: '2px solid #eee', marginBottom: '1rem' }}>
+                {([
+                  ['details', 'Details'] as const,
+                  ...(selectedItem.item_type === 'workflow' ? [['flow', 'Flow'] as const] : []),
+                  ['security', 'Security'] as const,
+                ]).map(([tab, label]) => (
+                  <button
+                    key={tab}
+                    onClick={() => setDetailTab(tab)}
+                    style={{
+                      padding: '0.5rem 1.25rem',
+                      border: 'none',
+                      borderBottom: detailTab === tab ? '3px solid #3498db' : '3px solid transparent',
+                      background: 'none',
+                      cursor: 'pointer',
+                      fontWeight: detailTab === tab ? 700 : 400,
+                      color: detailTab === tab ? '#2c3e50' : '#7f8c8d',
+                      fontSize: '0.9rem',
+                      transition: 'all 0.2s',
+                      marginTop: '-2px',
+                    }}
+                  >
+                    {label}
+                  </button>
+                ))}
+              </div>
+            )}
+
             {itemDetailLoading && (
               <div style={{ textAlign: 'center', padding: '2rem' }}>Loading details...</div>
             )}
@@ -672,359 +706,373 @@ export const Marketplace: React.FC = () => {
 
             {itemDetail && (
               <>
-                <p style={{ color: '#666', margin: '1rem 0' }}>{itemDetail.description}</p>
+                {/* ── DETAILS TAB ── */}
+                {detailTab === 'details' && (
+                  <>
+                    <p style={{ color: '#666', margin: '1rem 0' }}>{itemDetail.description}</p>
 
-                <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                  {renderCategoryBadge(itemDetail.category)}
-                  <span style={{ color: '#95a5a6', fontSize: '0.85rem', alignSelf: 'center' }}>
-                    v{itemDetail.version} &middot; {itemDetail.downloads_count} downloads &middot; by {itemDetail.author_name || 'Unknown'}
-                  </span>
-                </div>
-
-                {itemDetail.tags && itemDetail.tags.length > 0 && (
-                  <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
-                    {itemDetail.tags.map((tag: string) => (
-                      <span key={tag} style={{ fontSize: '0.8rem', color: '#3498db', background: '#ebf5fb', padding: '0.2rem 0.6rem', borderRadius: '10px' }}>
-                        {tag}
+                    <div style={{ display: 'flex', gap: '1rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                      {renderCategoryBadge(itemDetail.category)}
+                      <span style={{ color: '#95a5a6', fontSize: '0.85rem', alignSelf: 'center' }}>
+                        v{itemDetail.version} &middot; {itemDetail.downloads_count} downloads &middot; by {itemDetail.author_name || 'Unknown'}
                       </span>
-                    ))}
-                  </div>
-                )}
-
-                {/* Edit metadata form */}
-                {editMode && canDevelop && (
-                  <div style={{ background: '#f0f3f5', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
-                    <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Edit Metadata</h4>
-                    <div className="form-group">
-                      <label className="form-label">Name</label>
-                      <input
-                        type="text"
-                        className="form-input"
-                        value={editForm.name}
-                        onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
-                      />
-                    </div>
-                    <div className="form-group">
-                      <label className="form-label">Description</label>
-                      <textarea
-                        className="form-textarea"
-                        value={editForm.description}
-                        onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
-                        rows={2}
-                      />
-                    </div>
-                    <div className="grid grid-2">
-                      <div className="form-group">
-                        <label className="form-label">Category</label>
-                        <select
-                          className="form-select"
-                          value={editForm.category}
-                          onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
-                        >
-                          {(categoriesData?.allCategories || []).map((cat: string) => (
-                            <option key={cat} value={cat}>{cat}</option>
-                          ))}
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">Tags (comma-separated)</label>
-                        <input
-                          type="text"
-                          className="form-input"
-                          value={editForm.tags}
-                          onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
-                        />
-                      </div>
-                    </div>
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
-                      <button
-                        className="btn btn-primary"
-                        onClick={() => updateItemMutation.mutate()}
-                        disabled={updateItemMutation.isPending || !editForm.name.trim()}
-                      >
-                        {updateItemMutation.isPending ? 'Saving...' : 'Save Changes'}
-                      </button>
-                      <button
-                        className="btn btn-secondary"
-                        onClick={() => setEditMode(false)}
-                      >
-                        Cancel
-                      </button>
-                    </div>
-                  </div>
-                )}
-
-                {/* Audit preview */}
-                {previewMutation.isPending && (
-                  <div style={{ textAlign: 'center', padding: '1rem' }}>Loading audit...</div>
-                )}
-
-                {auditResult && (
-                  <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
-                    <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Security Review</h4>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
-                      <div>
-                        <strong style={{ fontSize: '0.85rem', color: '#555' }}>Step Types</strong>
-                        <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
-                          {auditResult.step_types.map(st => (
-                            <span key={st} className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>{st}</span>
-                          ))}
-                        </div>
-                      </div>
-
-                      {auditResult.steps_count !== undefined && (
-                        <div>
-                          <strong style={{ fontSize: '0.85rem', color: '#555' }}>Steps</strong>
-                          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.steps_count}</p>
-                        </div>
-                      )}
-
-                      {auditResult.schedules_count !== undefined && (
-                        <div>
-                          <strong style={{ fontSize: '0.85rem', color: '#555' }}>Schedules</strong>
-                          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.schedules_count}</p>
-                        </div>
-                      )}
-
-                      {auditResult.forms_count !== undefined && (
-                        <div>
-                          <strong style={{ fontSize: '0.85rem', color: '#555' }}>Forms</strong>
-                          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.forms_count}</p>
-                        </div>
-                      )}
-
-                      {auditResult.groups_count !== undefined && (
-                        <div>
-                          <strong style={{ fontSize: '0.85rem', color: '#555' }}>Groups</strong>
-                          <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.groups_count}</p>
-                        </div>
-                      )}
                     </div>
 
-                    {auditResult.external_urls.length > 0 && (
-                      <div style={{ marginTop: '0.75rem' }}>
-                        <strong style={{ fontSize: '0.85rem', color: '#555' }}>External URLs</strong>
-                        <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
-                          {auditResult.external_urls.map((url, i) => (
-                            <li key={i} style={{ color: '#e67e22' }}>{url}</li>
-                          ))}
-                        </ul>
+                    {itemDetail.tags && itemDetail.tags.length > 0 && (
+                      <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginBottom: '1rem' }}>
+                        {itemDetail.tags.map((tag: string) => (
+                          <span key={tag} style={{ fontSize: '0.8rem', color: '#3498db', background: '#ebf5fb', padding: '0.2rem 0.6rem', borderRadius: '10px' }}>
+                            {tag}
+                          </span>
+                        ))}
                       </div>
                     )}
 
-                    {auditResult.email_recipients.length > 0 && (
-                      <div style={{ marginTop: '0.5rem' }}>
-                        <strong style={{ fontSize: '0.85rem', color: '#555' }}>Email Recipients</strong>
-                        <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem' }}>{auditResult.email_recipients.join(', ')}</p>
-                      </div>
-                    )}
-
-                    {auditResult.has_custom_code && (
-                      <div style={{ marginTop: '0.5rem' }}>
-                        <span className="badge badge-warning">Contains custom code</span>
-                      </div>
-                    )}
-
-                    {auditResult.has_database_query && (
-                      <div style={{ marginTop: '0.5rem' }}>
-                        <span className="badge badge-warning">Contains database queries</span>
-                      </div>
-                    )}
-
-                    {auditResult.warnings.length > 0 && (
-                      <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#fef9e7', borderRadius: '4px' }}>
-                        <strong style={{ color: '#f39c12', fontSize: '0.85rem' }}>Warnings:</strong>
-                        <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
-                          {auditResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
-                        </ul>
-                      </div>
-                    )}
-                  </div>
-                )}
-
-                {/* Install options for workflows */}
-                {selectedItem.item_type === 'workflow' && !installResult && (
-                  <div style={{ background: '#f0f3f5', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
-                    <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Install Options</h4>
-                    <div className="grid grid-2">
-                      <div className="form-group">
-                        <label className="form-label">Target Environment</label>
-                        <select
-                          className="form-select"
-                          value={installOptions.environment}
-                          onChange={(e) => setInstallOptions({ ...installOptions, environment: e.target.value })}
-                        >
-                          <option value="preserve">Preserve Source</option>
-                          <option value="test">Force Test</option>
-                          <option value="production">Force Production</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label className="form-label">On Name Conflict</label>
-                        <select
-                          className="form-select"
-                          value={installOptions.on_conflict}
-                          onChange={(e) => setInstallOptions({ ...installOptions, on_conflict: e.target.value })}
-                        >
-                          <option value="copy">Create as "(Copy)"</option>
-                          <option value="skip">Skip</option>
-                          <option value="overwrite">Overwrite Existing</option>
-                        </select>
-                      </div>
-                      <div className="form-group">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                    {/* Edit metadata form */}
+                    {editMode && canDevelop && (
+                      <div style={{ background: '#f0f3f5', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
+                        <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Edit Metadata</h4>
+                        <div className="form-group">
+                          <label className="form-label">Name</label>
                           <input
-                            type="checkbox"
-                            checked={installOptions.create_forms}
-                            onChange={(e) => setInstallOptions({ ...installOptions, create_forms: e.target.checked })}
+                            type="text"
+                            className="form-input"
+                            value={editForm.name}
+                            onChange={(e) => setEditForm({ ...editForm, name: e.target.value })}
                           />
-                          Create missing forms
-                        </label>
-                      </div>
-                      <div className="form-group">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={installOptions.create_groups}
-                            onChange={(e) => setInstallOptions({ ...installOptions, create_groups: e.target.checked })}
+                        </div>
+                        <div className="form-group">
+                          <label className="form-label">Description</label>
+                          <textarea
+                            className="form-textarea"
+                            value={editForm.description}
+                            onChange={(e) => setEditForm({ ...editForm, description: e.target.value })}
+                            rows={2}
                           />
-                          Create missing groups
-                        </label>
-                      </div>
-                      <div className="form-group">
-                        <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                          <input
-                            type="checkbox"
-                            checked={installOptions.match_users_by_email}
-                            onChange={(e) => setInstallOptions({ ...installOptions, match_users_by_email: e.target.checked })}
-                          />
-                          Match users by email
-                        </label>
-                      </div>
-                    </div>
-                  </div>
-                )}
-
-                {/* Install button */}
-                {!installResult && (
-                  <div style={{ marginTop: '1rem' }}>
-                    {!installConfirmed ? (
-                      <button
-                        className="btn btn-success"
-                        onClick={handleInstall}
-                        disabled={!auditResult || installMutation.isPending}
-                        style={{ width: '100%' }}
-                      >
-                        Review & Install
-                      </button>
-                    ) : (
-                      <div style={{ background: '#fef9e7', padding: '1rem', borderRadius: '6px' }}>
-                        <p style={{ margin: '0 0 0.75rem', color: '#856404' }}>
-                          You have reviewed the security audit above. Proceed with installation?
-                        </p>
-                        <div style={{ display: 'flex', gap: '0.5rem' }}>
+                        </div>
+                        <div className="grid grid-2">
+                          <div className="form-group">
+                            <label className="form-label">Category</label>
+                            <select
+                              className="form-select"
+                              value={editForm.category}
+                              onChange={(e) => setEditForm({ ...editForm, category: e.target.value })}
+                            >
+                              {(categoriesData?.allCategories || []).map((cat: string) => (
+                                <option key={cat} value={cat}>{cat}</option>
+                              ))}
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">Tags (comma-separated)</label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={editForm.tags}
+                              onChange={(e) => setEditForm({ ...editForm, tags: e.target.value })}
+                            />
+                          </div>
+                        </div>
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '0.75rem' }}>
                           <button
-                            className="btn btn-success"
-                            onClick={handleInstall}
-                            disabled={installMutation.isPending}
+                            className="btn btn-primary"
+                            onClick={() => updateItemMutation.mutate()}
+                            disabled={updateItemMutation.isPending || !editForm.name.trim()}
                           >
-                            {installMutation.isPending
-                              ? (selectedItem.item_type === 'workflow' ? 'Installing Workflow...' : 'Installing Node...')
-                              : `Yes, Install ${selectedItem.item_type === 'workflow' ? 'Workflow' : 'Node'}`}
+                            {updateItemMutation.isPending ? 'Saving...' : 'Save Changes'}
                           </button>
                           <button
                             className="btn btn-secondary"
-                            onClick={() => setInstallConfirmed(false)}
-                            disabled={installMutation.isPending}
+                            onClick={() => setEditMode(false)}
                           >
                             Cancel
                           </button>
                         </div>
                       </div>
                     )}
-                  </div>
+
+                    {/* Install options for workflows */}
+                    {selectedItem.item_type === 'workflow' && !installResult && (
+                      <div style={{ background: '#f0f3f5', padding: '1rem', borderRadius: '6px', marginBottom: '1rem' }}>
+                        <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Install Options</h4>
+                        <div className="grid grid-2">
+                          <div className="form-group">
+                            <label className="form-label">Target Environment</label>
+                            <select
+                              className="form-select"
+                              value={installOptions.environment}
+                              onChange={(e) => setInstallOptions({ ...installOptions, environment: e.target.value })}
+                            >
+                              <option value="preserve">Preserve Source</option>
+                              <option value="test">Force Test</option>
+                              <option value="production">Force Production</option>
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label className="form-label">On Name Conflict</label>
+                            <select
+                              className="form-select"
+                              value={installOptions.on_conflict}
+                              onChange={(e) => setInstallOptions({ ...installOptions, on_conflict: e.target.value })}
+                            >
+                              <option value="copy">Create as "(Copy)"</option>
+                              <option value="skip">Skip</option>
+                              <option value="overwrite">Overwrite Existing</option>
+                            </select>
+                          </div>
+                          <div className="form-group">
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={installOptions.create_forms}
+                                onChange={(e) => setInstallOptions({ ...installOptions, create_forms: e.target.checked })}
+                              />
+                              Create missing forms
+                            </label>
+                          </div>
+                          <div className="form-group">
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={installOptions.create_groups}
+                                onChange={(e) => setInstallOptions({ ...installOptions, create_groups: e.target.checked })}
+                              />
+                              Create missing groups
+                            </label>
+                          </div>
+                          <div className="form-group">
+                            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                              <input
+                                type="checkbox"
+                                checked={installOptions.match_users_by_email}
+                                onChange={(e) => setInstallOptions({ ...installOptions, match_users_by_email: e.target.checked })}
+                              />
+                              Match users by email
+                            </label>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Install button */}
+                    {!installResult && (
+                      <div style={{ marginTop: '1rem' }}>
+                        {!installConfirmed ? (
+                          <button
+                            className="btn btn-success"
+                            onClick={handleInstall}
+                            disabled={!auditResult || installMutation.isPending}
+                            style={{ width: '100%' }}
+                          >
+                            Review & Install
+                          </button>
+                        ) : (
+                          <div style={{ background: '#fef9e7', padding: '1rem', borderRadius: '6px' }}>
+                            <p style={{ margin: '0 0 0.75rem', color: '#856404' }}>
+                              You have reviewed the item details above. Proceed with installation?
+                            </p>
+                            <div style={{ display: 'flex', gap: '0.5rem' }}>
+                              <button
+                                className="btn btn-success"
+                                onClick={handleInstall}
+                                disabled={installMutation.isPending}
+                              >
+                                {installMutation.isPending
+                                  ? (selectedItem.item_type === 'workflow' ? 'Installing Workflow...' : 'Installing Node...')
+                                  : `Yes, Install ${selectedItem.item_type === 'workflow' ? 'Workflow' : 'Node'}`}
+                              </button>
+                              <button
+                                className="btn btn-secondary"
+                                onClick={() => setInstallConfirmed(false)}
+                                disabled={installMutation.isPending}
+                              >
+                                Cancel
+                              </button>
+                            </div>
+                          </div>
+                        )}
+                      </div>
+                    )}
+
+                    {/* Install result */}
+                    {installResult && (
+                      <div style={{ marginTop: '1rem', background: installResult.import_result?.errors?.length ? '#fdf2f2' : '#f0fff4', padding: '1rem', borderRadius: '6px' }}>
+                        <h4 style={{ marginTop: 0, color: '#27ae60' }}>Installation Complete</h4>
+
+                        {installResult.item_type === 'workflow' && installResult.import_result && (
+                          <>
+                            {installResult.import_result.workflowsCreated?.length > 0 && (
+                              <p style={{ color: '#27ae60' }}>
+                                Created: {installResult.import_result.workflowsCreated.join(', ')}
+                              </p>
+                            )}
+                            {installResult.import_result.workflowsSkipped?.length > 0 && (
+                              <p style={{ color: '#f39c12' }}>
+                                Skipped: {installResult.import_result.workflowsSkipped.join(', ')}
+                              </p>
+                            )}
+                            {installResult.import_result.formsCreated?.length > 0 && (
+                              <p style={{ color: '#27ae60' }}>Forms created: {installResult.import_result.formsCreated.length}</p>
+                            )}
+                            {installResult.import_result.groupsCreated?.length > 0 && (
+                              <p style={{ color: '#27ae60' }}>Groups created: {installResult.import_result.groupsCreated.length}</p>
+                            )}
+                            <p>Steps: {installResult.import_result.stepsCount} | Schedules: {installResult.import_result.schedulesCount}</p>
+                            {installResult.import_result.warnings?.length > 0 && (
+                              <div style={{ marginTop: '0.5rem' }}>
+                                <strong style={{ color: '#f39c12' }}>Warnings:</strong>
+                                <ul style={{ margin: '0.25rem 0', paddingLeft: '1.5rem' }}>
+                                  {installResult.import_result.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                            {installResult.import_result.errors?.length > 0 && (
+                              <div style={{ marginTop: '0.5rem' }}>
+                                <strong style={{ color: '#e74c3c' }}>Errors:</strong>
+                                <ul style={{ margin: '0.25rem 0', paddingLeft: '1.5rem' }}>
+                                  {installResult.import_result.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
+                                </ul>
+                              </div>
+                            )}
+                          </>
+                        )}
+
+                        {installResult.item_type === 'node' && installResult.saved_node && (
+                          <>
+                            <p style={{ color: '#27ae60' }}>
+                              Node "{installResult.saved_node.title}" saved to your My Nodes library.
+                            </p>
+                            <p style={{ fontSize: '0.9rem', color: '#666' }}>
+                              Step type: {installResult.saved_node.step_type}
+                              {installResult.saved_node.max_retries > 0 && ` | Retries: ${installResult.saved_node.max_retries}`}
+                            </p>
+                          </>
+                        )}
+
+                        <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+                          {installResult.item_type === 'workflow' && installResult.import_result?.workflowsCreatedIds?.[0] && (
+                            <button
+                              className="btn btn-primary"
+                              onClick={() => navigate(`/workflows/${installResult.import_result.workflowsCreatedIds[0]}/design`)}
+                            >
+                              Edit Workflow
+                            </button>
+                          )}
+                          {installResult.item_type === 'workflow' && !installResult.import_result?.workflowsCreatedIds?.[0] && (
+                            <Link to="/workflows" className="btn btn-primary">
+                              View Workflows
+                            </Link>
+                          )}
+                          {installResult.item_type === 'node' && (
+                            <button className="btn btn-primary" onClick={() => { setActiveTab('my-nodes'); handleCloseDetail() }}>
+                              View My Nodes
+                            </button>
+                          )}
+                          <button className="btn btn-secondary" onClick={handleCloseDetail}>
+                            Close
+                          </button>
+                        </div>
+                      </div>
+                    )}
+                  </>
                 )}
 
-                {/* Install result */}
-                {installResult && (
-                  <div style={{ marginTop: '1rem', background: installResult.import_result?.errors?.length ? '#fdf2f2' : '#f0fff4', padding: '1rem', borderRadius: '6px' }}>
-                    <h4 style={{ marginTop: 0, color: '#27ae60' }}>Installation Complete</h4>
+                {/* ── FLOW TAB (workflows only) ── */}
+                {detailTab === 'flow' && selectedItem.item_type === 'workflow' && (
+                  <MarketplaceFlowPreview itemId={selectedItem.id} />
+                )}
 
-                    {installResult.item_type === 'workflow' && installResult.import_result && (
-                      <>
-                        {installResult.import_result.workflowsCreated?.length > 0 && (
-                          <p style={{ color: '#27ae60' }}>
-                            Created: {installResult.import_result.workflowsCreated.join(', ')}
-                          </p>
-                        )}
-                        {installResult.import_result.workflowsSkipped?.length > 0 && (
-                          <p style={{ color: '#f39c12' }}>
-                            Skipped: {installResult.import_result.workflowsSkipped.join(', ')}
-                          </p>
-                        )}
-                        {installResult.import_result.formsCreated?.length > 0 && (
-                          <p style={{ color: '#27ae60' }}>Forms created: {installResult.import_result.formsCreated.length}</p>
-                        )}
-                        {installResult.import_result.groupsCreated?.length > 0 && (
-                          <p style={{ color: '#27ae60' }}>Groups created: {installResult.import_result.groupsCreated.length}</p>
-                        )}
-                        <p>Steps: {installResult.import_result.stepsCount} | Schedules: {installResult.import_result.schedulesCount}</p>
-                        {installResult.import_result.warnings?.length > 0 && (
-                          <div style={{ marginTop: '0.5rem' }}>
-                            <strong style={{ color: '#f39c12' }}>Warnings:</strong>
-                            <ul style={{ margin: '0.25rem 0', paddingLeft: '1.5rem' }}>
-                              {installResult.import_result.warnings.map((w: string, i: number) => <li key={i}>{w}</li>)}
+                {/* ── SECURITY TAB ── */}
+                {detailTab === 'security' && (
+                  <>
+                    {previewMutation.isPending && (
+                      <div style={{ textAlign: 'center', padding: '1rem' }}>Loading audit...</div>
+                    )}
+
+                    {auditResult && (
+                      <div style={{ background: '#f8f9fa', padding: '1rem', borderRadius: '6px' }}>
+                        <h4 style={{ marginTop: 0, marginBottom: '0.75rem' }}>Security Review</h4>
+
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.75rem' }}>
+                          <div>
+                            <strong style={{ fontSize: '0.85rem', color: '#555' }}>Step Types</strong>
+                            <div style={{ display: 'flex', gap: '0.35rem', flexWrap: 'wrap', marginTop: '0.25rem' }}>
+                              {auditResult.step_types.map(st => (
+                                <span key={st} className="badge badge-secondary" style={{ fontSize: '0.75rem' }}>{st}</span>
+                              ))}
+                            </div>
+                          </div>
+
+                          {auditResult.steps_count !== undefined && (
+                            <div>
+                              <strong style={{ fontSize: '0.85rem', color: '#555' }}>Steps</strong>
+                              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.steps_count}</p>
+                            </div>
+                          )}
+
+                          {auditResult.schedules_count !== undefined && (
+                            <div>
+                              <strong style={{ fontSize: '0.85rem', color: '#555' }}>Schedules</strong>
+                              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.schedules_count}</p>
+                            </div>
+                          )}
+
+                          {auditResult.forms_count !== undefined && (
+                            <div>
+                              <strong style={{ fontSize: '0.85rem', color: '#555' }}>Forms</strong>
+                              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.forms_count}</p>
+                            </div>
+                          )}
+
+                          {auditResult.groups_count !== undefined && (
+                            <div>
+                              <strong style={{ fontSize: '0.85rem', color: '#555' }}>Groups</strong>
+                              <p style={{ margin: '0.25rem 0 0', fontSize: '0.9rem' }}>{auditResult.groups_count}</p>
+                            </div>
+                          )}
+                        </div>
+
+                        {auditResult.external_urls.length > 0 && (
+                          <div style={{ marginTop: '0.75rem' }}>
+                            <strong style={{ fontSize: '0.85rem', color: '#555' }}>External URLs</strong>
+                            <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
+                              {auditResult.external_urls.map((url, i) => (
+                                <li key={i} style={{ color: '#e67e22' }}>{url}</li>
+                              ))}
                             </ul>
                           </div>
                         )}
-                        {installResult.import_result.errors?.length > 0 && (
+
+                        {auditResult.email_recipients.length > 0 && (
                           <div style={{ marginTop: '0.5rem' }}>
-                            <strong style={{ color: '#e74c3c' }}>Errors:</strong>
-                            <ul style={{ margin: '0.25rem 0', paddingLeft: '1.5rem' }}>
-                              {installResult.import_result.errors.map((e: string, i: number) => <li key={i}>{e}</li>)}
+                            <strong style={{ fontSize: '0.85rem', color: '#555' }}>Email Recipients</strong>
+                            <p style={{ margin: '0.25rem 0 0', fontSize: '0.85rem' }}>{auditResult.email_recipients.join(', ')}</p>
+                          </div>
+                        )}
+
+                        {auditResult.has_custom_code && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <span className="badge badge-warning">Contains custom code</span>
+                          </div>
+                        )}
+
+                        {auditResult.has_database_query && (
+                          <div style={{ marginTop: '0.5rem' }}>
+                            <span className="badge badge-warning">Contains database queries</span>
+                          </div>
+                        )}
+
+                        {auditResult.warnings.length > 0 && (
+                          <div style={{ marginTop: '0.75rem', padding: '0.75rem', background: '#fef9e7', borderRadius: '4px' }}>
+                            <strong style={{ color: '#f39c12', fontSize: '0.85rem' }}>Warnings:</strong>
+                            <ul style={{ margin: '0.25rem 0 0', paddingLeft: '1.25rem', fontSize: '0.85rem' }}>
+                              {auditResult.warnings.map((w, i) => <li key={i}>{w}</li>)}
                             </ul>
                           </div>
                         )}
-                      </>
+                      </div>
                     )}
-
-                    {installResult.item_type === 'node' && installResult.saved_node && (
-                      <>
-                        <p style={{ color: '#27ae60' }}>
-                          Node "{installResult.saved_node.title}" saved to your My Nodes library.
-                        </p>
-                        <p style={{ fontSize: '0.9rem', color: '#666' }}>
-                          Step type: {installResult.saved_node.step_type}
-                          {installResult.saved_node.max_retries > 0 && ` | Retries: ${installResult.saved_node.max_retries}`}
-                        </p>
-                      </>
-                    )}
-
-                    <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-                      {installResult.item_type === 'workflow' && installResult.import_result?.workflowsCreatedIds?.[0] && (
-                        <button
-                          className="btn btn-primary"
-                          onClick={() => navigate(`/workflows/${installResult.import_result.workflowsCreatedIds[0]}/design`)}
-                        >
-                          Edit Workflow
-                        </button>
-                      )}
-                      {installResult.item_type === 'workflow' && !installResult.import_result?.workflowsCreatedIds?.[0] && (
-                        <Link to="/workflows" className="btn btn-primary">
-                          View Workflows
-                        </Link>
-                      )}
-                      {installResult.item_type === 'node' && (
-                        <button className="btn btn-primary" onClick={() => { setActiveTab('my-nodes'); handleCloseDetail() }}>
-                          View My Nodes
-                        </button>
-                      )}
-                      <button className="btn btn-secondary" onClick={handleCloseDetail}>
-                        Close
-                      </button>
-                    </div>
-                  </div>
+                  </>
                 )}
               </>
             )}

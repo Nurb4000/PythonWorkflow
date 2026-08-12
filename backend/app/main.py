@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 DEMO_METADATA = {
     "hello-world.xml": {
         "name": "Hello World",
-        "description": "A simple linear workflow that makes an API call and sends an email notification. Great for testing import/export.",
+        "description": "A simple linear workflow that fetches a random cat fact via API and sends an email notification. Great for testing import/export.",
         "category": "General",
         "tags": ["demo", "api", "email", "getting-started"],
     },
@@ -49,10 +49,15 @@ DEMO_METADATA = {
         "category": "Schedules & Maintenance",
         "tags": ["demo", "scheduled", "cleanup", "maintenance"],
     },
+    "4-column-demo.xml": {
+        "name": "4 Column Demo",
+        "description": "Demonstrates a 4-column entry form with Info Text labels. Submitter fills the intake form in the portal; data passes through and pre-fills the staff review task.",
+        "category": "Forms & Tasks",
+        "tags": ["demo", "form", "4-column", "review", "pass-through"],
+    },
 }
 
 _demo_seeded = False
-_demo_workflow_seeded = False
 
 app = FastAPI(
     title="Python Workflow System",
@@ -141,20 +146,12 @@ async def seed_marketplace_demos():
             return
 
         async with async_session_factory() as db:
-            result = await db.execute(select(User).where(User.username == "demo"))
-            demo_user = result.scalar_one_or_none()
-            if not demo_user:
-                demo_user = User(
-                    username="demo",
-                    email="demo@pythonworkflow.local",
-                    full_name="Demo System",
-                    role="admin",
-                    is_active=True,
-                    password_hash="",
-                )
-                db.add(demo_user)
-                await db.flush()
-                logger.info(f"Created demo user (id={demo_user.id})")
+            result = await db.execute(select(User).where(User.role == "admin").limit(1))
+            admin_user = result.scalar_one_or_none()
+            if not admin_user:
+                logger.warning("No admin user found, skipping marketplace demo seeding")
+                _demo_seeded = True
+                return
 
             seeded = 0
             skipped = 0
@@ -167,7 +164,7 @@ async def seed_marketplace_demos():
                 result = await db.execute(
                     select(MarketplaceItem).where(
                         MarketplaceItem.name == metadata["name"],
-                        MarketplaceItem.author_id == demo_user.id,
+                        MarketplaceItem.author_id == admin_user.id,
                     )
                 )
                 if result.scalar_one_or_none():
@@ -180,7 +177,7 @@ async def seed_marketplace_demos():
                     name=metadata["name"],
                     description=metadata["description"],
                     category=metadata["category"],
-                    author_id=demo_user.id,
+                    author_id=admin_user.id,
                     content=content,
                     content_format="xml",
                     status="published",
@@ -201,21 +198,6 @@ async def seed_marketplace_demos():
         logger.error(f"Marketplace demo seeding failed: {e}", exc_info=True)
 
 
-async def seed_demo_workflow_on_startup():
-    """Seed the demo 4-column intake workflow on startup (idempotent)"""
-    global _demo_workflow_seeded
-    if _demo_workflow_seeded:
-        return
-    try:
-        from app.services.demo_seed import seed_demo_workflow
-        async with async_session_factory() as db:
-            seeded = await seed_demo_workflow(db)
-            logger.info(f"Demo workflow seeding done. Seeded={seeded}")
-        _demo_workflow_seeded = True
-    except Exception as e:
-        logger.error(f"Demo workflow seeding failed: {e}", exc_info=True)
-
-
 @app.on_event("startup")
 async def startup_event():
     """Initialize database and scheduler on startup"""
@@ -227,7 +209,6 @@ async def startup_event():
         await sql_view_service.sync_views(db)
     await scheduler_service.start_email_monitor()
     asyncio.create_task(seed_marketplace_demos())
-    asyncio.create_task(seed_demo_workflow_on_startup())
     logger.info("Application started")
 
 

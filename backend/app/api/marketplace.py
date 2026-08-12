@@ -346,6 +346,20 @@ async def preview_item(
         raise HTTPException(status_code=404, detail=str(e))
 
 
+@router.get("/items/{item_id}/graph")
+async def get_workflow_graph(
+    item_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get graph-ready data for visual workflow preview."""
+    try:
+        graph = await marketplace_service.get_workflow_graph(db, item_id)
+        return graph
+    except ValueError as e:
+        raise HTTPException(status_code=404, detail=str(e))
+
+
 # ── Categories ────────────────────────────────────────────────────────
 
 @router.get("/categories")

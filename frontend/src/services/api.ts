@@ -216,6 +216,8 @@ export const marketplaceApi = {
     api.post(`/marketplace/items/${id}/install`, {}, { params: options || {} }),
   // Preview / audit
   previewItem: (id: number) => api.post(`/marketplace/items/${id}/preview`),
+  // Graph data for visual flow preview
+  getItemGraph: (id: number) => api.get(`/marketplace/items/${id}/graph`),
   // Package download
   getPackage: (id: number) => api.get(`/marketplace/items/${id}/package`),
   // My Nodes

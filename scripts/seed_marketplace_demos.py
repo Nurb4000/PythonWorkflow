@@ -3,7 +3,7 @@
 Seed script: migrate demo-workflows/*.xml into marketplace_items.
 
 Idempotent — runs safely multiple times. Skips items that already exist
-(matched by name). Creates a "Demo" user if one doesn't exist.
+(matched by name). Uses the existing admin user as the author.
 
 Usage (inside backend venv):
     python scripts/seed_marketplace_demos.py
@@ -59,6 +59,12 @@ DEMO_METADATA = {
         "category": "Schedules & Maintenance",
         "tags": ["demo", "scheduled", "cleanup", "maintenance"],
     },
+    "4-column-demo.xml": {
+        "name": "4 Column Demo",
+        "description": "Demonstrates a 4-column entry form with Info Text labels. Submitter fills the intake form in the portal; data passes through and pre-fills the staff review task.",
+        "category": "Forms & Tasks",
+        "tags": ["demo", "form", "4-column", "review", "pass-through"],
+    },
 }
 
 
@@ -99,24 +105,15 @@ async def seed():
         return
 
     async with async_session() as db:
-        # Ensure a "Demo" author user exists
-        result = await db.execute(select(User).where(User.username == "demo"))
-        demo_user = result.scalar_one_or_none()
+        # Use the admin user as author for marketplace demos
+        result = await db.execute(select(User).where(User.role == "admin").limit(1))
+        admin_user = result.scalar_one_or_none()
 
-        if not demo_user:
-            demo_user = User(
-                username="demo",
-                email="demo@pythonworkflow.local",
-                full_name="Demo System",
-                role="admin",
-                is_active=True,
-                password_hash="",  # Not login-able — system user
-            )
-            db.add(demo_user)
-            await db.flush()
-            print(f"[seed] Created demo user (id={demo_user.id})")
-        else:
-            print(f"[seed] Using existing demo user (id={demo_user.id})")
+        if not admin_user:
+            print("[seed] No admin user found, cannot seed marketplace demos")
+            return
+
+        print(f"[seed] Using admin user (id={admin_user.id}) as author")
 
         seeded = 0
         skipped = 0
@@ -131,7 +128,7 @@ async def seed():
             result = await db.execute(
                 select(MarketplaceItem).where(
                     MarketplaceItem.name == metadata["name"],
-                    MarketplaceItem.author_id == demo_user.id,
+                    MarketplaceItem.author_id == admin_user.id,
                 )
             )
             existing = result.scalar_one_or_none()
@@ -148,7 +145,7 @@ async def seed():
                 name=metadata["name"],
                 description=metadata["description"] or fallback.get("description", ""),
                 category=metadata["category"],
-                author_id=demo_user.id,
+                author_id=admin_user.id,
                 content=content,
                 content_format="xml",
                 status="published",

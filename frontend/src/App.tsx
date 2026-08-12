@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-router-dom'
 import axios from 'axios'
 import { AuthProvider, useAuth, LoginForm, RegisterForm, roleDefaultPath } from './components/Auth'
@@ -109,24 +109,98 @@ const RoleAwareNav: React.FC = () => {
 
   return (
     <>
-      {isPowerUser && <Link to="/workflows">Workflows</Link>}
+      {/* ── Core links (always visible) ── */}
+      {user.role === 'admin' && <Link to="/admin">Dashboard</Link>}
       {canSeeTasks && <Link to="/tasks">Tasks</Link>}
-      {user.role === 'user' && <Link to="/my-tasks">My Tasks</Link>}
       <Link to="/offerings">Offerings</Link>
       <Link to="/my-submissions">My Submissions</Link>
-      {(user.role === 'admin' || user.role === 'developer') && <a href="/forms" onClick={handleFormsClick} style={{ color: 'inherit', textDecoration: 'none', cursor: 'pointer' }}>Forms</a>}
-      {user.role === 'admin' && <Link to="/admin">Dashboard</Link>}
-      {user.role === 'admin' && <Link to="/admin/users">Users</Link>}
-      {user.role === 'admin' && <Link to="/admin/runs">Runs</Link>}
-      {user.role === 'admin' && <Link to="/admin/uploads">Uploads</Link>}
-      {user.role === 'admin' && <Link to="/settings">Settings</Link>}
-{(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/data">Data Explorer</Link>}
-      {(user.role === 'admin' || user.role === 'developer') && <Link to="/admin/views">SQL Views</Link>}
-      {(user.role === 'admin' || user.role === 'developer') && <Link to="/marketplace">Marketplace</Link>}
-{canAccessCmdb && <Link to="/cmdb/types">CMDB Types</Link>}
-{canAccessCmdb && <Link to="/cmdb/items">CMDB Items</Link>}
-{user.role === 'admin' && <Link to="/admin/fields">Field Manager</Link>}
+
+      {/* ── Admin dropdown ── */}
+      {user.role === 'admin' && (
+        <Dropdown label="Admin">
+          <Link to="/admin/runs" onClick={() => navigate('/admin/runs')}>Runs</Link>
+          <Link to="/admin/uploads" onClick={() => navigate('/admin/uploads')}>Uploads</Link>
+          <Link to="/admin/users" onClick={() => navigate('/admin/users')}>Users</Link>
+          <Link to="/settings" onClick={() => navigate('/settings')}>Settings</Link>
+          <Link to="/admin/fields" onClick={() => navigate('/admin/fields')}>Field Manager</Link>
+        </Dropdown>
+      )}
+
+      {/* ── Develop dropdown ── */}
+      {isPowerUser && (
+        <Dropdown label="Develop">
+          <Link to="/workflows" onClick={() => navigate('/workflows')}>Workflows</Link>
+          <a href="/forms" onClick={handleFormsClick} style={{ color: 'inherit', textDecoration: 'none' }}>Forms</a>
+          <Link to="/marketplace" onClick={() => navigate('/marketplace')}>Marketplace</Link>
+          <Link to="/admin/data" onClick={() => navigate('/admin/data')}>Data Explorer</Link>
+          <Link to="/admin/views" onClick={() => navigate('/admin/views')}>SQL Views</Link>
+        </Dropdown>
+      )}
+
+      {/* ── CMDB dropdown ── */}
+      {canAccessCmdb && (
+        <Dropdown label="CMDB">
+          <Link to="/cmdb/types" onClick={() => navigate('/cmdb/types')}>Types</Link>
+          <Link to="/cmdb/items" onClick={() => navigate('/cmdb/items')}>Items</Link>
+        </Dropdown>
+      )}
+
+      {/* ── My Tasks (user role only) ── */}
+      {user.role === 'user' && <Link to="/my-tasks">My Tasks</Link>}
     </>
+  )
+}
+
+// Click-based dropdown component
+const Dropdown: React.FC<{ label: string; children: React.ReactNode }> = ({ label, children }) => {
+  const [open, setOpen] = useState(false)
+  const ref = useRef<HTMLDivElement>(null)
+
+  useEffect(() => {
+    if (!open) return
+    const handler = (e: MouseEvent) => {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false)
+      }
+    }
+    document.addEventListener('mousedown', handler)
+    return () => document.removeEventListener('mousedown', handler)
+  }, [open])
+
+  return (
+    <div ref={ref} style={{ position: 'relative' }}>
+      <span
+        onClick={() => setOpen(!open)}
+        style={{
+          cursor: 'pointer', fontWeight: open ? 700 : 500, color: 'white',
+          display: 'flex', alignItems: 'center', gap: '4px',
+          background: open ? '#3d566e' : 'transparent', padding: '4px 8px', borderRadius: '4px',
+        }}
+      >
+        {label}
+        <span style={{ fontSize: '0.6rem' }}>{open ? '\u25b2' : '\u25bc'}</span>
+      </span>
+      {open && (
+        <div style={{
+          position: 'absolute', top: '100%', left: 0, marginTop: '0.25rem',
+          background: '#34495e', borderRadius: '6px', padding: '0.25rem 0', minWidth: '160px',
+          boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 100,
+        }}>
+          {React.Children.map(children, child => {
+            if (!React.isValidElement(child)) return null
+            return (
+              <div style={{ padding: '0.25rem 0' }}>
+                {React.cloneElement(child, {
+                  style: { display: 'block', padding: '0.4rem 1rem', color: 'white', textDecoration: 'none', fontSize: '0.9rem' },
+                  onMouseEnter: (e: any) => { e.currentTarget.style.background = '#3d566e' },
+                  onMouseLeave: (e: any) => { e.currentTarget.style.background = 'transparent' },
+                })}
+              </div>
+            )
+          })}
+        </div>
+      )}
+    </div>
   )
 }
 
@@ -196,18 +270,23 @@ const Navbar: React.FC = () => {
         {user && (
           <>
             <RoleAwareNav />
-            <span style={{ marginLeft: '1rem', opacity: 0.8 }}>
-              {user.full_name || user.username} ({user.role})
-            </span>
-            <button onClick={() => setShowPwdModal(true)} className="btn btn-sm btn-secondary" style={{ marginLeft: '1rem' }}>
-              Change Password
-            </button>
-            <button onClick={logout} className="btn btn-sm btn-secondary" style={{ marginLeft: '0.5rem' }}>
-              Logout
-            </button>
           </>
         )}
       </div>
+      {/* Right side: user controls */}
+      {user && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <span style={{ opacity: 0.8, fontSize: '0.9rem' }}>
+            {user.full_name || user.username} ({user.role})
+          </span>
+          <button onClick={() => setShowPwdModal(true)} className="btn btn-sm btn-secondary" style={{ marginLeft: '0.25rem' }}>
+            Change Password
+          </button>
+          <button onClick={logout} className="btn btn-sm btn-secondary">
+            Logout
+          </button>
+        </div>
+      )}
 
       {showPwdModal && (
         <div style={{

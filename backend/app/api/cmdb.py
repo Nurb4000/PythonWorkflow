@@ -6,7 +6,7 @@ import logging
 import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func, and_, or_
+from sqlalchemy import select, func, and_, or_, update
 from sqlalchemy.orm import selectinload
 from typing import Optional, List, Dict, Any
 
@@ -268,10 +268,11 @@ async def update_ci_type(
 @router.delete("/types/{type_id}")
 async def delete_ci_type(
     type_id: int,
+    cascade_deactivate_items: bool = Query(True, description="Also deactivate all items of this type"),
     current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db),
 ):
-    """Soft-delete a CI type (admin only). Fails if items exist."""
+    """Deactivate a CI type. Optionally cascades deactivation to its items."""
     stmt = select(CIType).where(CIType.id == type_id)
     result = await db.execute(stmt)
     ct = result.scalar_one_or_none()
@@ -281,13 +282,25 @@ async def delete_ci_type(
     count_result = await db.execute(
         select(func.count(ConfigurationItem.id)).where(ConfigurationItem.type_id == type_id)
     )
-    if (count_result.scalar() or 0) > 0:
-        raise HTTPException(status_code=409, detail="Cannot delete CI type that has items. Delete or reassign items first.")
+    item_count = count_result.scalar() or 0
+
+    items_deactivated = 0
+    if item_count > 0 and cascade_deactivate_items:
+        update_stmt = (
+            update(ConfigurationItem)
+            .where(ConfigurationItem.type_id == type_id)
+            .values(status="retired")
+        )
+        result = await db.execute(update_stmt)
+        items_deactivated = result.rowcount or 0
 
     ct.is_active = False
     await db.commit()
 
-    return {"message": f"CI type '{ct.name}' deactivated"}
+    return {
+        "message": f"CI type '{ct.name}' deactivated",
+        "items_deactivated": items_deactivated,
+    }
 
 
 # ---------------------------------------------------------------------------

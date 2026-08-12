@@ -14,15 +14,15 @@
 
     <Steps>
       <Step id="step-1" type="api_call" position="0" isEnabled="true">
-        <Title>Fetch Data</Title>
-        <Description>Make a GET request to an external API</Description>
-        <Definition>{"method":"GET","url":"https://jsonplaceholder.typicode.com/posts/1","headers":{},"next_step_ids":["step-2"]}</Definition>
+        <Title>Fetch Cat Fact</Title>
+        <Description>Make a GET request to the Cat Fact Ninja API for a random cat fact</Description>
+        <Definition>{"method":"GET","url":"https://catfact.ninja/fact","headers":{},"next_step_ids":["step-2"]}</Definition>
       </Step>
 
       <Step id="step-2" type="email" position="1" isEnabled="true">
         <Title>Send Notification</Title>
-        <Description>Send email with API response data</Description>
-        <Definition>{"to":"admin@example.com","subject":"Hello World Complete","body":"API response: $input.output_data","next_step_ids":[]}</Definition>
+        <Description>Send email with the cat fact from the API response</Description>
+        <Definition>{"to":"admin@example.com","subject":"Hello World - Cat Fact","body":"Here is your random cat fact:\n\n$input.fact\n\n(Fact length: $input.length characters)","next_step_ids":[]}</Definition>
       </Step>
     </Steps>
 

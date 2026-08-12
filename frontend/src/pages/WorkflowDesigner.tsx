@@ -2,7 +2,8 @@ import React, { useState, useCallback, useEffect, useRef } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useParams, useNavigate } from 'react-router-dom'
 import { produce } from 'immer'
-import ReactFlow, {
+import {
+  ReactFlow,
   Background,
   Controls,
   MiniMap,
@@ -13,11 +14,11 @@ import ReactFlow, {
   MarkerType,
   ReactFlowProvider,
   useUpdateNodeInternals
-} from 'react-flow-renderer'
+} from '@xyflow/react'
 import { workflowApi, authApi, aiApi, dataQueryApi, marketplaceApi, cmdbApi } from '../services/api'
 import { QueryBuilder, VisualQuery, TableInfo } from '../components/QueryBuilder'
 import axios from 'axios'
-import 'react-flow-renderer/dist/style.css'
+import '@xyflow/react/dist/style.css'
 
 const API_URL = '/api'
 
@@ -682,41 +683,72 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       })
     }
 
+    // Track which steps have outgoing edges
+    const hasOutgoing = new Set<number>()
+
     steps.forEach((step: any) => {
       const def = step.definition || {}
       const inst = instMap.get(step.id)
       const routeTaken = inst?.route_taken || []
       if (step.step_type === 'condition') {
         const routes = def.routes || []
+        let hasRoute = false
         routes.forEach((route: any, i: number) => {
           const numTarget = toNum(route.target_step_id)
           if (numTarget && (numTarget === END_TARGET || stepMap.has(numTarget))) {
+            hasRoute = true
             const taken = routeTaken.includes(numTarget)
             addEdgeFor(step.id, `route-${i}`, numTarget, route.expression || `Route ${i + 1}`, taken ? '#27ae60' : '#95a5a6', taken)
           }
         })
         const numDefault = toNum(def.default_target_step_id)
         if (numDefault && (numDefault === END_TARGET || stepMap.has(numDefault))) {
+          hasRoute = true
           const taken = routeTaken.includes(numDefault)
           addEdgeFor(step.id, 'default', numDefault, 'Else', taken ? '#e74c3c' : '#95a5a6', taken)
         }
+        if (hasRoute) hasOutgoing.add(step.id)
       } else {
         const targets = def.next_step_ids || (def.next_step_id ? [def.next_step_id] : [])
+        let hasTarget = false
         targets.forEach((targetId: number, i: number) => {
           const numTarget = toNum(targetId)
           if (numTarget && (numTarget === END_TARGET || stepMap.has(numTarget))) {
+            hasTarget = true
             const taken = routeTaken.includes(numTarget)
             addEdgeFor(step.id, `out-${i}`, numTarget, numTarget === END_TARGET ? 'End' : '', taken ? '#1565c0' : '#95a5a6', taken)
           }
         })
+        if (hasTarget) hasOutgoing.add(step.id)
       }
     })
 
-    // Start node → explicitly configured outputs only (no auto-derived connections)
+    // Auto-connect terminal steps (no outgoing edges) to the End node
+    steps.forEach((step: any) => {
+      if (!hasOutgoing.has(step.id)) {
+        newEdges.push({
+          id: `e-terminal-${step.id}`,
+          source: `step-${step.id}`,
+          target: 'end',
+          animated: true,
+          style: { ...edgeBase.style, stroke: '#95a5a6' },
+          markerEnd: { ...edgeBase.markerEnd, color: '#95a5a6' }
+        })
+      }
+    })
+
+    // Start node → explicitly configured outputs, or auto-connect to first step(s)
     const rawStartIds = isInspectorMode ? (opts.graphData!.start_step_ids || []) : (configDraft?.start_step_ids || [])
-    const startIds: number[] = rawStartIds
+    let startIds: number[] = rawStartIds
       .map(toNum)
       .filter((sid: number) => stepMap.has(sid))
+
+    // Fallback: if no start_step_ids configured, connect to steps at position 0
+    if (startIds.length === 0 && steps.length > 0) {
+      const firstSteps = steps.filter((s: any) => s.position === 0)
+      startIds = firstSteps.map((s: any) => s.id)
+    }
+
     startIds.forEach((sid, i) => {
       newEdges.push({
         id: `e-start-${sid}`,

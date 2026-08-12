@@ -11,6 +11,7 @@
     <Config>
       <StartStepIds>step-1</StartStepIds>
     </Config>
+    <EntryForm refId="form-1" />
 
     <Steps>
       <Step id="step-1" type="form" position="0" isEnabled="true">

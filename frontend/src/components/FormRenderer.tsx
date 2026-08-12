@@ -299,19 +299,34 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
     ))
   }
 
+  const getColSpan = (field: FormField) => {
+    const ds = field.display_size
+    if (!ds || ds === 'quarter') return 1
+    if (ds === 'half') return Math.max(1, Math.floor(colCount / 2))
+    if (ds === 'third') return Math.max(1, Math.ceil(colCount / 3))
+    if (ds === 'full') return colCount
+    return 1
+  }
+
   const renderColumnGroup = (group: [string, FormField][]) => {
-    const cols: [string, FormField][][] = Array.from({ length: colCount }, () => [])
-    group.forEach(([key, field]) => {
-      const c = Math.min(field.column ?? 0, colCount - 1)
-      cols[c].push([key, field])
-    })
+    // Sort by column index so fields appear in designer order
+    const sorted = [...group].sort((a, b) => (a[1].column ?? 0) - (b[1].column ?? 0))
+
     return (
-      <div style={{ display: 'flex', gap: '1rem', marginBottom: '1rem' }}>
-        {cols.map((colFields, ci) => (
-          <div key={ci} style={{ flex: 1, minWidth: 0 }}>
-            {colFields.map(([key, field]) => (
-              <div key={key} style={{ marginBottom: '1rem' }}>{renderField(key, field)}</div>
-            ))}
+      <div style={{
+        display: 'grid',
+        gridTemplateColumns: `repeat(${colCount}, 1fr)`,
+        gap: '1rem',
+        marginBottom: '1rem',
+      }}>
+        {sorted.map(([key, field]) => (
+          <div
+            key={key}
+            style={{
+              gridColumn: `span ${Math.min(getColSpan(field), colCount)}`,
+            }}
+          >
+            {renderField(key, field)}
           </div>
         ))}
       </div>

@@ -7,6 +7,7 @@ interface CIType {
   name: string
   key: string
   icon: string
+  is_active?: boolean
   field_schema: FieldSchemaEntry[]
 }
 
@@ -49,9 +50,10 @@ const STATUS_OPTIONS = ['active', 'maintenance', 'retired', 'decommissioned']
 export const CItemList: React.FC = () => {
   const queryClient = useQueryClient()
   const [selectedTypeId, setSelectedTypeId] = useState<number | null>(null)
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('active')
   const [searchQuery, setSearchQuery] = useState('')
   const [showForm, setShowForm] = useState(false)
+  const [viewMode, setViewMode] = useState<'edit' | 'view'>('edit')
   const [editingItem, setEditingItem] = useState<CIItem | null>(null)
   const [error, setError] = useState('')
   const [success, setSuccess] = useState('')
@@ -135,6 +137,12 @@ export const CItemList: React.FC = () => {
 
   const currentType = useMemo(() => types?.find(t => t.id === selectedTypeId), [types, selectedTypeId])
 
+  // For viewing/editing an item, resolve its type even if no filter is set
+  const itemType = useMemo(() => {
+    if (!editingItem || !types) return null
+    return types.find(t => t.id === editingItem.type_id) || null
+  }, [editingItem, types])
+
   const resetForm = () => {
     setFormName('')
     setFormStatus('active')
@@ -159,6 +167,18 @@ export const CItemList: React.FC = () => {
     setFormName(item.name)
     setFormStatus(item.status)
     setFormData({ ...item.ci_data })
+    setViewMode('edit')
+    setShowForm(true)
+    setShowHistory(false)
+    setError('')
+  }
+
+  const handleView = (item: CIItem) => {
+    setEditingItem(item)
+    setFormName(item.name)
+    setFormStatus(item.status)
+    setFormData({ ...item.ci_data })
+    setViewMode('view')
     setShowForm(true)
     setShowHistory(false)
     setError('')
@@ -305,8 +325,8 @@ export const CItemList: React.FC = () => {
               value={selectedTypeId ?? ''}
               onChange={e => setSelectedTypeId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">All Types</option>
-              {types?.map(t => (
+              <option value="">Active Types Only</option>
+              {types?.filter(t => t.is_active !== false).map(t => (
                 <option key={t.id} value={t.id}>{t.icon ? t.icon + ' ' : ''}{t.name}</option>
               ))}
             </select>
@@ -338,56 +358,84 @@ export const CItemList: React.FC = () => {
       </div>
 
       {/* Create/Edit form */}
-      {showForm && currentType && (
+      {showForm && (editingItem ? itemType : currentType) && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="card-title">
-            {editingItem ? `Edit: ${currentType.name}` : `New: ${currentType.name}`}
+            {viewMode === 'view'
+              ? `View: ${(itemType || currentType)!.name}`
+              : editingItem
+                ? `Edit: ${(itemType || currentType)!.name}`
+                : `New: ${(currentType!)!.name}`}
           </h3>
 
           <div className="form-group">
             <label className="form-label">Name *</label>
-            <input
-              type="text"
-              className="form-input"
-              value={formName}
-              onChange={e => setFormName(e.target.value)}
-              placeholder="e.g. web-prod-01"
-            />
+            {viewMode === 'view' ? (
+              <div style={{ padding: '0.5rem', fontSize: '1rem', fontWeight: 500 }}>{formName}</div>
+            ) : (
+              <input
+                type="text"
+                className="form-input"
+                value={formName}
+                onChange={e => setFormName(e.target.value)}
+                placeholder="e.g. web-prod-01"
+              />
+            )}
           </div>
 
           <div className="form-group">
             <label className="form-label">Status</label>
-            <select
-              className="form-input"
-              value={formStatus}
-              onChange={e => setFormStatus(e.target.value)}
-            >
-              {STATUS_OPTIONS.map(s => (
-                <option key={s} value={s}>{s}</option>
-              ))}
-            </select>
+            {viewMode === 'view' ? (
+              <div style={{ padding: '0.5rem 0' }}>{statusBadge(formStatus)}</div>
+            ) : (
+              <select
+                className="form-input"
+                value={formStatus}
+                onChange={e => setFormStatus(e.target.value)}
+              >
+                {STATUS_OPTIONS.map(s => (
+                  <option key={s} value={s}>{s}</option>
+                ))}
+              </select>
+            )}
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(250px, 1fr))', gap: '0.75rem', marginTop: '1rem' }}>
-            {currentType.field_schema?.map(field => (
+            {((itemType || currentType)!.field_schema || []).map(field => (
               <div key={field.key} className="form-group" style={{ marginBottom: 0 }}>
                 <label className="form-label">
                   {field.label}{field.required && ' *'}
                 </label>
-                {renderFieldInput(field, formData[field.key])}
+                {viewMode === 'view' ? (
+                  <div style={{ padding: '0.5rem', fontSize: '0.85rem', color: formData[field.key] ? '#333' : '#999' }}>
+                    {formData[field.key] ?? '—'}
+                  </div>
+                ) : (
+                  renderFieldInput(field, formData[field.key])
+                )}
               </div>
             ))}
           </div>
 
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
-            <button
-              className="btn btn-primary"
-              onClick={handleSubmit}
-              disabled={createMutation.isPending || updateMutation.isPending}
-            >
-              {createMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingItem ? 'Update' : 'Create')}
-            </button>
-            <button className="btn btn-secondary" onClick={() => { setShowForm(false); resetForm() }}>Cancel</button>
+            {viewMode === 'edit' && (
+              <>
+                <button
+                  className="btn btn-primary"
+                  onClick={handleSubmit}
+                  disabled={createMutation.isPending || updateMutation.isPending}
+                >
+                  {createMutation.isPending || updateMutation.isPending ? 'Saving...' : (editingItem ? 'Update' : 'Create')}
+                </button>
+                <button className="btn btn-secondary" onClick={() => { setShowForm(false); resetForm() }}>Cancel</button>
+              </>
+            )}
+            {viewMode === 'view' && editingItem && (
+              <>
+                <button className="btn btn-primary" onClick={() => setViewMode('edit')}>Edit</button>
+                <button className="btn btn-secondary" onClick={() => { setShowForm(false); resetForm() }}>Close</button>
+              </>
+            )}
           </div>
         </div>
       )}
@@ -483,7 +531,8 @@ export const CItemList: React.FC = () => {
                   )}
                 </div>
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(item)}>Edit</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => handleView(item)}>View</button>
+                  <button className="btn btn-sm btn-primary" onClick={() => handleEdit(item)}>Edit</button>
                   <button className="btn btn-sm" style={{ color: '#dc3545' }} onClick={() => handleDelete(item)}>Delete</button>
                 </div>
               </div>

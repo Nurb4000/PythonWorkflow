@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { cmdbApi } from '../services/api'
 import { useAuth } from '../components/Auth'
@@ -62,6 +62,7 @@ export const CITypeManager: React.FC = () => {
   const [success, setSuccess] = useState('')
   const [optionInput, setOptionInput] = useState<Record<number, string>>({})
   const [showTemplates, setShowTemplates] = useState(false)
+  const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active')
 
   const { data: types, isLoading } = useQuery({
     queryKey: ['cmdb-types'],
@@ -101,13 +102,30 @@ export const CITypeManager: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => cmdbApi.deleteType(id),
+    onSuccess: (data: any) => {
+      queryClient.invalidateQueries({ queryKey: ['cmdb-types'] })
+      queryClient.invalidateQueries({ queryKey: ['cmdb-items'] })
+      const msg = data?.items_deactivated > 0
+        ? `CI type deactivated. ${data.items_deactivated} item(s) set to retired.`
+        : 'CI type deactivated'
+      setSuccess(msg)
+      setTimeout(() => setSuccess(''), 5000)
+    },
+    onError: (err: any) => {
+      setError(err.response?.data?.detail || 'Failed to deactivate CI type')
+      setTimeout(() => setError(''), 5000)
+    },
+  })
+
+  const reactivateMutation = useMutation({
+    mutationFn: (id: number) => cmdbApi.updateType(id, { is_active: true }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['cmdb-types'] })
-      setSuccess('CI type deactivated')
+      setSuccess('CI type reactivated')
       setTimeout(() => setSuccess(''), 3000)
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Failed to delete CI type')
+      setError(err.response?.data?.detail || 'Failed to reactivate CI type')
       setTimeout(() => setError(''), 5000)
     },
   })
@@ -185,12 +203,11 @@ export const CITypeManager: React.FC = () => {
 
   const handleDelete = (type: CIType) => {
     if (!isAdmin) return
+    let msg = `Deactivate CI type "${type.name}"?`
     if (type.item_count > 0) {
-      setError(`Cannot delete "${type.name}" — it has ${type.item_count} item(s). Delete or reassign items first.`)
-      setTimeout(() => setError(''), 5000)
-      return
+      msg += `\n\nThis type has ${type.item_count} item(s). They will also be set to "retired" status.`
     }
-    if (confirm(`Deactivate CI type "${type.name}"?`)) {
+    if (confirm(msg)) {
       deleteMutation.mutate(type.id)
     }
   }
@@ -241,6 +258,13 @@ export const CITypeManager: React.FC = () => {
 
   if (isLoading) return <div className="loading">Loading CI types...</div>
 
+  const filteredTypes = useMemo(() => {
+    if (!types) return []
+    if (activeFilter === 'active') return types.filter(t => t.is_active !== false)
+    if (activeFilter === 'inactive') return types.filter(t => t.is_active === false)
+    return types
+  }, [types, activeFilter])
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
@@ -250,6 +274,21 @@ export const CITypeManager: React.FC = () => {
             + New CI Type
           </button>
         )}
+      </div>
+
+      {/* Active/All filter */}
+      <div style={{ marginBottom: '1rem', display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+        <span style={{ fontSize: '0.9rem', color: '#6c757d' }}>Show:</span>
+        <select
+          className="form-select"
+          value={activeFilter}
+          onChange={e => setActiveFilter(e.target.value as any)}
+          style={{ width: 'auto', minWidth: '180px', fontSize: '0.9rem' }}
+        >
+          <option value="active">Active ({types?.filter(t => t.is_active !== false).length || 0})</option>
+          <option value="inactive">Inactive ({types?.filter(t => t.is_active === false).length || 0})</option>
+          <option value="all">All ({types?.length || 0})</option>
+        </select>
       </div>
 
       {error && <div className="error" style={{ marginBottom: '1rem' }}>{error}</div>}
@@ -426,8 +465,9 @@ export const CITypeManager: React.FC = () => {
         </div>
       )}
 
-      {/* Templates section */}
-      <div className="card" style={{ marginBottom: '1.5rem' }}>
+      {/* Templates section — hidden when form is open */}
+      {!showForm && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <h3 className="card-title">Pre-built Templates</h3>
           <button
@@ -473,10 +513,11 @@ export const CITypeManager: React.FC = () => {
           </div>
         )}
       </div>
+        )}
 
       <div style={{ display: 'grid', gap: '1rem' }}>
-        {types?.map(type => (
-          <div key={type.id} className="card" style={{ position: 'relative' }}>
+        {filteredTypes.map(type => (
+          <div key={type.id} className="card" style={{ position: 'relative', opacity: type.is_active === false ? 0.65 : 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
               <div>
                 <h3 style={{ margin: '0 0 0.25rem 0' }}>
@@ -504,8 +545,24 @@ export const CITypeManager: React.FC = () => {
               </div>
               {isAdmin && (
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
-                  <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(type)}>Edit</button>
-                  <button className="btn btn-sm" style={{ color: '#dc3545' }} onClick={() => handleDelete(type)}>Delete</button>
+                  {type.is_active === false ? (
+                    <button
+                      className="btn btn-sm btn-success"
+                      onClick={() => {
+                        if (confirm(`Reactivate CI type "${type.name}"?`)) {
+                          reactivateMutation.mutate(type.id)
+                        }
+                      }}
+                      disabled={reactivateMutation.isPending}
+                    >
+                      Reactivate
+                    </button>
+                  ) : (
+                    <>
+                      <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(type)}>Edit</button>
+                      <button className="btn btn-sm" style={{ color: '#dc3545' }} onClick={() => handleDelete(type)}>Deactivate</button>
+                    </>
+                  )}
                 </div>
               )}
             </div>
@@ -513,10 +570,16 @@ export const CITypeManager: React.FC = () => {
         ))}
       </div>
 
-      {types && types.length === 0 && !showForm && (
+      {filteredTypes.length === 0 && !showForm && (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#6c757d' }}>
-          <p>No CI types defined yet.</p>
-          {isAdmin && <p>Click "+ New CI Type" to create your first type (e.g. Server, Network Device, Application).</p>}
+          {activeFilter === 'active' && types && types.length > 0
+            ? <p>No active CI types. Switch to "All" or "Inactive" to see them.</p>
+            : activeFilter === 'inactive' && types && types.length > 0
+              ? <p>No inactive CI types.</p>
+              : <>
+                  <p>No CI types defined yet.</p>
+                  {isAdmin && <p>Click "+ New CI Type" to create your first type (e.g. Server, Network Device, Application).</p>}
+                </>}
         </div>
       )}
     </div>

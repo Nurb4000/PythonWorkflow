@@ -1,0 +1,54 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-01-01T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>4 Column Demo</Name>
+    <Description>Demonstrates a 4-column entry form with Info Text labels. Submitter fills the intake form in the portal; data passes through and pre-fills the staff review task.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="4 Column Demo" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="😊" order="6" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+    <EntryForm refId="form-entry" />
+
+    <Steps>
+      <Step id="step-1" type="form" position="0" isEnabled="true">
+        <Title>Intake Form</Title>
+        <Description>Submitter fills out the 4-column intake form</Description>
+        <Definition>{"form_id":"form-entry","next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <Step id="step-2" type="human_task" position="1" isEnabled="true">
+        <Title>Review Intake</Title>
+        <Description>Staff member reviews the submitted intake form. Fields are pre-filled from the entry form data.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-staff","assigned_group_id":"group-staff","description":"The fields below were pre-filled automatically from the submitter's entry form."}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules />
+    <Permissions>
+      <Group refId="group-staff" />
+    </Permissions>
+  </Workflow>
+
+  <Forms>
+    <Form id="form-entry" name="4-Column Intake Form" isPublished="true" environment="test">
+      <Description>4-column layout intake form with Info Text labels for section headers.</Description>
+      <Schema>{"type":"object","columns":4,"properties":{"intro":{"name":"intro","type":"info","title":"4-Column Intake Form","content":"This entry form uses a 4-column grid. Info Text elements like this one span the full width of the form.","text_align":"center","required":false,"source":"form"},"first_name":{"name":"first_name","type":"string","title":"First Name","required":true,"column":0,"data_size":"medium","source":"form"},"last_name":{"name":"last_name","type":"string","title":"Last Name","required":true,"column":1,"data_size":"medium","source":"form"},"email":{"name":"email","type":"email","title":"Email","required":true,"column":2,"data_size":"medium","source":"form"},"phone":{"name":"phone","type":"string","title":"Phone","required":false,"column":3,"data_size":"medium","source":"form"},"section2":{"name":"section2","type":"info","title":"Request Details","content":"The next row also uses all four columns: a dropdown, a dropdown, a dropdown, and a number.","text_align":"left","required":false,"source":"form"},"department":{"name":"department","type":"select","title":"Department","required":true,"column":0,"options":["Finance","HR","IT","Operations","Sales"],"source":"form"},"request_type":{"name":"request_type","type":"select","title":"Request Type","required":true,"column":1,"options":["New Request","Change Request","Incident","Approval"],"source":"form"},"priority":{"name":"priority","type":"select","title":"Priority","required":true,"column":2,"options":["Low","Medium","High","Urgent"],"source":"form"},"amount":{"name":"amount","type":"number","title":"Amount","required":false,"column":3,"source":"form"},"notes":{"name":"notes","type":"textarea","title":"Details / Notes","required":false,"column":0,"data_size":"long","source":"form"}},"required":["first_name","last_name","email","department","request_type","priority"]}</Schema>
+    </Form>
+
+    <Form id="form-staff" name="Staff Review Form" isPublished="true" environment="test">
+      <Description>2-column review form that is pre-filled from the entry form data pass-through.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"review_heading":{"name":"review_heading","type":"info","title":"Staff Review","content":"These fields were pre-filled automatically from the submitter's entry form (data pass-through).","text_align":"left","required":false,"source":"form"},"first_name":{"name":"first_name","type":"string","title":"First Name","required":false,"column":0,"data_size":"medium","source":"form"},"last_name":{"name":"last_name","type":"string","title":"Last Name","required":false,"column":1,"data_size":"medium","source":"form"},"email":{"name":"email","type":"email","title":"Email","required":false,"column":0,"data_size":"medium","source":"form"},"phone":{"name":"phone","type":"string","title":"Phone","required":false,"column":1,"data_size":"medium","source":"form"},"department":{"name":"department","type":"string","title":"Department","required":false,"column":0,"data_size":"medium","source":"form"},"request_type":{"name":"request_type","type":"string","title":"Request Type","required":false,"column":1,"data_size":"medium","source":"form"},"priority":{"name":"priority","type":"string","title":"Priority","required":false,"column":0,"data_size":"medium","source":"form"},"amount":{"name":"amount","type":"number","title":"Amount","required":false,"column":1,"source":"form"},"notes":{"name":"notes","type":"textarea","title":"Details / Notes (from entry form)","required":false,"column":0,"data_size":"long","source":"form"},"review_notes":{"name":"review_notes","type":"textarea","title":"Staff Review Notes","required":false,"column":1,"data_size":"long","source":"form"}},"required":[]}</Schema>
+    </Form>
+  </Forms>
+
+  <Groups>
+    <Group id="group-staff" name="Staff" groupType="internal" isActive="true">
+      <Description>Staff members authorized to review intake submissions.</Description>
+    </Group>
+  </Groups>
+</WorkflowPackage>
