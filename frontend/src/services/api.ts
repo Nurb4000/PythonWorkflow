@@ -260,4 +260,19 @@ export const cmdbApi = {
   applyTemplate: (key: string) => api.post(`/cmdb/templates/${key}/apply`),
 }
 
+// Service Management APIs (SERVICE_MANAGEMENT_PLAN Phase 1)
+export const servicesApi = {
+  // Services
+  listServices: (params?: any) => api.get('/services/services', { params }),
+  getService: (id: number) => api.get(`/services/services/${id}`),
+  createService: (data: any) => api.post('/services/services', data),
+  updateService: (id: number, data: any) => api.put(`/services/services/${id}`, data),
+  deleteService: (id: number) => api.delete(`/services/services/${id}`),
+  // Categories
+  listCategories: () => api.get('/services/categories'),
+  createCategory: (data: any) => api.post('/services/categories', data),
+  updateCategory: (id: number, data: any) => api.put(`/services/categories/${id}`, data),
+  deleteCategory: (id: number) => api.delete(`/services/categories/${id}`),
+}
+
 export default api
