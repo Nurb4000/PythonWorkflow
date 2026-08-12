@@ -25,6 +25,7 @@ import { Marketplace } from './pages/Marketplace'
 import { CITypeManager } from './pages/CITypeManager'
 import { CItemList } from './pages/CItemList'
 import { MySubmissions } from './pages/MySubmissions'
+import { ServiceManager } from './pages/ServiceManager'
 
 const API_URL = '/api'
 
@@ -121,6 +122,7 @@ const RoleAwareNav: React.FC = () => {
           <Link to="/admin/runs" onClick={() => navigate('/admin/runs')}>Runs</Link>
           <Link to="/admin/uploads" onClick={() => navigate('/admin/uploads')}>Uploads</Link>
           <Link to="/admin/users" onClick={() => navigate('/admin/users')}>Users</Link>
+          <Link to="/admin/services" onClick={() => navigate('/admin/services')}>Services</Link>
           <Link to="/settings" onClick={() => navigate('/settings')}>Settings</Link>
           <Link to="/admin/fields" onClick={() => navigate('/admin/fields')}>Field Manager</Link>
         </Dropdown>
@@ -382,6 +384,7 @@ const AppContent: React.FC = () => {
           <Route path="/admin/runs" element={<RoleRoute roles={['admin']}><WorkflowRunsAdmin /></RoleRoute>} />
           <Route path="/admin/uploads" element={<RoleRoute roles={['admin']}><UploadsAdmin /></RoleRoute>} />
           <Route path="/admin/tasks" element={<RoleRoute roles={['admin']}><AdminTaskDashboard /></RoleRoute>} />
+          <Route path="/admin/services" element={<RoleRoute roles={['admin']}><ServiceManager /></RoleRoute>} />
           <Route path="/tasks" element={<RoleRoute roles={['admin', 'developer', 'staff']}><RoleTaskDashboard role="developer" title="Tasks" /></RoleRoute>} />
           <Route path="/my-tasks" element={<ProtectedRoute><RoleTaskDashboard role="user" title="My Tasks" /></ProtectedRoute>} />
           <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetail /></ProtectedRoute>} />
