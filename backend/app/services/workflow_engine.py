@@ -148,6 +148,10 @@ class WorkflowEngine:
         # P3.3: Entry form — only update if explicitly provided in request
         if "entry_form_id" in workflow_data.model_fields_set:
             workflow.entry_form_id = workflow_data.entry_form_id
+
+        # SERVICE_MANAGEMENT_PLAN Phase 1.4: service association
+        if "service_id" in workflow_data.model_fields_set:
+            workflow.service_id = workflow_data.service_id
         
         # P7: Manual version increment
         if workflow_data.manual_version_increment:

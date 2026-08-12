@@ -55,6 +55,7 @@ class WorkflowUpdate(BaseModel):
     portal_visible: Optional[bool] = None
     portal_link_url: Optional[str] = None
     entry_form_id: Optional[int] = None  # P3.3
+    service_id: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 1.4
     manual_version_increment: bool = False  # P7: Manual version bump
 
 

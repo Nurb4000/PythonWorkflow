@@ -53,6 +53,7 @@ def _workflow_to_response(workflow: Workflow) -> dict:
         "portal_order": workflow.portal_order or 0,
         "portal_visible": workflow.portal_visible,
         "entry_form_id": workflow.entry_form_id,
+        "service_id": workflow.service_id,
         "created_at": workflow.created_at,
         "updated_at": workflow.updated_at,
         "steps": [_step_to_dict(s) for s in workflow.steps],
@@ -102,6 +103,7 @@ async def list_workflows(
         select(Workflow.id, Workflow.name, Workflow.description, Workflow.is_active, Workflow.created_at,
                Workflow.is_published, Workflow.environment,
                Workflow.portal_icon, Workflow.portal_order, Workflow.portal_visible,
+               Workflow.service_id,
                func.count(WorkflowStep.id).label('steps_count'),
                func.count(WorkflowRun.id).label('runs_count'))
         .outerjoin(WorkflowStep, WorkflowStep.workflow_id == Workflow.id)
@@ -175,6 +177,7 @@ async def list_workflows(
             "portal_icon": row.portal_icon or "",
             "portal_order": row.portal_order or 0,
             "portal_visible": row.portal_visible,
+            "service_id": row.service_id,
             "steps_count": row.steps_count,
             "runs_count": row.runs_count,
             "created_at": row.created_at,
