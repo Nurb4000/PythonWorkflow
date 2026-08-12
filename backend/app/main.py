@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services
 from app.services.scheduler import scheduler_service
 
 # Configure logging
@@ -94,6 +94,7 @@ app.include_router(sql_views.router, prefix="/sql-views", tags=["sql-views"])
 app.include_router(workflow_import_export.router, prefix="/workflows", tags=["workflow-import-export"])
 app.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace"])
 app.include_router(cmdb.router, prefix="/cmdb", tags=["cmdb"])
+app.include_router(services.router, prefix="/services", tags=["services"])
 
 
 async def create_default_admin():
