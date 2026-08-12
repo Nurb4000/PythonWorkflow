@@ -7,3 +7,4 @@ from app.models.sql_views import SQLView
 from app.models.email_trigger import EmailProcessingLog
 from app.models.marketplace import MarketplaceItem, SavedNodeTemplate
 from app.models.cmdb import CIType, ConfigurationItem, CIRelationship, CIHistory
+from app.models.services import Service, Category

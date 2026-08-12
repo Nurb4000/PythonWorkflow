@@ -29,6 +29,7 @@ class Workflow(Base):
     portal_order = Column(Integer, default=0, server_default="0")  # Sort order on the portal
     portal_visible = Column(Boolean, default=True, server_default=sa_text("true"))  # Show on the portal
     entry_form_id = Column(Integer, nullable=True)  # Form to show before triggering (P3.3)
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 1
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -36,6 +37,7 @@ class Workflow(Base):
     steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan")
     runs = relationship("WorkflowRun", back_populates="workflow")
     allowed_groups = relationship("Group", secondary=workflow_permissions, back_populates="workflows")
+    service = relationship("Service", back_populates="workflows")
     # entry_form relationship can be added later if needed (avoids circular import)
 
 
