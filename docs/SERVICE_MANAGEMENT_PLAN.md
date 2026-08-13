@@ -5,15 +5,16 @@
 | Phase | Status | Completed Items |
 |-------|--------|----------------|
 | **Phase 1 — Services Foundation** | ✅ COMPLETE | 1.1 DB models, 1.2 migration, 1.3 API router, 1.4 workflow PATCH extension, 1.5 Admin ServiceManager page, 1.6 WorkflowDetail service selector, 1.7 Catalog page, 1.8 Service Detail view |
-| **Phase 2 — Categories & Taxonomy** | ⏳ PENDING | Category model + API already implemented in Phase 1 (as part of ServiceManager). Remaining: 2.4 catalog grouping by category (done in ServiceCatalog). |
-| **Phase 3 — Priority Matrix & SLA** | ⏳ PENDING | |
-| **Phase 4 — Request Enhancements** | ⏳ PENDING | |
+| **Phase 2 — Categories & Taxonomy** | ✅ COMPLETE | Category model + API implemented in Phase 1. 2.4 catalog grouping by category done in ServiceCatalog. |
+| **Phase 3 — Priority Matrix & SLA** | ✅ COMPLETE | 3.1 Priority matrix API (system_settings), 3.2 SLA targets per service (custom_data editor in ServiceManager), 3.3 SLA display on Service Detail, 3.4 Priority selector on catalog submission, 3.5 workflow_runs priority + service_id columns with migration, 3.6 Priority Matrix admin settings page |
+| **Phase 4 — Request Enhancements** | ✅ COMPLETE | 4.1 service_id on workflow_runs (done), 4.2 catalog vs offerings coexistence (already implemented), 4.3 related services cross-linking (done in ServiceCatalog). |
 | **Phase 5 — SLA Monitoring** | ⏳ STRETCH | |
 | **Phase 6 — KB Integration** | ⏳ STRETCH | |
 
 ### Session Log
 
 - **2026-08-12**: Phase 1 complete. Created Service/Category models, Alembic migration, full CRUD API, Admin ServiceManager page with tabs, public ServiceCatalog with search/category filtering/detail view, and WorkflowDetail service selector. Committed in 7 incremental commits.
+- **2026-08-12**: Phase 3 complete. Added priority matrix API (get/set in system_settings), portal priority matrix endpoint, SLA targets editor in ServiceManager form, priority selection modal on catalog workflow submission, workflow_runs priority + service_id columns with Alembic migration, and Priority Matrix admin settings page with editable levels/colors. Committed in 3 incremental commits.
 
 ---
 
