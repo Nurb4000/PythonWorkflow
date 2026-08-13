@@ -1,5 +1,22 @@
 # ITIL-Aligned Service Management Plan
 
+## Progress
+
+| Phase | Status | Completed Items |
+|-------|--------|----------------|
+| **Phase 1 — Services Foundation** | ✅ COMPLETE | 1.1 DB models, 1.2 migration, 1.3 API router, 1.4 workflow PATCH extension, 1.5 Admin ServiceManager page, 1.6 WorkflowDetail service selector, 1.7 Catalog page, 1.8 Service Detail view |
+| **Phase 2 — Categories & Taxonomy** | ⏳ PENDING | Category model + API already implemented in Phase 1 (as part of ServiceManager). Remaining: 2.4 catalog grouping by category (done in ServiceCatalog). |
+| **Phase 3 — Priority Matrix & SLA** | ⏳ PENDING | |
+| **Phase 4 — Request Enhancements** | ⏳ PENDING | |
+| **Phase 5 — SLA Monitoring** | ⏳ STRETCH | |
+| **Phase 6 — KB Integration** | ⏳ STRETCH | |
+
+### Session Log
+
+- **2026-08-12**: Phase 1 complete. Created Service/Category models, Alembic migration, full CRUD API, Admin ServiceManager page with tabs, public ServiceCatalog with search/category filtering/detail view, and WorkflowDetail service selector. Committed in 7 incremental commits.
+
+---
+
 ## Overview
 
 Extend the workflow system with a **Services** layer so workflows can be organized under services, users can browse a service catalog, and admins get ITIL-aligned tooling — without locking into IT-only terminology. The concepts map to ITIL 4 but use generic names so HR, Finance, Operations, etc. can adopt them naturally.

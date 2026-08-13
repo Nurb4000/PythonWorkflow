@@ -425,3 +425,9 @@ code {
   border-radius: 3px;
   margin: 0 0.125rem;
 }
+
+/* Service catalog tile hover effect */
+.service-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 4px 15px rgba(0,0,0,0.15) !important;
+}

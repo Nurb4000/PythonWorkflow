@@ -23,6 +23,7 @@ interface CatalogService {
 
 interface ServiceDetail extends CatalogService {
   workflows: CatalogWorkflow[]
+  custom_data: Record<string, any>
 }
 
 interface CatalogWorkflow {
@@ -410,7 +411,7 @@ export const ServiceCatalog: React.FC = () => {
                 {catServices.map(svc => (
                   <div
                     key={svc.id}
-                    className="stat-card"
+                    className="stat-card service-tile"
                     style={{
                       display: 'flex',
                       flexDirection: 'column',
@@ -421,14 +422,6 @@ export const ServiceCatalog: React.FC = () => {
                       transition: 'transform 0.15s, box-shadow 0.15s',
                     }}
                     onClick={() => selectService(svc)}
-                    onMouseEnter={e => {
-                      (e.currentTarget as HTMLDivElement).style.transform = 'translateY(-2px)'
-                      (e.currentTarget as HTMLDivElement).style.boxShadow = '0 4px 15px rgba(0,0,0,0.15)'
-                    }}
-                    onMouseLeave={e => {
-                      (e.currentTarget as HTMLDivElement).style.transform = ''
-                      (e.currentTarget as HTMLDivElement).style.boxShadow = ''
-                    }}
                   >
                     <div style={{ display: 'flex', alignItems: 'center', gap: '0.75rem', width: '100%' }}>
                       <span style={{ fontSize: '2rem', lineHeight: 1 }}>{svc.icon || '📋'}</span>
