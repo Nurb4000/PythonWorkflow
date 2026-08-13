@@ -26,6 +26,7 @@ import { CITypeManager } from './pages/CITypeManager'
 import { CItemList } from './pages/CItemList'
 import { MySubmissions } from './pages/MySubmissions'
 import { ServiceManager } from './pages/ServiceManager'
+import { ServiceCatalog } from './pages/ServiceCatalog'
 
 const API_URL = '/api'
 
@@ -113,6 +114,7 @@ const RoleAwareNav: React.FC = () => {
       {/* ── Core links (always visible) ── */}
       {user.role === 'admin' && <Link to="/admin">Dashboard</Link>}
       {canSeeTasks && <Link to="/tasks">Tasks</Link>}
+      <Link to="/catalog">Catalog</Link>
       <Link to="/offerings">Offerings</Link>
       <Link to="/my-submissions">My Submissions</Link>
 
@@ -388,6 +390,7 @@ const AppContent: React.FC = () => {
           <Route path="/tasks" element={<RoleRoute roles={['admin', 'developer', 'staff']}><RoleTaskDashboard role="developer" title="Tasks" /></RoleRoute>} />
           <Route path="/my-tasks" element={<ProtectedRoute><RoleTaskDashboard role="user" title="My Tasks" /></ProtectedRoute>} />
           <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetail /></ProtectedRoute>} />
+          <Route path="/catalog" element={<ProtectedRoute><ServiceCatalog /></ProtectedRoute>} />
           <Route path="/offerings" element={<ProtectedRoute><Portal /></ProtectedRoute>} />
           <Route path="/my-submissions" element={<ProtectedRoute><MySubmissions /></ProtectedRoute>} />
           <Route path="/forms" element={<ProtectedRoute><FormDesigner /></ProtectedRoute>} />
