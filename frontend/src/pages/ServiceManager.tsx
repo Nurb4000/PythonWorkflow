@@ -59,6 +59,11 @@ export const ServiceManager: React.FC = () => {
   const [svcSuccess, setSvcSuccess] = useState('')
   const [svcIncludeInactive, setSvcIncludeInactive] = useState(false)
 
+  // SLA editor state (Phase 3)
+  const [slaEnabled, setSlaEnabled] = useState(false)
+  const [slaResponseHours, setSlaResponseHours] = useState({ '1': '', '2': '', '3': '', '4': '' })
+  const [slaResolutionHours, setSlaResolutionHours] = useState({ '1': '', '2': '', '3': '', '4': '' })
+
   // --- Categories state ---
   const [catShowForm, setCatShowForm] = useState(false)
   const [catEditingId, setCatEditingId] = useState<number | null>(null)
@@ -193,6 +198,9 @@ export const ServiceManager: React.FC = () => {
   // --- Services handlers ---
   const resetSvcForm = () => {
     setSvcFormData({ name: '', key: '', description: '', icon: '', category_id: '', owner_id: '', support_group_id: '', sort_order: 0 })
+    setSlaEnabled(false)
+    setSlaResponseHours({ '1': '', '2': '', '3': '', '4': '' })
+    setSlaResolutionHours({ '1': '', '2': '', '3': '', '4': '' })
   }
 
   const handleSvcSubmit = (e: React.FormEvent) => {
@@ -207,6 +215,26 @@ export const ServiceManager: React.FC = () => {
     if (svcFormData.category_id) payload.category_id = parseInt(svcFormData.category_id)
     if (svcFormData.owner_id) payload.owner_id = parseInt(svcFormData.owner_id)
     if (svcFormData.support_group_id) payload.support_group_id = parseInt(svcFormData.support_group_id)
+
+    // Build custom_data with SLA targets (Phase 3)
+    const customData: any = {}
+    if (slaEnabled) {
+      customData.sla_targets = {
+        response_hours: {
+          '1': slaResponseHours['1'] ? parseInt(slaResponseHours['1']) : null,
+          '2': slaResponseHours['2'] ? parseInt(slaResponseHours['2']) : null,
+          '3': slaResponseHours['3'] ? parseInt(slaResponseHours['3']) : null,
+          '4': slaResponseHours['4'] ? parseInt(slaResponseHours['4']) : null,
+        },
+        resolution_hours: {
+          '1': slaResolutionHours['1'] ? parseInt(slaResolutionHours['1']) : null,
+          '2': slaResolutionHours['2'] ? parseInt(slaResolutionHours['2']) : null,
+          '3': slaResolutionHours['3'] ? parseInt(slaResolutionHours['3']) : null,
+          '4': slaResolutionHours['4'] ? parseInt(slaResolutionHours['4']) : null,
+        },
+      }
+    }
+    payload.custom_data = customData
 
     if (svcEditingId) {
       svcUpdateMutation.mutate({ id: svcEditingId, data: payload })
@@ -227,6 +255,26 @@ export const ServiceManager: React.FC = () => {
       support_group_id: svc.support_group_id?.toString() || '',
       sort_order: svc.sort_order,
     })
+    const sla = (svc.custom_data || {}).sla_targets
+    if (sla) {
+      setSlaEnabled(true)
+      setSlaResponseHours({
+        '1': sla.response_hours?.['1'] ?? '',
+        '2': sla.response_hours?.['2'] ?? '',
+        '3': sla.response_hours?.['3'] ?? '',
+        '4': sla.response_hours?.['4'] ?? '',
+      })
+      setSlaResolutionHours({
+        '1': sla.resolution_hours?.['1'] ?? '',
+        '2': sla.resolution_hours?.['2'] ?? '',
+        '3': sla.resolution_hours?.['3'] ?? '',
+        '4': sla.resolution_hours?.['4'] ?? '',
+      })
+    } else {
+      setSlaEnabled(false)
+      setSlaResponseHours({ '1': '', '2': '', '3': '', '4': '' })
+      setSlaResolutionHours({ '1': '', '2': '', '3': '', '4': '' })
+    }
     setSvcShowForm(true)
   }
 
@@ -444,6 +492,78 @@ export const ServiceManager: React.FC = () => {
                     rows={3}
                   />
                 </div>
+
+                {/* SLA Targets Editor (Phase 3) */}
+                <div style={{ marginTop: '1.5rem', padding: '1rem', border: '1px solid #dee2e6', borderRadius: '6px' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                    <h4 style={{ margin: 0, fontSize: '1rem' }}>SLA Targets</h4>
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
+                      <input
+                        type="checkbox"
+                        checked={slaEnabled}
+                        onChange={e => setSlaEnabled(e.target.checked)}
+                      />
+                      Enable SLA tracking
+                    </label>
+                  </div>
+                  {slaEnabled && (
+                    <div>
+                      <p style={{ fontSize: '0.85rem', color: '#6c757d', margin: '0 0 0.75rem' }}>
+                        Set response and resolution time targets (in hours) for each priority level. Leave blank for no target.
+                      </p>
+                      <table className="table" style={{ marginBottom: 0 }}>
+                        <thead>
+                          <tr>
+                            <th>Priority</th>
+                            <th>Response (hours)</th>
+                            <th>Resolution (hours)</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {[
+                            { id: '1', name: 'Critical', color: '#dc3545' },
+                            { id: '2', name: 'High', color: '#fd7e14' },
+                            { id: '3', name: 'Medium', color: '#ffc107' },
+                            { id: '4', name: 'Low', color: '#28a745' },
+                          ].map((lvl: any) => (
+                            <tr key={lvl.id}>
+                              <td>
+                                <span style={{
+                                  display: 'inline-block', width: '10px', height: '10px',
+                                  borderRadius: '50%', backgroundColor: lvl.color, marginRight: '6px'
+                                }} />
+                                {lvl.name}
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  className="form-input"
+                                  style={{ width: '100px' }}
+                                  value={slaResponseHours[lvl.id]}
+                                  onChange={e => setSlaResponseHours({ ...slaResponseHours, [lvl.id]: e.target.value })}
+                                  placeholder="—"
+                                  min="0"
+                                />
+                              </td>
+                              <td>
+                                <input
+                                  type="number"
+                                  className="form-input"
+                                  style={{ width: '100px' }}
+                                  value={slaResolutionHours[lvl.id]}
+                                  onChange={e => setSlaResolutionHours({ ...slaResolutionHours, [lvl.id]: e.target.value })}
+                                  placeholder="—"
+                                  min="0"
+                                />
+                              </td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </div>
+
                 <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
                   <button type="submit" className="btn btn-success" disabled={svcCreateMutation.isPending || svcUpdateMutation.isPending}>
                     {svcEditingId ? 'Update Service' : 'Create Service'}

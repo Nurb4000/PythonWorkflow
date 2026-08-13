@@ -111,8 +111,8 @@ export const adminApi = {
 // Portal APIs
 export const portalApi = {
   listWorkflows: () => api.get('/portal/workflows'),
-  runWorkflow: (workflowId: number, inputData: any = {}) =>
-    api.post(`/portal/workflows/${workflowId}/run`, inputData),
+  runWorkflow: (workflowId: number, inputData: any = {}, priority?: number | null) =>
+    api.post(`/portal/workflows/${workflowId}/run`, inputData, { params: priority !== undefined && priority !== null ? { priority } : undefined }),
   myRuns: () => api.get('/portal/my-runs'),
   myTasks: () => api.get('/portal/my-tasks')  // P3.3
 }
@@ -273,6 +273,13 @@ export const servicesApi = {
   createCategory: (data: any) => api.post('/services/categories', data),
   updateCategory: (id: number, data: any) => api.put(`/services/categories/${id}`, data),
   deleteCategory: (id: number) => api.delete(`/services/categories/${id}`),
+}
+
+// Priority Matrix API (SERVICE_MANAGEMENT_PLAN Phase 3)
+export const priorityApi = {
+  getMatrix: () => api.get('/settings/priority-matrix'),
+  updateMatrix: (data: any) => api.put('/settings/priority-matrix', data),
+  getPortalMatrix: () => api.get('/portal/priority-matrix'),
 }
 
 export default api

@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { servicesApi, portalApi } from '../services/api'
+import { servicesApi, portalApi, priorityApi } from '../services/api'
 import { FormRenderer } from '../components/FormRenderer'
 import { useAuth } from '../components/Auth'
 
@@ -53,6 +53,11 @@ export const ServiceCatalog: React.FC = () => {
   const [toast, setToast] = useState<string | null>(null)
   const [entryFormWorkflow, setEntryFormWorkflow] = useState<CatalogWorkflow | null>(null)
 
+  // Priority selection (Phase 3)
+  const [priorityLevels, setPriorityLevels] = useState<any[]>([])
+  const [selectedPriority, setSelectedPriority] = useState<number | null>(null)
+  const [showPriorityModal, setShowPriorityModal] = useState<CatalogWorkflow | null>(null)
+
   useEffect(() => {
     if (!toast) return
     const t = setTimeout(() => setToast(null), 4000)
@@ -73,6 +78,13 @@ export const ServiceCatalog: React.FC = () => {
   useEffect(() => {
     loadServices()
   }, [loadServices])
+
+  // Load priority matrix (Phase 3)
+  useEffect(() => {
+    priorityApi.getPortalMatrix().then(res => {
+      setPriorityLevels(res.data.levels || [])
+    }).catch(() => {})
+  }, [])
 
   const loadServiceDetail = async (serviceId: number) => {
     setDetailLoading(true)
@@ -97,7 +109,7 @@ export const ServiceCatalog: React.FC = () => {
     setDetail(null)
   }
 
-  const runWorkflow = async (wf: CatalogWorkflow) => {
+  const runWorkflow = async (wf: CatalogWorkflow, priority?: number | null) => {
     if (wf.entry_form_id) {
       setEntryFormWorkflow(wf)
       return
@@ -105,12 +117,33 @@ export const ServiceCatalog: React.FC = () => {
 
     setRunning(wf.id)
     try {
-      const response = await portalApi.runWorkflow(wf.id, {})
+      const response = await portalApi.runWorkflow(wf.id, {}, priority)
       setToast(`Started "${wf.name}" (run #${response.data.run_id})`)
     } catch (error: any) {
       setToast(error?.response?.data?.detail || 'Failed to start workflow')
     } finally {
       setRunning(null)
+    }
+  }
+
+  const initiateWorkflow = (wf: CatalogWorkflow) => {
+    const hasSla = detail && detail.custom_data?.sla_targets && priorityLevels.length > 0
+    if (hasSla) {
+      setSelectedPriority(null)
+      setShowPriorityModal(wf)
+    } else {
+      runWorkflow(wf)
+    }
+  }
+
+  const submitEntryForm = async (data: Record<string, any>) => {
+    if (!entryFormWorkflow) return
+    try {
+      const response = await portalApi.runWorkflow(entryFormWorkflow.id, data)
+      setToast(`Started "${entryFormWorkflow.name}" (run #${response.data.run_id})`)
+      setEntryFormWorkflow(null)
+    } catch (error: any) {
+      setToast(error?.response?.data?.detail || 'Failed to start workflow')
     }
   }
 
@@ -213,6 +246,61 @@ export const ServiceCatalog: React.FC = () => {
           </div>
         )}
 
+        {/* Priority selection modal (Phase 3) */}
+        {showPriorityModal && (
+          <div style={{
+            position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+            background: 'rgba(0,0,0,0.5)', display: 'flex',
+            alignItems: 'center', justifyContent: 'center', zIndex: 1000
+          }} onClick={() => setShowPriorityModal(null)}>
+            <div className="card" style={{ maxWidth: '420px', width: '94%' }} onClick={e => e.stopPropagation()}>
+              <h3 className="card-title">Select Priority</h3>
+              <p style={{ fontSize: '0.9rem', opacity: 0.7, marginBottom: '1rem' }}>
+                For "{showPriorityModal.name}"
+              </p>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem' }}>
+                {priorityLevels.map((lvl: any) => (
+                  <button
+                    key={lvl.id}
+                    className="btn"
+                    style={{
+                      justifyContent: 'flex-start',
+                      borderLeft: `4px solid ${lvl.color || '#3498db'}`,
+                      backgroundColor: selectedPriority === lvl.id ? '#e8f4fd' : 'transparent',
+                      textAlign: 'left',
+                      padding: '0.75rem 1rem',
+                    }}
+                    onClick={() => setSelectedPriority(lvl.id)}
+                  >
+                    <span style={{
+                      display: 'inline-block', width: '12px', height: '12px',
+                      borderRadius: '50%', backgroundColor: lvl.color || '#3498db',
+                      marginRight: '0.75rem'
+                    }} />
+                    <strong>{lvl.name}</strong>
+                  </button>
+                ))}
+              </div>
+              <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.25rem' }}>
+                <button
+                  className="btn btn-primary"
+                  disabled={selectedPriority === null}
+                  onClick={() => {
+                    const wf = showPriorityModal
+                    setShowPriorityModal(null)
+                    runWorkflow(wf, selectedPriority)
+                  }}
+                >
+                  Submit Request
+                </button>
+                <button className="btn btn-secondary" onClick={() => setShowPriorityModal(null)}>
+                  Cancel
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
+
         {/* Detail header */}
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <button className="btn btn-sm btn-secondary" onClick={backToCatalog} style={{ marginBottom: '1rem' }}>
@@ -239,8 +327,8 @@ export const ServiceCatalog: React.FC = () => {
           </div>
         </div>
 
-        {/* SLA Targets display (Phase 3 prep) */}
-        {detail.custom_data?.sla_targets && (
+        {/* SLA Targets display (Phase 3) */}
+        {detail.custom_data?.sla_targets && priorityLevels.length > 0 && (
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <h3 className="card-title">Response & Resolution Targets</h3>
             <table className="table">
@@ -254,17 +342,18 @@ export const ServiceCatalog: React.FC = () => {
               <tbody>
                 {(() => {
                   const sla = detail.custom_data.sla_targets
-                  const levels = sla.priority_levels || [
-                    { id: 1, name: 'Critical' },
-                    { id: 2, name: 'High' },
-                    { id: 3, name: 'Medium' },
-                    { id: 4, name: 'Low' },
-                  ]
-                  return levels.map((lvl: any) => (
+                  return priorityLevels.map((lvl: any) => (
                     <tr key={lvl.id}>
-                      <td>{lvl.name}</td>
-                      <td>{sla.response_hours?.[lvl.id] ? `${sla.response_hours[lvl.id]}h` : '—'}</td>
-                      <td>{sla.resolution_hours?.[lvl.id] ? `${sla.resolution_hours[lvl.id]}h` : '—'}</td>
+                      <td>
+                        <span style={{
+                          display: 'inline-block', width: '10px', height: '10px',
+                          borderRadius: '50%', backgroundColor: lvl.color || '#3498db',
+                          marginRight: '6px'
+                        }} />
+                        {lvl.name}
+                      </td>
+                      <td>{sla.response_hours?.[String(lvl.id)] ? `${sla.response_hours[String(lvl.id)]}h` : '—'}</td>
+                      <td>{sla.resolution_hours?.[String(lvl.id)] ? `${sla.resolution_hours[String(lvl.id)]}h` : '—'}</td>
                     </tr>
                   ))
                 })()}
@@ -308,7 +397,7 @@ export const ServiceCatalog: React.FC = () => {
                     <button
                       className="btn btn-sm btn-primary"
                       style={{ marginLeft: 'auto' }}
-                      onClick={() => runWorkflow(wf)}
+                      onClick={() => initiateWorkflow(wf)}
                       disabled={running !== null}
                     >
                       {running === wf.id ? 'Submitting...' : 'Submit'}
