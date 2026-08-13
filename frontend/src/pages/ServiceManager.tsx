@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { servicesApi, authApi } from '../services/api'
+import { servicesApi, authApi, kbApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
 interface ServiceItem {
@@ -39,8 +39,8 @@ export const ServiceManager: React.FC = () => {
   const { user } = useAuth()
   const isAdmin = user?.role === 'admin'
 
-  // Tab state: services or categories
-  const [activeTab, setActiveTab] = useState<'services' | 'categories'>('services')
+  // Tab state: services, categories, or kb-articles
+  const [activeTab, setActiveTab] = useState<'services' | 'categories' | 'kb-articles'>('services')
 
   // --- Services state ---
   const [svcShowForm, setSvcShowForm] = useState(false)
@@ -77,6 +77,30 @@ export const ServiceManager: React.FC = () => {
   const [catError, setCatError] = useState('')
   const [catSuccess, setCatSuccess] = useState('')
 
+  // --- KB Articles state (Phase 6) ---
+  interface KbArticleItem {
+    id: number
+    title: string
+    slug: string
+    content: string
+    service_id: number | null
+    is_published: boolean
+    sort_order: number
+    service?: { id: number; name: string; key: string; icon: string }
+  }
+  const [kbShowForm, setKbShowForm] = useState(false)
+  const [kbEditingId, setKbEditingId] = useState<number | null>(null)
+  const [kbFormData, setKbFormData] = useState({
+    title: '',
+    slug: '',
+    content: '',
+    service_id: '',
+    sort_order: 0,
+    is_published: true,
+  })
+  const [kbError, setKbError] = useState('')
+  const [kbSuccess, setKbSuccess] = useState('')
+
   // --- Users & Groups for pickers ---
   const { data: users } = useQuery({
     queryKey: ['users'],
@@ -95,7 +119,7 @@ export const ServiceManager: React.FC = () => {
     queryKey: ['services', svcIncludeInactive],
     queryFn: () =>
       servicesApi.listServices({ include_inactive: svcIncludeInactive }).then(r => r.data as ServiceItem[]),
-    enabled: activeTab === 'services',
+    enabled: activeTab === 'services' || activeTab === 'kb-articles',
   })
 
   const svcCreateMutation = useMutation({
@@ -192,6 +216,57 @@ export const ServiceManager: React.FC = () => {
     onError: (err: any) => {
       setCatError(err.response?.data?.detail || 'Failed to deactivate category')
       setTimeout(() => setCatError(''), 5000)
+    },
+  })
+
+  // --- KB Articles queries/mutations (Phase 6) ---
+  const { data: kbArticles, isLoading: kbLoading } = useQuery({
+    queryKey: ['kb-articles'],
+    queryFn: () => kbApi.listArticles().then(r => r.data as KbArticleItem[]),
+    enabled: activeTab === 'kb-articles',
+  })
+
+  const kbCreateMutation = useMutation({
+    mutationFn: (data: any) => kbApi.createArticle(data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
+      setKbShowForm(false)
+      resetKbForm()
+      setKbSuccess('Article created successfully')
+      setTimeout(() => setKbSuccess(''), 3000)
+    },
+    onError: (err: any) => {
+      setKbError(err.response?.data?.detail || 'Failed to create article')
+      setTimeout(() => setKbError(''), 5000)
+    },
+  })
+
+  const kbUpdateMutation = useMutation({
+    mutationFn: ({ id, data }: { id: number; data: any }) => kbApi.updateArticle(id, data),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
+      setKbShowForm(false)
+      setKbEditingId(null)
+      resetKbForm()
+      setKbSuccess('Article updated successfully')
+      setTimeout(() => setKbSuccess(''), 3000)
+    },
+    onError: (err: any) => {
+      setKbError(err.response?.data?.detail || 'Failed to update article')
+      setTimeout(() => setKbError(''), 5000)
+    },
+  })
+
+  const kbDeleteMutation = useMutation({
+    mutationFn: (id: number) => kbApi.deleteArticle(id),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
+      setKbSuccess('Article deleted')
+      setTimeout(() => setKbSuccess(''), 3000)
+    },
+    onError: (err: any) => {
+      setKbError(err.response?.data?.detail || 'Failed to delete article')
+      setTimeout(() => setKbError(''), 5000)
     },
   })
 
@@ -331,6 +406,42 @@ export const ServiceManager: React.FC = () => {
     }
   }
 
+  // --- KB Articles handlers (Phase 6) ---
+  const resetKbForm = () => {
+    setKbFormData({ title: '', slug: '', content: '', service_id: '', sort_order: 0, is_published: true })
+  }
+
+  const handleKbSubmit = (e: React.FormEvent) => {
+    e.preventDefault()
+    const payload: any = {
+      title: kbFormData.title,
+      content: kbFormData.content,
+      sort_order: kbFormData.sort_order,
+      is_published: kbFormData.is_published,
+    }
+    if (kbFormData.slug) payload.slug = kbFormData.slug
+    if (kbFormData.service_id) payload.service_id = parseInt(kbFormData.service_id)
+
+    if (kbEditingId) {
+      kbUpdateMutation.mutate({ id: kbEditingId, data: payload })
+    } else {
+      kbCreateMutation.mutate(payload)
+    }
+  }
+
+  const editKbArticle = (article: KbArticleItem) => {
+    setKbEditingId(article.id)
+    setKbFormData({
+      title: article.title,
+      slug: article.slug,
+      content: article.content,
+      service_id: article.service_id?.toString() || '',
+      sort_order: article.sort_order,
+      is_published: article.is_published,
+    })
+    setKbShowForm(true)
+  }
+
   // --- Render ---
   if (!isAdmin) {
     return <div className="error">Access denied. Admin role required.</div>
@@ -370,12 +481,27 @@ export const ServiceManager: React.FC = () => {
         >
           Categories ({categories?.length || 0})
         </button>
+        <button
+          className="btn"
+          style={{
+            borderBottom: activeTab === 'kb-articles' ? '2px solid #3498db' : '2px solid transparent',
+            color: activeTab === 'kb-articles' ? '#3498db' : '#6c757d',
+            backgroundColor: 'transparent',
+            marginBottom: '-2px',
+            fontWeight: activeTab === 'kb-articles' ? 700 : 400,
+          }}
+          onClick={() => setActiveTab('kb-articles')}
+        >
+          KB Articles ({kbArticles?.length || 0})
+        </button>
       </div>
 
       {svcError && <div className="error">{svcError}</div>}
       {svcSuccess && <div className="success">{svcSuccess}</div>}
       {catError && <div className="error">{catError}</div>}
       {catSuccess && <div className="success">{catSuccess}</div>}
+      {kbError && <div className="error">{kbError}</div>}
+      {kbSuccess && <div className="success">{kbSuccess}</div>}
 
       {/* ==================== SERVICES TAB ==================== */}
       {activeTab === 'services' && (
@@ -751,6 +877,139 @@ export const ServiceManager: React.FC = () => {
                           >
                             {cat.is_active ? 'Deactivate' : 'Reactivate'}
                           </button>
+                        </div>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            )}
+          </div>
+        </>
+      )}
+
+      {/* ==================== KB ARTICLES TAB (Phase 6) ==================== */}
+      {activeTab === 'kb-articles' && (
+        <>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
+            <button
+              className="btn btn-primary"
+              onClick={() => { resetKbForm(); setKbEditingId(null); setKbShowForm(!kbShowForm) }}
+            >
+              {kbShowForm ? 'Cancel' : '+ New Article'}
+            </button>
+          </div>
+
+          {/* KB Article Create/Edit Form */}
+          {kbShowForm && (
+            <div className="card" style={{ marginBottom: '1.5rem' }}>
+              <h3 className="card-title">{kbEditingId ? 'Edit Article' : 'New Article'}</h3>
+              <form onSubmit={handleKbSubmit}>
+                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
+                  <div className="form-group">
+                    <label className="form-label">Title *</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={kbFormData.title}
+                      onChange={e => setKbFormData({ ...kbFormData, title: e.target.value })}
+                      required
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Slug (auto-generated if empty)</label>
+                    <input
+                      type="text"
+                      className="form-input"
+                      value={kbFormData.slug}
+                      onChange={e => setKbFormData({ ...kbFormData, slug: e.target.value })}
+                      placeholder="e.g. how-to-submit-request"
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Service (optional)</label>
+                    <select
+                      className="form-select"
+                      value={kbFormData.service_id}
+                      onChange={e => setKbFormData({ ...kbFormData, service_id: e.target.value })}
+                    >
+                      <option value="">— None —</option>
+                      {(services || []).map(svc => (
+                        <option key={svc.id} value={svc.id}>{svc.icon} {svc.name}</option>
+                      ))}
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Sort Order</label>
+                    <input
+                      type="number"
+                      className="form-input"
+                      value={kbFormData.sort_order}
+                      onChange={e => setKbFormData({ ...kbFormData, sort_order: parseInt(e.target.value) || 0 })}
+                    />
+                  </div>
+                </div>
+                <div className="form-group" style={{ marginTop: '1rem' }}>
+                  <label className="form-label">Content (Markdown supported)</label>
+                  <textarea
+                    className="form-textarea"
+                    value={kbFormData.content}
+                    onChange={e => setKbFormData({ ...kbFormData, content: e.target.value })}
+                    rows={8}
+                  />
+                </div>
+                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', alignItems: 'center' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
+                    <input
+                      type="checkbox"
+                      checked={kbFormData.is_published}
+                      onChange={e => setKbFormData({ ...kbFormData, is_published: e.target.checked })}
+                    />
+                    Published
+                  </label>
+                  <button type="submit" className="btn btn-success" disabled={kbCreateMutation.isPending || kbUpdateMutation.isPending}>
+                    {kbEditingId ? 'Update Article' : 'Create Article'}
+                  </button>
+                  <button type="button" className="btn btn-secondary" onClick={() => { setKbShowForm(false); resetKbForm(); setKbEditingId(null) }}>
+                    Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          )}
+
+          {/* KB Articles Table */}
+          <div className="card">
+            <h3 className="card-title">Knowledge Base Articles ({kbArticles?.length || 0})</h3>
+            {kbLoading ? <div className="loading">Loading articles...</div> : (
+              <table className="table">
+                <thead>
+                  <tr>
+                    <th>Title</th>
+                    <th>Slug</th>
+                    <th>Service</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {(!kbArticles || kbArticles.length === 0) && (
+                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#6c757d' }}>No articles yet. Create one to get started.</td></tr>
+                  )}
+                  {kbArticles?.map(article => (
+                    <tr key={article.id}>
+                      <td><strong>{article.title}</strong></td>
+                      <td><code>{article.slug}</code></td>
+                      <td>{article.service ? `${article.service.icon} ${article.service.name}` : '—'}</td>
+                      <td>
+                        <span className={`badge ${article.is_published ? 'badge-success' : 'badge-warning'}`}>
+                          {article.is_published ? 'Published' : 'Draft'}
+                        </span>
+                      </td>
+                      <td>
+                        <div style={{ display: 'flex', gap: '0.3rem' }}>
+                          <button className="btn btn-sm btn-primary" onClick={() => editKbArticle(article)}>Edit</button>
+                          <button className="btn btn-sm btn-danger" onClick={() => kbDeleteMutation.mutate(article.id)}>Delete</button>
                         </div>
                       </td>
                     </tr>

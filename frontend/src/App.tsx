@@ -27,6 +27,7 @@ import { CItemList } from './pages/CItemList'
 import { MySubmissions } from './pages/MySubmissions'
 import { ServiceManager } from './pages/ServiceManager'
 import { ServiceCatalog } from './pages/ServiceCatalog'
+import { KBArticleViewer } from './pages/KBArticleViewer'
 
 const API_URL = '/api'
 
@@ -391,6 +392,7 @@ const AppContent: React.FC = () => {
           <Route path="/my-tasks" element={<ProtectedRoute><RoleTaskDashboard role="user" title="My Tasks" /></ProtectedRoute>} />
           <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetail /></ProtectedRoute>} />
           <Route path="/catalog" element={<ProtectedRoute><ServiceCatalog /></ProtectedRoute>} />
+          <Route path="/kb/:slug" element={<ProtectedRoute><KBArticleViewer /></ProtectedRoute>} />
           <Route path="/offerings" element={<ProtectedRoute><Portal /></ProtectedRoute>} />
           <Route path="/my-submissions" element={<ProtectedRoute><MySubmissions /></ProtectedRoute>} />
           <Route path="/forms" element={<ProtectedRoute><FormDesigner /></ProtectedRoute>} />

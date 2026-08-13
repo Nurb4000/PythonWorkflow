@@ -1,6 +1,6 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
-import { servicesApi, portalApi, priorityApi } from '../services/api'
+import { servicesApi, portalApi, priorityApi, kbApi } from '../services/api'
 import { FormRenderer } from '../components/FormRenderer'
 import { useAuth } from '../components/Auth'
 
@@ -24,6 +24,7 @@ interface CatalogService {
 interface ServiceDetail extends CatalogService {
   workflows: CatalogWorkflow[]
   custom_data: Record<string, any>
+  kb_articles?: KbArticle[]
 }
 
 interface CatalogWorkflow {
@@ -34,6 +35,13 @@ interface CatalogWorkflow {
   steps_count: number
   runs_count: number
   entry_form_id?: number | null
+}
+
+interface KbArticle {
+  id: number
+  title: string
+  slug: string
+  content: string
 }
 
 export const ServiceCatalog: React.FC = () => {
@@ -57,6 +65,10 @@ export const ServiceCatalog: React.FC = () => {
   const [priorityLevels, setPriorityLevels] = useState<any[]>([])
   const [selectedPriority, setSelectedPriority] = useState<number | null>(null)
   const [showPriorityModal, setShowPriorityModal] = useState<CatalogWorkflow | null>(null)
+
+  // KB search results (Phase 6)
+  const [kbSearchResults, setKbSearchResults] = useState<KbArticle[]>([])
+  const [kbSearching, setKbSearching] = useState(false)
 
   useEffect(() => {
     if (!toast) return
@@ -85,6 +97,26 @@ export const ServiceCatalog: React.FC = () => {
       setPriorityLevels(res.data.levels || [])
     }).catch(() => {})
   }, [])
+
+  // KB search on catalog query (Phase 6)
+  useEffect(() => {
+    if (!searchTerm.trim() || searchTerm.length < 2) {
+      setKbSearchResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      setKbSearching(true)
+      try {
+        const res = await kbApi.listArticles({ search: searchTerm })
+        setKbSearchResults(res.data.slice(0, 5) as KbArticle[])
+      } catch {
+        setKbSearchResults([])
+      } finally {
+        setKbSearching(false)
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchTerm])
 
   const loadServiceDetail = async (serviceId: number) => {
     setDetailLoading(true)
@@ -362,6 +394,37 @@ export const ServiceCatalog: React.FC = () => {
           </div>
         )}
 
+        {/* KB Articles — Self-Help Resources (Phase 6) */}
+        {detail.kb_articles && detail.kb_articles.length > 0 && (
+          <div className="card" style={{ marginBottom: '1.5rem' }}>
+            <h3 className="card-title">Helpful Articles ({detail.kb_articles.length})</h3>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: '0.75rem', marginTop: '0.75rem' }}>
+              {detail.kb_articles.map(article => (
+                <div key={article.id} style={{
+                  padding: '0.75rem 1rem',
+                  border: '1px solid #dee2e6',
+                  borderRadius: '6px',
+                  backgroundColor: '#f8f9fa',
+                }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                    <span style={{ fontSize: '1.1rem' }}>📖</span>
+                    <strong style={{ cursor: 'pointer', color: '#3498db' }}
+                      onClick={() => navigate(`/kb/${article.slug}`)}
+                    >
+                      {article.title}
+                    </strong>
+                  </div>
+                  <p style={{ margin: '0.4rem 0 0 1.8rem', fontSize: '0.85rem', opacity: 0.7 }}>
+                    {article.content.length > 200
+                      ? article.content.substring(0, 200).replace(/[#*`]/g, '') + '...'
+                      : article.content.replace(/[#*`]/g, '')}
+                  </p>
+                </div>
+              ))}
+            </div>
+          </div>
+        )}
+
         {/* Available Workflows */}
         <div className="card">
           <h3 className="card-title">Available Requests ({detail.workflows?.length || 0})</h3>
@@ -470,6 +533,32 @@ export const ServiceCatalog: React.FC = () => {
               {cat.icon} {cat.label}
             </button>
           ))}
+        </div>
+      )}
+
+      {/* Helpful Articles from KB search (Phase 6) */}
+      {searchTerm.trim().length >= 2 && kbSearchResults.length > 0 && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <h3 className="card-title">Helpful Articles</h3>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+            {kbSearchResults.map(article => (
+              <div key={article.id} style={{
+                display: 'flex', alignItems: 'center', gap: '0.6rem',
+                padding: '0.5rem 0.75rem', borderRadius: '4px',
+                backgroundColor: '#f8f9fa', cursor: 'pointer',
+              }} onClick={() => navigate(`/kb/${article.slug}`)}>
+                <span>📖</span>
+                <div style={{ flex: 1 }}>
+                  <strong style={{ fontSize: '0.9rem' }}>{article.title}</strong>
+                  {article.service && (
+                    <span className="badge badge-info" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>
+                      {article.service.name}
+                    </span>
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
         </div>
       )}
 

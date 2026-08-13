@@ -284,4 +284,14 @@ export const priorityApi = {
   getPortalMatrix: () => api.get('/portal/priority-matrix'),
 }
 
+// Knowledge Base Articles API (SERVICE_MANAGEMENT_PLAN Phase 6)
+export const kbApi = {
+  listArticles: (params?: any) => api.get('/kb-articles', { params }),
+  getArticle: (id: number) => api.get(`/kb-articles/${id}`),
+  getArticleBySlug: (slug: string) => api.get(`/kb-articles/slug/${slug}`),
+  createArticle: (data: any) => api.post('/kb-articles', null, { params: data }),
+  updateArticle: (id: number, data: any) => api.put(`/kb-articles/${id}`, data),
+  deleteArticle: (id: number) => api.delete(`/kb-articles/${id}`),
+}
+
 export default api
