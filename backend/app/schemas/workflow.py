@@ -98,6 +98,8 @@ class WorkflowRunCreate(BaseModel):
     timeout_seconds: int = 0  # 0 means no timeout
     max_retries: int = 0  # Maximum retries per step
     failure_hooks: List[Dict[str, Any]] = []  # List of failure hook configurations
+    priority: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 3
+    service_id: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 4
 
 
 class WorkflowRunResponse(BaseModel):

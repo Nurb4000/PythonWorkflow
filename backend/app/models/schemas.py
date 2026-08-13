@@ -81,6 +81,8 @@ class WorkflowRun(Base):
     max_retries = Column(Integer, default=0)  # Maximum retries per step (0 = no retries)
     failure_hooks = Column(JSON, default=list)  # List of failure hook URLs/configs
     custom_data = Column(JSON, default=dict)  # Custom field extensions
+    priority = Column(Integer, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 3: priority level ID
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 4: track service on run
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

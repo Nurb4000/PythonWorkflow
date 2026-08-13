@@ -80,22 +80,23 @@ async def get_available_workflows(
 async def run_workflow(
     workflow_id: int,
     input_data: Optional[dict] = {},
+    priority: Optional[int] = None,
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """Run a workflow (users and staff only)"""
-    
+
     # Verify workflow is accessible
-    stmt = select(Workflow).where(Workflow.id == workflow_id)
+    stmt = select(Workflow).where(Workflow.id == workflow_id).options(selectinload(Workflow.service))
     result = await db.execute(stmt)
     workflow = result.scalar_one_or_none()
-    
+
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
-    
+
     if not workflow.is_active:
         raise HTTPException(status_code=400, detail="Workflow is not active")
-    
+
     # Check permissions
     if current_user.role in ["user", "staff"]:
         # Verify workflow is published and visible on the portal
@@ -118,19 +119,21 @@ async def run_workflow(
                     raise HTTPException(status_code=403, detail="You don't have permission to run this workflow")
             else:
                 raise HTTPException(status_code=403, detail="You don't have permission to run this workflow")
-    
+
     # Trigger the workflow
     from app.schemas.workflow import WorkflowRunCreate
     from app.services.workflow_engine import WorkflowEngine
-    
+
     engine = WorkflowEngine()
     run_data = WorkflowRunCreate(
         input_data=input_data or {},
-        triggered_by=f"user:{current_user.id}"
+        triggered_by=f"user:{current_user.id}",
+        priority=priority,
+        service_id=workflow.service_id,
     )
-    
+
     run = await engine.trigger_workflow(db, workflow_id, run_data)
-    
+
     return {
         "success": True,
         "run_id": run.id,

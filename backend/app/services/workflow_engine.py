@@ -225,7 +225,9 @@ class WorkflowEngine:
             input_data=run_data.input_data,
             timeout_seconds=run_data.timeout_seconds,
             max_retries=run_data.max_retries,
-            failure_hooks=run_data.failure_hooks
+            failure_hooks=run_data.failure_hooks,
+            priority=run_data.priority,
+            service_id=run_data.service_id,
         )
         db.add(run)
         await db.flush()

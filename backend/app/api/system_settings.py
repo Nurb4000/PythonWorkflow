@@ -463,3 +463,70 @@ async def get_portal_banner(
         "message": await get_setting(db, "banner_message", ""),
         "color": await get_setting(db, "banner_color", DEFAULT_BANNER_COLOR),
     }
+
+
+# ------------------------------------------------------------------
+# Priority Matrix & SLA Configuration (SERVICE_MANAGEMENT_PLAN Phase 3)
+# ------------------------------------------------------------------
+
+DEFAULT_PRIORITY_MATRIX = {
+    "levels": [
+        {"id": 1, "name": "Critical", "color": "#dc3545"},
+        {"id": 2, "name": "High", "color": "#fd7e14"},
+        {"id": 3, "name": "Medium", "color": "#ffc107"},
+        {"id": 4, "name": "Low", "color": "#28a745"},
+    ],
+    "auto_calculate": True,
+    "factors": ["urgency", "impact"],
+}
+
+
+import json as _json
+
+
+@router.get("/settings/priority-matrix")
+async def get_priority_matrix(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get the priority matrix configuration (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    raw = await get_setting(db, "priority_matrix", _json.dumps(DEFAULT_PRIORITY_MATRIX))
+    try:
+        return _json.loads(raw)
+    except (_json.JSONDecodeError, TypeError):
+        return DEFAULT_PRIORITY_MATRIX
+
+
+@router.put("/settings/priority-matrix")
+async def update_priority_matrix(
+    body: dict,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Update the priority matrix configuration (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    await set_setting(db, "priority_matrix", _json.dumps(body))
+    return {"message": "Priority matrix updated", "config": body}
+
+
+@router.get("/portal/priority-matrix")
+async def get_portal_priority_matrix(
+    db: AsyncSession = Depends(get_db)
+):
+    """Get priority levels for portal display (public, no auth required)"""
+    raw = await get_setting(db, "priority_matrix", _json.dumps(DEFAULT_PRIORITY_MATRIX))
+    try:
+        config = _json.loads(raw)
+    except (_json.JSONDecodeError, TypeError):
+        config = DEFAULT_PRIORITY_MATRIX
+
+    return {
+        "levels": config.get("levels", DEFAULT_PRIORITY_MATRIX["levels"]),
+        "auto_calculate": config.get("auto_calculate", True),
+        "factors": config.get("factors", ["urgency", "impact"]),
+    }
