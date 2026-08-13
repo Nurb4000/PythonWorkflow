@@ -8,13 +8,14 @@
 | **Phase 2 — Categories & Taxonomy** | ✅ COMPLETE | Category model + API implemented in Phase 1. 2.4 catalog grouping by category done in ServiceCatalog. |
 | **Phase 3 — Priority Matrix & SLA** | ✅ COMPLETE | 3.1 Priority matrix API (system_settings), 3.2 SLA targets per service (custom_data editor in ServiceManager), 3.3 SLA display on Service Detail, 3.4 Priority selector on catalog submission, 3.5 workflow_runs priority + service_id columns with migration, 3.6 Priority Matrix admin settings page |
 | **Phase 4 — Request Enhancements** | ✅ COMPLETE | 4.1 service_id on workflow_runs (done), 4.2 catalog vs offerings coexistence (already implemented), 4.3 related services cross-linking (done in ServiceCatalog). |
-| **Phase 5 — SLA Monitoring** | ⏳ STRETCH | |
+| **Phase 5 — SLA Monitoring** | ✅ COMPLETE | 5.1 SLA tracking columns on workflow_runs, 5.2 auto-populate targets at run creation, 5.3 response tracking on task take, 5.4 resolution tracking on run completion, 5.5 SLA stats API + admin dashboard widget, 5.6 breach notification scheduler (every 15min) |
 | **Phase 6 — KB Integration** | ⏳ STRETCH | |
 
 ### Session Log
 
 - **2026-08-12**: Phase 1 complete. Created Service/Category models, Alembic migration, full CRUD API, Admin ServiceManager page with tabs, public ServiceCatalog with search/category filtering/detail view, and WorkflowDetail service selector. Committed in 7 incremental commits.
 - **2026-08-12**: Phase 3 complete. Added priority matrix API (get/set in system_settings), portal priority matrix endpoint, SLA targets editor in ServiceManager form, priority selection modal on catalog workflow submission, workflow_runs priority + service_id columns with Alembic migration, and Priority Matrix admin settings page with editable levels/colors. Committed in 3 incremental commits.
+- **2026-08-12**: Phase 5 complete. Added SLA tracking columns (sla_response_target_hours, sla_resolution_target_hours, sla_response_met, sla_resolution_met) to workflow_runs with migration. Auto-populate targets at run creation from service SLA config. Response SLA evaluated on first task take. Resolution SLA evaluated on run completion. SLA stats API endpoint and admin dashboard widget with compliance %, met/breached/pending breakdowns, top breach services. Breach notification scheduler runs every 15 minutes, marks breached runs, sends admin emails. Committed in 3 incremental commits.
 
 ---
 
