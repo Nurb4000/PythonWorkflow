@@ -105,7 +105,10 @@ async def list_tasks(
                 "assigned_group": {
                     "id": task.assigned_group.id,
                     "name": task.assigned_group.name
-                } if task.assigned_group else None
+                } if task.assigned_group else None,
+                "priority": task.priority,
+                "ola_pickup_met": task.ola_pickup_met,
+                "ola_closure_met": task.ola_closure_met,
             }
             for task in tasks
         ],
@@ -171,7 +174,10 @@ async def get_task(
         "assigned_group": {
             "id": task.assigned_group.id,
             "name": task.assigned_group.name
-        } if task.assigned_group else None
+        } if task.assigned_group else None,
+        "priority": task.priority,
+        "ola_pickup_met": task.ola_pickup_met,
+        "ola_closure_met": task.ola_closure_met,
     }
 
 

@@ -204,6 +204,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* SLA Monitoring Dashboard (Phase 5) */}
       <SLADashboardWidget daysProp={days} />
+
+      {/* OLA Monitoring Dashboard (Task-level) */}
+      <OLADashboardWidget daysProp={days} />
     </div>
   )
 }
@@ -607,6 +610,150 @@ const SLADashboardWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
                             <tr key={s.service_id}>
                               <td>{s.service_name}</td>
                               <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#dc3545' }}>{s.breach_count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+// OLA Monitoring Dashboard Widget (Task-level)
+interface OLAStats {
+  total_tasks_with_ola: number
+  pickup_met_count: number
+  pickup_breached_count: number
+  pickup_pending_count: number
+  closure_met_count: number
+  closure_breached_count: number
+  closure_pending_count: number
+  pickup_compliance_pct: number
+  closure_compliance_pct: number
+  top_breach_groups: Array<{ group_id: number; group_name: string; breach_count: number }>
+}
+
+const OLADashboardWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
+  const [showOLA, setShowOLA] = useState(false)
+
+  const { data: olaStats, isLoading } = useQuery({
+    queryKey: ['ola-stats', daysProp],
+    queryFn: async () => {
+      const res = await servicesApi.getOlaStats(daysProp)
+      return res.data as OLAStats
+    },
+    enabled: showOLA,
+  })
+
+  const complianceColor = (pct: number) => {
+    if (pct >= 90) return '#28a745'
+    if (pct >= 70) return '#ffc107'
+    return '#dc3545'
+  }
+
+  return (
+    <div className="card" style={{ marginTop: '2rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">OLA Monitoring (Tasks)</h3>
+        <button
+          className={`btn btn-sm ${showOLA ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => setShowOLA(!showOLA)}
+        >
+          {showOLA ? 'Hide OLA' : 'View OLA'}
+        </button>
+      </div>
+
+      {showOLA && (
+        <>
+          {isLoading ? (
+            <div className="loading">Loading OLA stats...</div>
+          ) : olaStats ? (
+            <>
+              {olaStats.total_tasks_with_ola === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.7 }}>
+                  No OLA-tracked tasks in the selected period. Configure OLA targets on groups and assign tasks with priority to start tracking.
+                </div>
+              ) : (
+                <>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-value">{olaStats.total_tasks_with_ola}</div>
+                      <div className="stat-label">Tasks with OLA</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{ color: complianceColor(olaStats.pickup_compliance_pct), fontSize: '1.8rem' }}>
+                        {olaStats.pickup_compliance_pct}%
+                      </div>
+                      <div className="stat-label">Pickup Compliance</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{ color: complianceColor(olaStats.closure_compliance_pct), fontSize: '1.8rem' }}>
+                        {olaStats.closure_compliance_pct}%
+                      </div>
+                      <div className="stat-label">Closure Compliance</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                    <div className="card" style={{ padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Pickup OLA</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Met</span>
+                          <strong style={{ color: '#28a745' }}>{olaStats.pickup_met_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Breached</span>
+                          <strong style={{ color: '#dc3545' }}>{olaStats.pickup_breached_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Pending</span>
+                          <strong style={{ color: '#ffc107' }}>{olaStats.pickup_pending_count}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div className="card" style={{ padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Closure OLA</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Met</span>
+                          <strong style={{ color: '#28a745' }}>{olaStats.closure_met_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Breached</span>
+                          <strong style={{ color: '#dc3545' }}>{olaStats.closure_breached_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Pending</span>
+                          <strong style={{ color: '#ffc107' }}>{olaStats.closure_pending_count}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {olaStats.top_breach_groups.length > 0 && (
+                    <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Top Groups by Breach Count</h4>
+                      <table className="table" style={{ fontSize: '0.85rem', marginBottom: 0 }}>
+                        <thead>
+                          <tr>
+                            <th>Group</th>
+                            <th style={{ textAlign: 'right' }}>Breaches</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {olaStats.top_breach_groups.map((g) => (
+                            <tr key={g.group_id}>
+                              <td>{g.group_name}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#dc3545' }}>{g.breach_count}</td>
                             </tr>
                           ))}
                         </tbody>

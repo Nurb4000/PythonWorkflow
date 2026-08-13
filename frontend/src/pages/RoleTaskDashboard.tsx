@@ -23,6 +23,9 @@ interface Task {
   closed_at: string | null
   assigned_user: { id: number; username: string; full_name: string } | null
   assigned_group: { id: number; name: string } | null
+  priority?: number | null
+  ola_pickup_met?: boolean | null
+  ola_closure_met?: boolean | null
 }
 
 type Tab = 'active' | 'open' | 'review' | 'owned' | 'completed' | 'closed' | 'all'
@@ -139,6 +142,38 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
       label: 'Created',
       render: r => new Date(r.created_at).toLocaleString(),
       csv: r => r.created_at || ''
+    },
+    {
+      key: 'priority',
+      label: 'Priority',
+      render: r => r.priority !== null && r.priority !== undefined
+        ? <span className="badge" style={{ backgroundColor: ['#dc3545', '#fd7e14', '#ffc107', '#28a745'][r.priority - 1] || '#6c757d', color: r.priority <= 2 ? 'white' : 'inherit' }}>
+            P{r.priority}
+          </span>
+        : '-',
+      csv: r => r.priority ? `P${r.priority}` : ''
+    },
+    {
+      key: 'ola_pickup',
+      label: 'OLA Pickup',
+      render: r => {
+        if (r.ola_pickup_met === null || r.ola_pickup_met === undefined) return <span className="badge badge-warning">Pending</span>
+        return r.ola_pickup_met
+          ? <span className="badge badge-success">Met</span>
+          : <span className="badge badge-danger">Breached</span>
+      },
+      csv: r => r.ola_pickup_met === null ? 'Pending' : r.ola_pickup_met ? 'Met' : 'Breached'
+    },
+    {
+      key: 'ola_closure',
+      label: 'OLA Closure',
+      render: r => {
+        if (r.ola_closure_met === null || r.ola_closure_met === undefined) return <span className="badge badge-warning">Pending</span>
+        return r.ola_closure_met
+          ? <span className="badge badge-success">Met</span>
+          : <span className="badge badge-danger">Breached</span>
+      },
+      csv: r => r.ola_closure_met === null ? 'Pending' : r.ola_closure_met ? 'Met' : 'Breached'
     }
   ], [])
 

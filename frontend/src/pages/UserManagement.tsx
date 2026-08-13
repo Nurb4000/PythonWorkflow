@@ -25,6 +25,7 @@ interface Group {
   is_active: boolean
   user_count: number
   users: Array<{id: number, username: string}>
+  custom_data?: Record<string, any>
 }
 
 export const UserManagement: React.FC = () => {
@@ -39,6 +40,11 @@ export const UserManagement: React.FC = () => {
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
   const [editingGroup, setEditingGroup] = useState<Group | null>(null)
   const [editGroupForm, setEditGroupForm] = useState({ name: '', description: '', group_type: 'internal', is_active: true })
+
+  // OLA editor state (Task-level SLA)
+  const [olaEnabled, setOlaEnabled] = useState(false)
+  const [olaPickupHours, setOlaPickupHours] = useState({ '1': '', '2': '', '3': '', '4': '' })
+  const [olaClosureHours, setOlaClosureHours] = useState({ '1': '', '2': '', '3': '', '4': '' })
   const [error, setError] = useState('')
   const [showUserModal, setShowUserModal] = useState(false)
   const [showGroupModal, setShowGroupModal] = useState(false)
@@ -173,12 +179,37 @@ export const UserManagement: React.FC = () => {
   const openEditGroup = (group: Group) => {
     setEditingGroup(group)
     setEditGroupForm({ name: group.name, description: group.description, group_type: group.group_type, is_active: group.is_active })
+
+    // Load OLA targets from group custom_data
+    const ola = (group.custom_data || {}).ola_targets
+    if (ola) {
+      setOlaEnabled(true)
+      setOlaPickupHours({
+        '1': ola.pickup_hours?.['1'] ?? '',
+        '2': ola.pickup_hours?.['2'] ?? '',
+        '3': ola.pickup_hours?.['3'] ?? '',
+        '4': ola.pickup_hours?.['4'] ?? '',
+      })
+      setOlaClosureHours({
+        '1': ola.closure_hours?.['1'] ?? '',
+        '2': ola.closure_hours?.['2'] ?? '',
+        '3': ola.closure_hours?.['3'] ?? '',
+        '4': ola.closure_hours?.['4'] ?? '',
+      })
+    } else {
+      setOlaEnabled(false)
+      setOlaPickupHours({ '1': '', '2': '', '3': '', '4': '' })
+      setOlaClosureHours({ '1': '', '2': '', '3': '', '4': '' })
+    }
     setShowGroupModal(true)
   }
 
   const closeEditGroup = () => {
     setShowGroupModal(false)
     setEditingGroup(null)
+    setOlaEnabled(false)
+    setOlaPickupHours({ '1': '', '2': '', '3': '', '4': '' })
+    setOlaClosureHours({ '1': '', '2': '', '3': '', '4': '' })
   }
 
   return (
@@ -494,7 +525,25 @@ export const UserManagement: React.FC = () => {
             <h3 style={{ marginTop: 0 }}>Edit Group: {editingGroup.name}</h3>
             <form onSubmit={(e) => {
               e.preventDefault()
-              updateGroupMutation.mutate({ id: editingGroup.id, data: editGroupForm })
+              // Build custom_data with OLA targets
+              const customData: any = {}
+              if (olaEnabled) {
+                customData.ola_targets = {
+                  pickup_hours: {
+                    '1': olaPickupHours['1'] ? parseInt(olaPickupHours['1']) : null,
+                    '2': olaPickupHours['2'] ? parseInt(olaPickupHours['2']) : null,
+                    '3': olaPickupHours['3'] ? parseInt(olaPickupHours['3']) : null,
+                    '4': olaPickupHours['4'] ? parseInt(olaPickupHours['4']) : null,
+                  },
+                  closure_hours: {
+                    '1': olaClosureHours['1'] ? parseInt(olaClosureHours['1']) : null,
+                    '2': olaClosureHours['2'] ? parseInt(olaClosureHours['2']) : null,
+                    '3': olaClosureHours['3'] ? parseInt(olaClosureHours['3']) : null,
+                    '4': olaClosureHours['4'] ? parseInt(olaClosureHours['4']) : null,
+                  },
+                }
+              }
+              updateGroupMutation.mutate({ id: editingGroup.id, data: { ...editGroupForm, custom_data: customData } })
               closeEditGroup()
             }}>
               <div className="form-group" style={{ marginBottom: '1rem' }}>
@@ -519,6 +568,78 @@ export const UserManagement: React.FC = () => {
                   Group Active (disable to hide from users)
                 </label>
               </div>
+
+              {/* OLA Targets Editor */}
+              <div style={{ padding: '1rem', border: '1px solid #dee2e6', borderRadius: '6px', marginBottom: '1rem' }}>
+                <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '0.75rem' }}>
+                  <h4 style={{ margin: 0, fontSize: '1rem' }}>OLA Targets (Internal)</h4>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.4rem', cursor: 'pointer' }}>
+                    <input
+                      type="checkbox"
+                      checked={olaEnabled}
+                      onChange={e => setOlaEnabled(e.target.checked)}
+                    />
+                    Enable OLA tracking
+                  </label>
+                </div>
+                {olaEnabled && (
+                  <div>
+                    <p style={{ fontSize: '0.85rem', color: '#6c757d', margin: '0 0 0.75rem' }}>
+                      Set pickup and closure time targets (in hours) for each priority level. Applied to human tasks assigned to this group.
+                    </p>
+                    <table className="table" style={{ marginBottom: 0 }}>
+                      <thead>
+                        <tr>
+                          <th>Priority</th>
+                          <th>Pickup (hours)</th>
+                          <th>Closure (hours)</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {[
+                          { id: '1', name: 'Critical', color: '#dc3545' },
+                          { id: '2', name: 'High', color: '#fd7e14' },
+                          { id: '3', name: 'Medium', color: '#ffc107' },
+                          { id: '4', name: 'Low', color: '#28a745' },
+                        ].map((lvl: any) => (
+                          <tr key={lvl.id}>
+                            <td>
+                              <span style={{
+                                display: 'inline-block', width: '10px', height: '10px',
+                                borderRadius: '50%', backgroundColor: lvl.color, marginRight: '6px'
+                              }} />
+                              {lvl.name}
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                className="form-input"
+                                style={{ width: '100px' }}
+                                value={olaPickupHours[lvl.id]}
+                                onChange={e => setOlaPickupHours({ ...olaPickupHours, [lvl.id]: e.target.value })}
+                                placeholder="—"
+                                min="0"
+                              />
+                            </td>
+                            <td>
+                              <input
+                                type="number"
+                                className="form-input"
+                                style={{ width: '100px' }}
+                                value={olaClosureHours[lvl.id]}
+                                onChange={e => setOlaClosureHours({ ...olaClosureHours, [lvl.id]: e.target.value })}
+                                placeholder="—"
+                                min="0"
+                              />
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </div>
+                )}
+              </div>
+
               <div style={{ display: 'flex', gap: '0.5rem', justifyContent: 'flex-end' }}>
                 <button type="submit" className="btn btn-primary" disabled={updateGroupMutation.isPending}>
                   {updateGroupMutation.isPending ? 'Saving...' : 'Save'}
