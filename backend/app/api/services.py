@@ -11,7 +11,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.models.auth import User, Group
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun
-from app.models.services import Service, Category
+from app.models.services import Service, Category, KnowledgeBaseArticle
 from app.api.auth import get_current_user, get_current_admin
 from app.schemas.services import (
     CategoryCreate,
@@ -241,6 +241,7 @@ async def get_service(
             selectinload(Service.support_group),
             selectinload(Service.category),
             selectinload(Service.workflows).selectinload(Workflow.allowed_groups),
+            selectinload(Service.kb_articles),
         )
     )
     result = await db.execute(stmt)
@@ -283,9 +284,20 @@ async def get_service(
             "runs_count": run_count,
         })
 
+    # KB articles for this service (Phase 6)
+    kb_articles = [a for a in (svc.kb_articles or []) if a.is_published]
+    kb_articles = sorted(kb_articles, key=lambda a: (a.sort_order or 0, a.title))
+    kb_list = [{
+        "id": a.id,
+        "title": a.title,
+        "slug": a.slug,
+        "content": a.content or "",
+    } for a in kb_articles]
+
     return {
         **_service_to_dict(svc, len(wf_list)),
         "workflows": wf_list,
+        "kb_articles": kb_list,
     }
 
 

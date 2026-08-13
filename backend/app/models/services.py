@@ -46,3 +46,22 @@ class Service(Base):
     owner = relationship("User")
     support_group = relationship("Group", foreign_keys=[support_group_id])
     workflows = relationship("Workflow", back_populates="service")
+    kb_articles = relationship("KnowledgeBaseArticle", back_populates="service")
+
+
+class KnowledgeBaseArticle(Base):
+    """User-facing help articles linked to services (Phase 6)."""
+    __tablename__ = "knowledge_base_articles"
+
+    id = Column(Integer, primary_key=True, index=True)
+    title = Column(String(255), nullable=False, index=True)
+    slug = Column(String(255), unique=True, nullable=False, index=True)
+    content = Column(Text, default="")
+    service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
+    is_published = Column(Boolean, default=True, server_default=func.true())
+    sort_order = Column(Integer, default=0, server_default="0")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    # Relationships
+    service = relationship("Service", back_populates="kb_articles")
