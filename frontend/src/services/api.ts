@@ -275,6 +275,8 @@ export const servicesApi = {
   deleteCategory: (id: number) => api.delete(`/services/categories/${id}`),
   // SLA Stats (Phase 5)
   getSlaStats: (days?: number) => api.get('/services/sla-stats', { params: { days } }),
+  // OLA Stats (Task-level)
+  getOlaStats: (days?: number) => api.get('/services/ola-stats', { params: { days } }),
 }
 
 // Priority Matrix API (SERVICE_MANAGEMENT_PLAN Phase 3)

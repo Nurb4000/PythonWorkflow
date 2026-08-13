@@ -356,7 +356,8 @@ async def list_groups(
             "group_type": g.group_type,
             "is_active": g.is_active,
             "user_count": len(g.users),
-            "users": [{"id": u.id, "username": u.username} for u in g.users]
+            "users": [{"id": u.id, "username": u.username} for u in g.users],
+            "custom_data": g.custom_data or {},
         }
         for g in groups
     ]
@@ -390,6 +391,7 @@ async def update_group(
     description: Optional[str] = None,
     group_type: Optional[str] = None,
     is_active: Optional[bool] = None,
+    custom_data: Optional[dict] = None,
     admin_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -406,12 +408,17 @@ async def update_group(
 
     try:
         group = await auth_service.update_group(db, group_id, **kwargs)
+        if custom_data is not None:
+            group.custom_data = custom_data
+            await db.commit()
+            await db.refresh(group)
         return {
             "id": group.id,
             "name": group.name,
             "description": group.description,
             "group_type": group.group_type,
-            "is_active": group.is_active
+            "is_active": group.is_active,
+            "custom_data": group.custom_data or {},
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
