@@ -244,31 +244,44 @@ async def take_task(
     db: AsyncSession = Depends(get_db)
 ):
     """Take ownership of a task"""
-    
+
     stmt = select(Task).where(Task.id == task_id)
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
     # Permission check
     user_group_ids = [g.id for g in current_user.groups]
     is_assigned_to_user = task.assigned_to_user_id == current_user.id
     is_assigned_to_group = task.assigned_group_id in user_group_ids if user_group_ids else False
-    
+
     if not (is_assigned_to_user or is_assigned_to_group or current_user.role == "admin"):
         raise HTTPException(status_code=403, detail="Access denied")
-    
+
     if task.status not in ["open", "review"]:
         raise HTTPException(status_code=400, detail="Task must be in 'open' or 'review' status to take ownership")
-    
+
     task.status = "owned"
     task.assigned_to_user_id = current_user.id
     task.updated_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
-    
+
+    # SLA response tracking (Phase 5): mark response met/breached when first task is taken
+    if task.workflow_run_id:
+        from datetime import timezone as tz
+        run_stmt = select(WorkflowRun).where(WorkflowRun.id == task.workflow_run_id)
+        run_result = await db.execute(run_stmt)
+        run = run_result.scalar_one_or_none()
+        if run and run.sla_response_target_hours is not None and run.sla_response_met is None:
+            if run.started_at:
+                elapsed_hours = (
+                    __import__('datetime', fromlist=['datetime']).datetime.now(tz.utc) - run.started_at.replace(tzinfo=tz.utc) if run.started_at.tzinfo is None else run.started_at
+                ).total_seconds() / 3600
+                run.sla_response_met = elapsed_hours <= run.sla_response_target_hours
+
     await db.commit()
-    
+
     return {"message": "Task taken", "task_id": task.id}
 
 

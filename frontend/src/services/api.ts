@@ -273,6 +273,8 @@ export const servicesApi = {
   createCategory: (data: any) => api.post('/services/categories', data),
   updateCategory: (id: number, data: any) => api.put(`/services/categories/${id}`, data),
   deleteCategory: (id: number) => api.delete(`/services/categories/${id}`),
+  // SLA Stats (Phase 5)
+  getSlaStats: (days?: number) => api.get('/services/sla-stats', { params: { days } }),
 }
 
 // Priority Matrix API (SERVICE_MANAGEMENT_PLAN Phase 3)

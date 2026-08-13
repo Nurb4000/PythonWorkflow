@@ -201,21 +201,32 @@ class WorkflowEngine:
     
     async def trigger_workflow(self, db: AsyncSession, workflow_id: int, run_data: WorkflowRunCreate) -> WorkflowRun:
         """Trigger a new workflow run"""
-        # Get workflow with steps
+        # Get workflow with steps and service
         stmt = (
             select(Workflow)
             .where(Workflow.id == workflow_id)
-            .options(selectinload(Workflow.steps))
+            .options(selectinload(Workflow.steps), selectinload(Workflow.service))
         )
         result = await db.execute(stmt)
         workflow = result.scalar_one()
-        
+
         if not workflow:
             raise ValueError(f"Workflow {workflow_id} not found")
-        
+
         if not workflow.is_active:
             raise ValueError(f"Workflow {workflow_id} is not active")
-        
+
+        # Populate SLA targets from service config (Phase 5)
+        sla_response_target = None
+        sla_resolution_target = None
+        if run_data.priority and workflow.service:
+            sla_config = (workflow.service.custom_data or {}).get("sla_targets", {})
+            priority_key = str(run_data.priority)
+            if priority_key in sla_config.get("response_hours", {}):
+                sla_response_target = sla_config["response_hours"][priority_key]
+            if priority_key in sla_config.get("resolution_hours", {}):
+                sla_resolution_target = sla_config["resolution_hours"][priority_key]
+
         # Create run
         run = WorkflowRun(
             workflow_id=workflow_id,
@@ -227,7 +238,9 @@ class WorkflowEngine:
             max_retries=run_data.max_retries,
             failure_hooks=run_data.failure_hooks,
             priority=run_data.priority,
-            service_id=run_data.service_id,
+            service_id=run_data.service_id or workflow.service_id,
+            sla_response_target_hours=sla_response_target,
+            sla_resolution_target_hours=sla_resolution_target,
         )
         db.add(run)
         await db.flush()
@@ -353,9 +366,16 @@ class WorkflowEngine:
                 if run.status == "running":
                     run.status = "completed"
                     print(f"DEBUG: Set run status to completed")
-                
+
                 if run.status in ("completed", "failed"):
                     run.completed_at = datetime.utcnow()
+                    # SLA resolution tracking (Phase 5)
+                    if run.sla_resolution_target_hours is not None and run.sla_resolution_met is None and run.started_at:
+                        from datetime import timezone as tz
+                        start = run.started_at.replace(tzinfo=tz.utc) if run.started_at.tzinfo is None else run.started_at
+                        elapsed_hours = (datetime.now(tz.utc) - start).total_seconds() / 3600
+                        run.sla_resolution_met = elapsed_hours <= run.sla_resolution_target_hours
+
                 run.output_data = run.input_data.copy()
                 
                 # Only commit the run, not the instances (they were committed by branch sessions)

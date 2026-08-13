@@ -453,3 +453,87 @@ async def delete_service(
         "linked_workflows": wf_count,
         "warning": f"This service has {wf_count} linked workflow(s). They will be unassigned." if wf_count > 0 else None,
     }
+
+
+# --- SLA Monitoring API (Phase 5) ---
+
+@router.get("/sla-stats")
+async def get_sla_stats(
+    days: int = 30,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get SLA compliance statistics for admin dashboard (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from datetime import datetime, timedelta, timezone as tz
+    since = datetime.now(tz.utc) - timedelta(days=days)
+
+    # Only consider runs that have SLA targets set and are completed/failed
+    stmt = (
+        select(WorkflowRun)
+        .where(
+            WorkflowRun.created_at >= since.replace(tzinfo=None),
+            WorkflowRun.sla_response_target_hours.isnot(None),
+            WorkflowRun.status.in_(["completed", "failed"]),
+        )
+    )
+    result = await db.execute(stmt)
+    runs = result.scalars().all()
+
+    total_with_sla = len(runs)
+    if total_with_sla == 0:
+        return {
+            "total_runs_with_sla": 0,
+            "response_met_count": 0,
+            "response_breached_count": 0,
+            "response_pending_count": 0,
+            "resolution_met_count": 0,
+            "resolution_breached_count": 0,
+            "resolution_pending_count": 0,
+            "response_compliance_pct": 0,
+            "resolution_compliance_pct": 0,
+            "top_breach_services": [],
+        }
+
+    response_met = sum(1 for r in runs if r.sla_response_met is True)
+    response_breached = sum(1 for r in runs if r.sla_response_met is False)
+    response_pending = sum(1 for r in runs if r.sla_response_met is None)
+
+    resolution_met = sum(1 for r in runs if r.sla_resolution_met is True)
+    resolution_breached = sum(1 for r in runs if r.sla_resolution_met is False)
+    resolution_pending = sum(1 for r in runs if r.sla_resolution_met is None)
+
+    # Top services by breach count
+    breach_counts: dict[int, int] = {}
+    for r in runs:
+        if r.service_id and (r.sla_response_met is False or r.sla_resolution_met is False):
+            breach_counts[r.service_id] = breach_counts.get(r.service_id, 0) + 1
+
+    # Fetch service names for breach counts
+    svc_ids = list(breach_counts.keys())
+    top_breach_services = []
+    if svc_ids:
+        svc_stmt = select(Service.id, Service.name).where(Service.id.in_(svc_ids))
+        svc_result = await db.execute(svc_stmt)
+        svc_map = {row[0]: row[1] for row in svc_result.all()}
+        for sid, count in sorted(breach_counts.items(), key=lambda x: -x[1])[:5]:
+            top_breach_services.append({
+                "service_id": sid,
+                "service_name": svc_map.get(sid, f"Service #{sid}"),
+                "breach_count": count,
+            })
+
+    return {
+        "total_runs_with_sla": total_with_sla,
+        "response_met_count": response_met,
+        "response_breached_count": response_breached,
+        "response_pending_count": response_pending,
+        "resolution_met_count": resolution_met,
+        "resolution_breached_count": resolution_breached,
+        "resolution_pending_count": resolution_pending,
+        "response_compliance_pct": round(response_met / (response_met + response_breached) * 100, 1) if (response_met + response_breached) > 0 else 0,
+        "resolution_compliance_pct": round(resolution_met / (resolution_met + resolution_breached) * 100, 1) if (resolution_met + resolution_breached) > 0 else 0,
+        "top_breach_services": top_breach_services,
+    }

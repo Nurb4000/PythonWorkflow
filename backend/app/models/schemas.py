@@ -83,6 +83,10 @@ class WorkflowRun(Base):
     custom_data = Column(JSON, default=dict)  # Custom field extensions
     priority = Column(Integer, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 3: priority level ID
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 4: track service on run
+    sla_response_target_hours = Column(Integer, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 5
+    sla_resolution_target_hours = Column(Integer, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 5
+    sla_response_met = Column(Boolean, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 5: True=met, False=breached, None=not yet evaluated
+    sla_resolution_met = Column(Boolean, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 5
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     # Relationships

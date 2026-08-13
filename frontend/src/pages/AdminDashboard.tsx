@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { adminApi, cmdbApi } from '../services/api'
+import { adminApi, cmdbApi, servicesApi } from '../services/api'
 import { ScheduleManager } from '../components/ScheduleManager'
 
 interface Stats {
@@ -201,6 +201,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* CMDB Dashboard */}
       <CMDBDashboardWidget />
+
+      {/* SLA Monitoring Dashboard (Phase 5) */}
+      <SLADashboardWidget daysProp={days} />
     </div>
   )
 }
@@ -464,6 +467,153 @@ const CMDBDashboardWidget: React.FC = () => {
                     </tbody>
                   </table>
                 </div>
+              )}
+            </>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+// SLA Monitoring Dashboard Widget (Phase 5)
+interface SLAStats {
+  total_runs_with_sla: number
+  response_met_count: number
+  response_breached_count: number
+  response_pending_count: number
+  resolution_met_count: number
+  resolution_breached_count: number
+  resolution_pending_count: number
+  response_compliance_pct: number
+  resolution_compliance_pct: number
+  top_breach_services: Array<{ service_id: number; service_name: string; breach_count: number }>
+}
+
+const SLADashboardWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
+  const [showSLA, setShowSLA] = useState(false)
+
+  const { data: slaStats, isLoading } = useQuery({
+    queryKey: ['sla-stats', daysProp],
+    queryFn: async () => {
+      const res = await servicesApi.getSlaStats(daysProp)
+      return res.data as SLAStats
+    },
+    enabled: showSLA,
+  })
+
+  const complianceColor = (pct: number) => {
+    if (pct >= 90) return '#28a745'
+    if (pct >= 70) return '#ffc107'
+    return '#dc3545'
+  }
+
+  return (
+    <div className="card" style={{ marginTop: '2rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">SLA Monitoring</h3>
+        <button
+          className={`btn btn-sm ${showSLA ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => setShowSLA(!showSLA)}
+        >
+          {showSLA ? 'Hide SLA' : 'View SLA'}
+        </button>
+      </div>
+
+      {showSLA && (
+        <>
+          {isLoading ? (
+            <div className="loading">Loading SLA stats...</div>
+          ) : slaStats ? (
+            <>
+              {slaStats.total_runs_with_sla === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.7 }}>
+                  No SLA-tracked runs in the selected period. Configure SLA targets on services and submit requests with priority to start tracking.
+                </div>
+              ) : (
+                <>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-value">{slaStats.total_runs_with_sla}</div>
+                      <div className="stat-label">Runs with SLA</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{ color: complianceColor(slaStats.response_compliance_pct), fontSize: '1.8rem' }}>
+                        {slaStats.response_compliance_pct}%
+                      </div>
+                      <div className="stat-label">Response Compliance</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{ color: complianceColor(slaStats.resolution_compliance_pct), fontSize: '1.8rem' }}>
+                        {slaStats.resolution_compliance_pct}%
+                      </div>
+                      <div className="stat-label">Resolution Compliance</div>
+                    </div>
+                  </div>
+
+                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                    {/* Response breakdown */}
+                    <div className="card" style={{ padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Response SLA</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Met</span>
+                          <strong style={{ color: '#28a745' }}>{slaStats.response_met_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Breached</span>
+                          <strong style={{ color: '#dc3545' }}>{slaStats.response_breached_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Pending</span>
+                          <strong style={{ color: '#ffc107' }}>{slaStats.response_pending_count}</strong>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Resolution breakdown */}
+                    <div className="card" style={{ padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Resolution SLA</h4>
+                      <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Met</span>
+                          <strong style={{ color: '#28a745' }}>{slaStats.resolution_met_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Breached</span>
+                          <strong style={{ color: '#dc3545' }}>{slaStats.resolution_breached_count}</strong>
+                        </div>
+                        <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                          <span>Pending</span>
+                          <strong style={{ color: '#ffc107' }}>{slaStats.resolution_pending_count}</strong>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Top breach services */}
+                  {slaStats.top_breach_services.length > 0 && (
+                    <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Top Services by Breach Count</h4>
+                      <table className="table" style={{ fontSize: '0.85rem', marginBottom: 0 }}>
+                        <thead>
+                          <tr>
+                            <th>Service</th>
+                            <th style={{ textAlign: 'right' }}>Breaches</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {slaStats.top_breach_services.map((s) => (
+                            <tr key={s.service_id}>
+                              <td>{s.service_name}</td>
+                              <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#dc3545' }}>{s.breach_count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
               )}
             </>
           ) : null}
