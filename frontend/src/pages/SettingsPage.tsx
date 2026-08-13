@@ -58,6 +58,18 @@ export const SettingsPage: React.FC = () => {
     banner_message: '',
     banner_color: '#f39c12',
   })
+
+  // Priority Matrix state (Phase 3)
+  const [priorityMatrix, setPriorityMatrix] = useState<any>({
+    levels: [
+      { id: 1, name: 'Critical', color: '#dc3545' },
+      { id: 2, name: 'High', color: '#fd7e14' },
+      { id: 3, name: 'Medium', color: '#ffc107' },
+      { id: 4, name: 'Low', color: '#28a745' },
+    ],
+    auto_calculate: true,
+    factors: ['urgency', 'impact'],
+  })
   const [marketplaceCategories, setMarketplaceCategories] = useState<string[]>([])
   const [newCategory, setNewCategory] = useState('')
 
@@ -66,6 +78,7 @@ export const SettingsPage: React.FC = () => {
     loadImapSettings()
     loadBannerSettings()
     loadMarketplaceCategories()
+    loadPriorityMatrix()
   }, [])
 
   useEffect(() => {
@@ -182,6 +195,58 @@ export const SettingsPage: React.FC = () => {
       setMessage(error.response?.data?.detail || 'Failed to remove category')
       setMessageType('error')
     }
+  }
+
+  // Priority Matrix handlers (Phase 3)
+  const loadPriorityMatrix = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(`${API_URL}/settings/priority-matrix`, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setPriorityMatrix(response.data)
+    } catch (error) {
+      console.error('Failed to load priority matrix:', error)
+    }
+  }
+
+  const handlePrioritySave = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const token = localStorage.getItem('token')
+      await axios.put(`${API_URL}/settings/priority-matrix`, priorityMatrix, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      setMessage('Priority matrix updated successfully')
+      setMessageType('success')
+    } catch (error: any) {
+      setMessage(error.response?.data?.detail || 'Failed to update priority matrix')
+      setMessageType('error')
+    }
+  }
+
+  const updatePriorityLevel = (id: number, field: string, value: string) => {
+    setPriorityMatrix({
+      ...priorityMatrix,
+      levels: priorityMatrix.levels.map((lvl: any) =>
+        lvl.id === id ? { ...lvl, [field]: value } : lvl
+      ),
+    })
+  }
+
+  const addPriorityLevel = () => {
+    const maxId = priorityMatrix.levels.reduce((max: number, lvl: any) => Math.max(max, lvl.id || 0), 0)
+    setPriorityMatrix({
+      ...priorityMatrix,
+      levels: [...priorityMatrix.levels, { id: maxId + 1, name: '', color: '#6c757d' }],
+    })
+  }
+
+  const removePriorityLevel = (id: number) => {
+    setPriorityMatrix({
+      ...priorityMatrix,
+      levels: priorityMatrix.levels.filter((lvl: any) => lvl.id !== id),
+    })
   }
 
   const handleLLMUpdate = async (e: React.FormEvent) => {
@@ -582,6 +647,96 @@ export const SettingsPage: React.FC = () => {
             style={{ flex: 1 }}
           />
           <button type="submit" className="btn btn-primary" disabled={!newCategory.trim()}>Add</button>
+        </form>
+      </div>
+
+      {/* Priority Matrix Configuration (Phase 3) */}
+      <div className="card" style={{ marginTop: '1rem' }}>
+        <h3 className="card-title">Priority Matrix & SLA</h3>
+        <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
+          Configure priority levels used across the service catalog. Each level has a name and color used in SLA tracking and request submission.
+        </p>
+        <form onSubmit={handlePrioritySave}>
+          <div style={{ marginBottom: '1rem' }}>
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+              <input
+                type="checkbox"
+                checked={priorityMatrix.auto_calculate}
+                onChange={(e) => setPriorityMatrix({ ...priorityMatrix, auto_calculate: e.target.checked })}
+                style={{ width: '18px', height: '18px' }}
+              />
+              <span className="form-label" style={{ margin: 0 }}>Auto-calculate priority from urgency &amp; impact</span>
+            </label>
+          </div>
+
+          <table className="table" style={{ marginBottom: '1rem' }}>
+            <thead>
+              <tr>
+                <th>ID</th>
+                <th>Name</th>
+                <th>Color</th>
+                <th style={{ width: '80px' }}>Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+              {priorityMatrix.levels.map((lvl: any) => (
+                <tr key={lvl.id}>
+                  <td>
+                    <input
+                      type="number"
+                      className="form-input"
+                      style={{ width: '60px' }}
+                      value={lvl.id}
+                      onChange={(e) => updatePriorityLevel(lvl.id, 'id', e.target.value)}
+                      min={1}
+                    />
+                  </td>
+                  <td>
+                    <input
+                      type="text"
+                      className="form-input"
+                      style={{ width: '140px' }}
+                      value={lvl.name}
+                      onChange={(e) => updatePriorityLevel(lvl.id, 'name', e.target.value)}
+                      placeholder="e.g. Critical"
+                    />
+                  </td>
+                  <td>
+                    <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+                      <input
+                        type="color"
+                        value={lvl.color}
+                        onChange={(e) => updatePriorityLevel(lvl.id, 'color', e.target.value)}
+                        style={{ width: '36px', height: '30px', border: 'none', cursor: 'pointer' }}
+                      />
+                      <input
+                        type="text"
+                        className="form-input"
+                        value={lvl.color}
+                        onChange={(e) => updatePriorityLevel(lvl.id, 'color', e.target.value)}
+                        style={{ width: '90px' }}
+                      />
+                    </div>
+                  </td>
+                  <td>
+                    <button
+                      type="button"
+                      className="btn btn-sm btn-danger"
+                      onClick={() => removePriorityLevel(lvl.id)}
+                      disabled={priorityMatrix.levels.length <= 1}
+                    >
+                      Remove
+                    </button>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button type="submit" className="btn btn-success">Save Priority Matrix</button>
+            <button type="button" className="btn btn-secondary" onClick={addPriorityLevel}>+ Add Level</button>
+          </div>
         </form>
       </div>
 
