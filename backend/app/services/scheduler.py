@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
 from app.models.schemas import Workflow, WorkflowRun, Schedule
+from app.models.services import Service
 from app.services.workflow_engine import WorkflowEngine
 from app.schemas.workflow import WorkflowRunCreate
 
@@ -42,7 +43,15 @@ class SchedulerService:
         
         self._initialized = True
         self.scheduler.start()
-        logger.info(f"Scheduler initialized with {len(schedules)} schedules")
+
+        # SLA breach monitoring job (Phase 5) — runs every 15 minutes
+        self.scheduler.add_job(
+            self._check_sla_breaches,
+            trigger=IntervalTrigger(minutes=15),
+            id="sla_breach_monitor",
+            replace_existing=True,
+        )
+        logger.info(f"Scheduler initialized with {len(schedules)} schedules + SLA monitor")
     
     def _add_schedule_job(self, schedule: Schedule):
         """Add a scheduled workflow run job"""
@@ -184,6 +193,77 @@ class SchedulerService:
         
         return schedules
     
+    async def _check_sla_breaches(self):
+        """Periodic job: check for SLA breaches and send notifications."""
+        if not self.db_session_factory:
+            return
+
+        from datetime import timezone as tz
+        from app.services.email_service import notify_admin
+
+        async with self.db_session_factory() as db:
+            try:
+                # Find running/waiting/pending runs with SLA targets that haven't been evaluated yet
+                stmt = select(WorkflowRun).where(
+                    WorkflowRun.status.in_(["running", "waiting", "pending"]),
+                    WorkflowRun.sla_response_target_hours.isnot(None),
+                    WorkflowRun.sla_response_met.is_(None),
+                )
+                result = await db.execute(stmt)
+                runs = result.scalars().all()
+
+                now = datetime.now(tz.utc)
+                breached_ids = []
+
+                for run in runs:
+                    if not run.started_at:
+                        continue
+
+                    start = run.started_at.replace(tzinfo=tz.utc) if run.started_at.tzinfo is None else run.started_at
+                    elapsed_hours = (now - start).total_seconds() / 3600
+                    target_hours = run.sla_response_target_hours
+
+                    # Check if breached (>100% of target)
+                    if elapsed_hours >= target_hours:
+                        run.sla_response_met = False
+                        breached_ids.append(run.id)
+
+                        # Get service name for notification
+                        svc_name = f"Run #{run.id}"
+                        if run.service_id:
+                            svc_stmt = select(Service.name).where(Service.id == run.service_id)
+                            svc_result = await db.execute(svc_stmt)
+                            svc_row = svc_result.scalar_one_or_none()
+                            if svc_row:
+                                svc_name = f"{svc_row} (Run #{run.id})"
+
+                        notify_admin(
+                            f"SLA Response Breach: {svc_name}",
+                            (
+                                f"Workflow run #{run.id} has breached its response SLA.\n\n"
+                                f"Workflow: {run.workflow_name}\n"
+                                f"Priority: {run.priority}\n"
+                                f"Target: {target_hours}h\n"
+                                f"Elapsed: {elapsed_hours:.1f}h\n"
+                                f"Status: {run.status}\n"
+                                f"Started: {run.started_at.isoformat()}"
+                            )
+                        )
+
+                    # Check if approaching breach (>=80% of target) — log warning only
+                    elif elapsed_hours >= target_hours * 0.8:
+                        logger.warning(
+                            f"SLA Response approaching breach for run #{run.id}: "
+                            f"{elapsed_hours:.1f}h / {target_hours}h target ({elapsed_hours/target_hours*100:.0f}%)"
+                        )
+
+                if breached_ids:
+                    await db.commit()
+                    logger.info(f"SLA monitor: marked {len(breached_ids)} run(s) as response breached")
+
+            except Exception as e:
+                logger.error(f"SLA breach check failed: {e}")
+
     def stop(self):
         """Stop the scheduler and email monitor"""
         self.stop_email_monitor()
