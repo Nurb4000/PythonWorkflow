@@ -267,6 +267,14 @@ async def take_task(
     task.assigned_to_user_id = current_user.id
     task.updated_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
 
+    # OLA pickup tracking: evaluate when task is taken
+    if task.ola_pickup_target_hours is not None and task.ola_pickup_met is None and task.created_at:
+        from datetime import timezone as tz
+        now = __import__('datetime', fromlist=['datetime']).datetime.now(tz.utc)
+        created = task.created_at.replace(tzinfo=tz.utc) if task.created_at.tzinfo is None else task.created_at
+        elapsed_hours = (now - created).total_seconds() / 3600
+        task.ola_pickup_met = elapsed_hours <= task.ola_pickup_target_hours
+
     # SLA response tracking (Phase 5): mark response met/breached when first task is taken
     if task.workflow_run_id:
         from datetime import timezone as tz
@@ -316,7 +324,15 @@ async def complete_task(
     task.result_data = result_data
     task.completed_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
     task.updated_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
-    
+
+    # OLA closure tracking: evaluate when task is completed
+    if task.ola_closure_target_hours is not None and task.ola_closure_met is None and task.created_at:
+        from datetime import timezone as tz
+        now = __import__('datetime', fromlist=['datetime']).datetime.now(tz.utc)
+        created = task.created_at.replace(tzinfo=tz.utc) if task.created_at.tzinfo is None else task.created_at
+        elapsed_hours = (now - created).total_seconds() / 3600
+        task.ola_closure_met = elapsed_hours <= task.ola_closure_target_hours
+
     await db.commit()
     
     # Resume workflow if this task is associated with a workflow run
@@ -353,7 +369,15 @@ async def close_task(
     task.status = "closed"
     task.closed_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
     task.updated_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
-    
+
+    # OLA closure tracking: evaluate when task is closed
+    if task.ola_closure_target_hours is not None and task.ola_closure_met is None and task.created_at:
+        from datetime import timezone as tz
+        now = __import__('datetime', fromlist=['datetime']).datetime.now(tz.utc)
+        created = task.created_at.replace(tzinfo=tz.utc) if task.created_at.tzinfo is None else task.created_at
+        elapsed_hours = (now - created).total_seconds() / 3600
+        task.ola_closure_met = elapsed_hours <= task.ola_closure_target_hours
+
     await db.commit()
     
     return {"message": "Task closed", "task_id": task.id}

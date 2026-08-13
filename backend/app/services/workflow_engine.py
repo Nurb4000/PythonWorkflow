@@ -540,6 +540,22 @@ class WorkflowEngine:
             for key, value in prefill.items():
                 task_data.setdefault(key, value)
         
+        # OLA: populate targets from assigned group's config + run priority
+        ola_pickup_target = None
+        ola_closure_target = None
+        if assigned_group_id and run.priority:
+            from app.models.auth import Group
+            grp_stmt = select(Group).where(Group.id == assigned_group_id)
+            grp_result = await db.execute(grp_stmt)
+            group = grp_result.scalar_one_or_none()
+            if group:
+                ola_config = (group.custom_data or {}).get("ola_targets", {})
+                priority_key = str(run.priority)
+                if priority_key in ola_config.get("pickup_hours", {}):
+                    ola_pickup_target = ola_config["pickup_hours"][priority_key]
+                if priority_key in ola_config.get("closure_hours", {}):
+                    ola_closure_target = ola_config["closure_hours"][priority_key]
+
         # Create task
         task = Task(
             workflow_run_id=run.id,
@@ -551,7 +567,10 @@ class WorkflowEngine:
             assigned_group_id=assigned_group_id,
             form_id=form_id,
             task_data=task_data,
-            result_data={}
+            result_data={},
+            priority=run.priority,
+            ola_pickup_target_hours=ola_pickup_target,
+            ola_closure_target_hours=ola_closure_target,
         )
         
         db.add(task)

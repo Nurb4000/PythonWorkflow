@@ -162,6 +162,11 @@ class Task(Base):
     task_data = Column(JSON, default=dict)
     result_data = Column(JSON, default=dict)
     custom_data = Column(JSON, default=dict)  # Custom field extensions
+    priority = Column(Integer, nullable=True)  # OLA: inherited from workflow run priority
+    ola_pickup_target_hours = Column(Integer, nullable=True)  # OLA: target for task to be taken
+    ola_closure_target_hours = Column(Integer, nullable=True)  # OLA: target for task to be completed/closed
+    ola_pickup_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
+    ola_closure_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))

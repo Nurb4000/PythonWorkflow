@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.models.auth import User, Group
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun
 from app.models.services import Service, Category, KnowledgeBaseArticle
+from app.models.schemas import Task
 from app.api.auth import get_current_user, get_current_admin
 from app.schemas.services import (
     CategoryCreate,
@@ -548,4 +549,85 @@ async def get_sla_stats(
         "response_compliance_pct": round(response_met / (response_met + response_breached) * 100, 1) if (response_met + response_breached) > 0 else 0,
         "resolution_compliance_pct": round(resolution_met / (resolution_met + resolution_breached) * 100, 1) if (resolution_met + resolution_breached) > 0 else 0,
         "top_breach_services": top_breach_services,
+    }
+
+
+@router.get("/ola-stats")
+async def get_ola_stats(
+    days: int = 30,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Get OLA compliance statistics for tasks (admin only)."""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    from datetime import datetime, timedelta, timezone as tz
+    since = datetime.now(tz.utc) - timedelta(days=days)
+
+    # Tasks with OLA targets set and in terminal state (completed/closed) or taken (owned/review)
+    stmt = (
+        select(Task)
+        .where(
+            Task.created_at >= since.replace(tzinfo=None),
+            Task.ola_pickup_target_hours.isnot(None),
+        )
+    )
+    result = await db.execute(stmt)
+    tasks = result.scalars().all()
+
+    total_with_ola = len(tasks)
+    if total_with_ola == 0:
+        return {
+            "total_tasks_with_ola": 0,
+            "pickup_met_count": 0,
+            "pickup_breached_count": 0,
+            "pickup_pending_count": 0,
+            "closure_met_count": 0,
+            "closure_breached_count": 0,
+            "closure_pending_count": 0,
+            "pickup_compliance_pct": 0,
+            "closure_compliance_pct": 0,
+            "top_breach_groups": [],
+        }
+
+    pickup_met = sum(1 for t in tasks if t.ola_pickup_met is True)
+    pickup_breached = sum(1 for t in tasks if t.ola_pickup_met is False)
+    pickup_pending = sum(1 for t in tasks if t.ola_pickup_met is None)
+
+    closure_met = sum(1 for t in tasks if t.ola_closure_met is True)
+    closure_breached = sum(1 for t in tasks if t.ola_closure_met is False)
+    closure_pending = sum(1 for t in tasks if t.ola_closure_met is None)
+
+    # Top groups by breach count
+    from app.models.auth import Group as AuthGroup
+    breach_counts: dict[int, int] = {}
+    for t in tasks:
+        if t.assigned_group_id and (t.ola_pickup_met is False or t.ola_closure_met is False):
+            breach_counts[t.assigned_group_id] = breach_counts.get(t.assigned_group_id, 0) + 1
+
+    grp_ids = list(breach_counts.keys())
+    top_breach_groups = []
+    if grp_ids:
+        grp_stmt = select(AuthGroup.id, AuthGroup.name).where(AuthGroup.id.in_(grp_ids))
+        grp_result = await db.execute(grp_stmt)
+        grp_map = {row[0]: row[1] for row in grp_result.all()}
+        for gid, count in sorted(breach_counts.items(), key=lambda x: -x[1])[:5]:
+            top_breach_groups.append({
+                "group_id": gid,
+                "group_name": grp_map.get(gid, f"Group #{gid}"),
+                "breach_count": count,
+            })
+
+    return {
+        "total_tasks_with_ola": total_with_ola,
+        "pickup_met_count": pickup_met,
+        "pickup_breached_count": pickup_breached,
+        "pickup_pending_count": pickup_pending,
+        "closure_met_count": closure_met,
+        "closure_breached_count": closure_breached,
+        "closure_pending_count": closure_pending,
+        "pickup_compliance_pct": round(pickup_met / (pickup_met + pickup_breached) * 100, 1) if (pickup_met + pickup_breached) > 0 else 0,
+        "closure_compliance_pct": round(closure_met / (closure_met + closure_breached) * 100, 1) if (closure_met + closure_breached) > 0 else 0,
+        "top_breach_groups": top_breach_groups,
     }
