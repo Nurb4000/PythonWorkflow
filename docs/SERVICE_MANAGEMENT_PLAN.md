@@ -10,6 +10,7 @@
 | **Phase 4 — Request Enhancements** | ✅ COMPLETE | 4.1 service_id on workflow_runs (done), 4.2 catalog vs offerings coexistence (already implemented), 4.3 related services cross-linking (done in ServiceCatalog). |
 | **Phase 5 — SLA Monitoring** | ✅ COMPLETE | 5.1 SLA tracking columns on workflow_runs, 5.2 auto-populate targets at run creation, 5.3 response tracking on task take, 5.4 resolution tracking on run completion, 5.5 SLA stats API + admin dashboard widget, 5.6 breach notification scheduler (every 15min) |
 | **Phase 6 — KB Integration** | ✅ COMPLETE | 6.1 KnowledgeBaseArticle model + migration, 6.2 KB CRUD API, 6.3 service_id linkage, 6.4 KB articles displayed on Service Detail, 6.5 "Helpful Articles" in catalog search, 6.6 KBArticleViewer page, 6.7 Admin KB manager tab in ServiceManager |
+| **OLA — Task-Level Agreements** | ✅ COMPLETE | OLA tracking columns on tasks (priority, pickup/closure targets + met flags), auto-populate from group custom_data at task creation, pickup evaluation on task take, closure evaluation on complete/close, OLA stats API + admin dashboard widget, group OLA editor in UserManagement, OLA status badges + priority column on task dashboards |
 
 ### Session Log
 
@@ -17,6 +18,7 @@
 - **2026-08-12**: Phase 3 complete. Added priority matrix API (get/set in system_settings), portal priority matrix endpoint, SLA targets editor in ServiceManager form, priority selection modal on catalog workflow submission, workflow_runs priority + service_id columns with Alembic migration, and Priority Matrix admin settings page with editable levels/colors. Committed in 3 incremental commits.
 - **2026-08-12**: Phase 5 complete. Added SLA tracking columns (sla_response_target_hours, sla_resolution_target_hours, sla_response_met, sla_resolution_met) to workflow_runs with migration. Auto-populate targets at run creation from service SLA config. Response SLA evaluated on first task take. Resolution SLA evaluated on run completion. SLA stats API endpoint and admin dashboard widget with compliance %, met/breached/pending breakdowns, top breach services. Breach notification scheduler runs every 15 minutes, marks breached runs, sends admin emails. Committed in 3 incremental commits.
 - **2026-08-12**: Phase 6 complete. Created KnowledgeBaseArticle model with service_id FK and migration. Full CRUD API for KB articles (admin-only write, public read). Service detail endpoint returns linked KB articles. Catalog search surfaces "Helpful Articles" from KB matching the query. New KBArticleViewer page at /kb/:slug. Admin KB manager tab added to ServiceManager with create/edit/delete/publish controls. Committed in 2 incremental commits.
+- **2026-08-12**: OLA (Operational Level Agreement) complete. Extends SLA concept to human tasks scoped by group rather than service. Added priority, ola_pickup_target_hours, ola_closure_target_hours, ola_pickup_met, ola_closure_met columns to tasks with migration. Auto-populate targets at task creation from assigned group's custom_data.ola_targets + run priority. Pickup OLA evaluated when task is taken (time from created→owned). Closure OLA evaluated on task complete/close (time from created→completed). OLA stats API (/services/ola-stats) and admin dashboard widget with compliance %, met/breached/pending breakdowns, top breach groups. Group OLA editor in UserManagement modal with per-priority pickup/closure hour inputs. OLA status badges + priority column on task dashboards. Committed in 3 incremental commits.
 
 ---
 
@@ -243,6 +245,7 @@ When a user searches the catalog, also search KB articles and surface relevant o
 | Service Request | **Workflow / Request** | Already the model |
 | Service Owner | **Owner** | Accountability, not IT-specific |
 | SLA | **Targets** | "Response/Resolution Targets" is generic |
+| OLA (Operational Level Agreement) | **OLA / Internal Targets** | Pickup/Closure targets per group for human tasks |
 | CI (Configuration Item) | **CI** | Already in CMDB; services can reference CIs |
 | Incident | — | Out of scope; this system handles requests, not break-fix |
 | Change Advisory Board | — | Out of scope; approval workflows already cover this |
@@ -261,6 +264,31 @@ When a user searches the catalog, also search KB articles and surface relevant o
 | 6 — KB Integration | 1 | Service-KB linkage, search suggestions |
 
 **Total estimated: 7–10 sessions**
+
+---
+
+## OLA (Operational Level Agreement) — Task-Level Tracking
+
+Extends the SLA concept from services to internal team tasks. While SLAs are customer-facing (service → run), OLAs are internal (group → task).
+
+| Concept | SLA (Service) | OLA (Task/Group) |
+|---------|---------------|------------------|
+| Scope | Workflow run | Human task within a run |
+| Configured on | `services.custom_data.sla_targets` | `groups.custom_data.ola_targets` |
+| Pickup metric | Response SLA (run started → first task taken) | Pickup OLA (task created → task taken) |
+| Closure metric | Resolution SLA (run started → run completed) | Closure OLA (task created → task completed/closed) |
+| Priority source | User selects on catalog submission | Inherited from workflow run priority |
+
+OLA targets stored in group `custom_data`:
+
+```json
+{
+  "ola_targets": {
+    "pickup_hours": { "1": 0.5, "2": 2, "3": 4, "4": 8 },
+    "closure_hours": { "1": 4, "2": 24, "3": 72, "4": 168 }
+  }
+}
+```
 
 ---
 
