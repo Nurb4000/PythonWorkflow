@@ -1,7 +1,7 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { workflowApi, runApi, authApi, workflowExportApi, marketplaceApi, formsApi } from '../services/api'
+import { workflowApi, runApi, authApi, workflowExportApi, marketplaceApi, formsApi, servicesApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
 interface Workflow {
@@ -16,6 +16,7 @@ interface Workflow {
   portal_order: number
   portal_visible: boolean
   entry_form_id: number | null
+  service_id: number | null
   steps: any[]
   allowed_groups: Array<{id: number, name: string}>
 }
@@ -89,6 +90,16 @@ export const WorkflowDetail: React.FC = () => {
   })
 
   const [entryFormId, setEntryFormId] = useState<number | null>(null)
+  const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null)
+
+  const { data: services } = useQuery({
+    queryKey: ['services-catalog'],
+    queryFn: async () => {
+      const response = await servicesApi.listServices()
+      return response.data as Array<{id: number, name: string, key: string, icon: string, is_active: boolean}>
+    },
+    enabled: canDevelop,
+  })
 
   useEffect(() => {
     if (workflow && !permsInitialized) {
@@ -105,6 +116,7 @@ export const WorkflowDetail: React.FC = () => {
       setEditName(workflow.name || '')
       setEditDescription(workflow.description || '')
       setEntryFormId(workflow.entry_form_id ?? null)
+      setSelectedServiceId(workflow.service_id ?? null)
     }
   }, [workflow, permsInitialized])
 
@@ -161,7 +173,8 @@ export const WorkflowDetail: React.FC = () => {
         portal_order: portalSettings.order,
         portal_visible: portalSettings.visible,
         portal_link_url: portalSettings.linkUrl || undefined,
-        entry_form_id: entryFormId
+        entry_form_id: entryFormId,
+        service_id: selectedServiceId
       }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflow', workflowId] })
@@ -538,6 +551,21 @@ export const WorkflowDetail: React.FC = () => {
               ))}
             </select>
             <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input. Saved with "Save Offerings Settings".</small>
+          </div>
+          <div className="form-group">
+            <label className="form-label">Service (organize under a service in the Catalog)</label>
+            <select
+              className="form-select"
+              value={selectedServiceId || ''}
+              onChange={(e) => setSelectedServiceId(e.target.value ? Number(e.target.value) : null)}
+              style={{ maxWidth: '400px' }}
+            >
+              <option value="">— Unassigned —</option>
+              {(services || []).filter(s => s.is_active).map(s => (
+                <option key={s.id} value={s.id}>{s.icon || '📋'} {s.name} ({s.key})</option>
+              ))}
+            </select>
+            <small style={{ color: '#7f8c8d' }}>Associates this workflow with a service so it appears in the Service Catalog. Saved with "Save Offerings Settings".</small>
           </div>
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button
