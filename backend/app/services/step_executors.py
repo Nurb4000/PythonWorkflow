@@ -571,6 +571,11 @@ class CalculationExecutor(BaseExecutor):
     
     Reuses the strict eval from P1 with a safe namespace.
     Expression is evaluated against `data` (step input).
+
+    INCIDENT_CHANGE_PLAN Phase 0.4: When step_definition includes
+    ``date_target_key``, the evaluated result is interpreted as an ISO
+    datetime string and a ``DateTarget`` record is created so that
+    calendar-based deadlines can be tracked independently of SLA/OLA.
     """
     
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
@@ -581,13 +586,57 @@ class CalculationExecutor(BaseExecutor):
         # Use the same strict eval as condition steps (P1)
         try:
             result = eval(expression, {"__builtins__": {}}, {"data": input_data})
-            return {
-                "result": result,
-                "expression": expression,
-                "executed_at": datetime.utcnow().isoformat(),
-            }
         except Exception as e:
             raise ValueError(f"Calculation failed for expression {expression!r}: {type(e).__name__}: {e}")
+
+        output = {
+            "result": result,
+            "expression": expression,
+            "executed_at": datetime.utcnow().isoformat(),
+        }
+
+        # Phase 0.4: create DateTarget when date_target_key is present
+        date_target_key = step_definition.get("date_target_key")
+        if date_target_key and db is not None:
+            output["date_target_key"] = date_target_key
+            output["date_target_created"] = await self._create_date_target(db, input_data, date_target_key, result)
+
+        return output
+
+    @staticmethod
+    async def _create_date_target(db: AsyncSession, input_data: Dict[str, Any], target_key: str, result) -> int:
+        """Persist a DateTarget record and return its ID."""
+        from app.models.date_targets import DateTarget
+
+        # Resolve workflow_run_id from input_data (set by engine at step execution)
+        run_id = input_data.get("_workflow_run_id") or input_data.get("workflow_run_id")
+        if not run_id:
+            logger.warning(f"date_target_key '{target_key}' — no workflow_run_id in input_data, skipping creation")
+            return -1
+
+        # Parse the result as an ISO datetime
+        try:
+            if isinstance(result, str):
+                target_dt = datetime.fromisoformat(result.replace("Z", "+00:00"))
+            elif isinstance(result, datetime):
+                target_dt = result
+            else:
+                logger.warning(f"date_target_key '{target_key}' — result is not a datetime string ({type(result).__name__}), skipping")
+                return -1
+        except (ValueError, TypeError) as e:
+            logger.error(f"date_target_key '{target_key}' — failed to parse result as datetime: {e}")
+            return -1
+
+        target = DateTarget(
+            workflow_run_id=int(run_id),
+            target_key=target_key,
+            target_datetime=target_dt,
+            status="pending",
+        )
+        db.add(target)
+        await db.flush()
+        logger.info(f"Created DateTarget {target.id} for key '{target_key}' on run #{run_id}")
+        return target.id
 
 
 class ReportExecutor(BaseExecutor):

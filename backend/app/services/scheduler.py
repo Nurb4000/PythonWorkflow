@@ -51,7 +51,15 @@ class SchedulerService:
             id="sla_breach_monitor",
             replace_existing=True,
         )
-        logger.info(f"Scheduler initialized with {len(schedules)} schedules + SLA monitor")
+
+        # Date target breach monitoring (INCIDENT_CHANGE_PLAN Phase 0) — runs every 5 minutes
+        self.scheduler.add_job(
+            self._check_date_target_breaches,
+            trigger=IntervalTrigger(minutes=5),
+            id="date_target_breach_monitor",
+            replace_existing=True,
+        )
+        logger.info(f"Scheduler initialized with {len(schedules)} schedules + SLA monitor + date target monitor")
     
     def _add_schedule_job(self, schedule: Schedule):
         """Add a scheduled workflow run job"""
@@ -263,6 +271,53 @@ class SchedulerService:
 
             except Exception as e:
                 logger.error(f"SLA breach check failed: {e}")
+
+    async def _check_date_target_breaches(self):
+        """Periodic job: check for date target breaches and send notifications."""
+        if not self.db_session_factory:
+            return
+
+        from datetime import timezone as tz
+        from app.models.date_targets import DateTarget
+        from app.services.email_service import notify_admin
+
+        async with self.db_session_factory() as db:
+            try:
+                now = datetime.now(tz.utc)
+
+                stmt = select(DateTarget).where(
+                    DateTarget.status == "pending",
+                    DateTarget.target_datetime <= now,
+                )
+                result = await db.execute(stmt)
+                breached = result.scalars().all()
+
+                if not breached:
+                    return
+
+                for dt in breached:
+                    dt.status = "breached"
+
+                    run_id = dt.workflow_run_id
+                    target_key = dt.target_key
+                    target_str = dt.target_datetime.isoformat() if dt.target_datetime else "unknown"
+
+                    notify_admin(
+                        f"Date Target Breach: {target_key} (Run #{run_id})",
+                        (
+                            f"Date target '{target_key}' for workflow run #{run_id} has been breached.\n\n"
+                            f"Target datetime: {target_str}\n"
+                            f"Current time: {now.isoformat()}\n"
+                            f"Step ID: {dt.step_id}\n"
+                            f"Task ID: {dt.task_id}"
+                        )
+                    )
+
+                await db.commit()
+                logger.info(f"Date target monitor: marked {len(breached)} target(s) as breached")
+
+            except Exception as e:
+                logger.error(f"Date target breach check failed: {e}")
 
     def stop(self):
         """Stop the scheduler and email monitor"""
