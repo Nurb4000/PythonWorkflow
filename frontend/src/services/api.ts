@@ -57,7 +57,7 @@ export const workflowApi = {
 
 // Auth / user / group APIs
 export const authApi = {
-  listUsers: () => api.get('/auth/users'),
+  listUsers: (includeInactive?: boolean) => api.get('/auth/users', { params: includeInactive ? { include_inactive: true } : {} }),
   createUser: (data: any) => {
     const { custom_data, ...params } = data
     return api.post('/auth/register', custom_data || {}, { params })
@@ -67,7 +67,7 @@ export const authApi = {
     return api.put(`/auth/users/${id}`, custom_data || {}, { params })
   },
   deleteUser: (id: number) => api.delete(`/auth/users/${id}`),
-  listGroups: () => api.get('/auth/groups'),
+  listGroups: (includeInactive?: boolean) => api.get('/auth/groups', { params: includeInactive ? { include_inactive: true } : {} }),
   createGroup: (data: any) => api.post('/auth/groups', null, { params: data }),
   updateGroup: (id: number, data: any) => api.put(`/auth/groups/${id}`, null, { params: data }),
   deleteGroup: (id: number) => api.delete(`/auth/groups/${id}`),

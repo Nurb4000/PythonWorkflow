@@ -28,13 +28,14 @@ class Workflow(Base):
     portal_icon = Column(String(20), default="", server_default="")  # Emoji/short icon for portal cards
     portal_order = Column(Integer, default=0, server_default="0")  # Sort order on the portal
     portal_visible = Column(Boolean, default=True, server_default=sa_text("true"))  # Show on the portal
+    show_in_portal = Column(Boolean, default=True, server_default=sa_text("true"))  # Show on general Offerings page (vs service-only)
     entry_form_id = Column(Integer, nullable=True)  # Form to show before triggering (P3.3)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 1
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships
-    steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan")
+    steps = relationship("WorkflowStep", back_populates="workflow", cascade="all, delete-orphan", order_by="WorkflowStep.position")
     runs = relationship("WorkflowRun", back_populates="workflow")
     allowed_groups = relationship("Group", secondary=workflow_permissions, back_populates="workflows")
     service = relationship("Service", back_populates="workflows")
@@ -167,6 +168,7 @@ class Task(Base):
     ola_closure_target_hours = Column(Integer, nullable=True)  # OLA: target for task to be completed/closed
     ola_pickup_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
     ola_closure_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
+    is_active = Column(Boolean, default=True, server_default=func.true())
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))

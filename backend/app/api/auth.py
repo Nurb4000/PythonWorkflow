@@ -1,7 +1,7 @@
 """
 Authentication API endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, Response
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -249,12 +249,12 @@ async def check_setup_required(db: AsyncSession = Depends(get_db)):
 @router.get("/auth/users", response_model=List[dict])
 async def list_users(
     role: Optional[str] = None,
-    is_active: Optional[bool] = None,
+    include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all users (admin/developer)"""
-    users = await auth_service.list_users(db, role=role, is_active=is_active)
+    """List all users (admin/developer). By default excludes deactivated users."""
+    users = await auth_service.list_users(db, role=role, is_active=None if include_inactive else True)
     
     return [
         {
@@ -332,21 +332,22 @@ async def delete_user(
     admin_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete user (admin only)"""
+    """Deactivate user (admin only)"""
     success = await auth_service.delete_user(db, user_id)
     if not success:
         raise HTTPException(status_code=404, detail="User not found")
-    
-    return {"message": "User deleted successfully"}
+
+    return {"message": "User deactivated successfully"}
 
 
 @router.get("/auth/groups", response_model=List[dict])
 async def list_groups(
+    include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """List all groups (admin/developer only)"""
-    groups = await auth_service.list_groups(db)
+    """List all groups (admin/developer only). By default excludes deactivated groups."""
+    groups = await auth_service.list_groups(db, include_inactive=include_inactive)
     
     return [
         {
@@ -430,11 +431,11 @@ async def delete_group(
     admin_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a group (admin only)"""
+    """Deactivate a group (admin only)"""
     success = await auth_service.delete_group(db, group_id)
     if not success:
         raise HTTPException(status_code=404, detail="Group not found")
-    return {"message": "Group deleted successfully"}
+    return {"message": "Group deactivated successfully"}
 
 
 @router.put("/auth/users/{user_id}/groups")

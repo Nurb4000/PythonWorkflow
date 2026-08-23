@@ -100,15 +100,15 @@ class AuthService:
         return user
     
     async def delete_user(self, db: AsyncSession, user_id: int) -> bool:
-        """Delete a user"""
+        """Deactivate a user (soft-delete)"""
         stmt = select(User).where(User.id == user_id)
         result = await db.execute(stmt)
         user = result.scalar_one_or_none()
-        
+
         if not user:
             return False
-        
-        await db.delete(user)
+
+        user.is_active = False
         await db.commit()
         return True
     
@@ -253,7 +253,7 @@ class AuthService:
         return group
 
     async def delete_group(self, db: AsyncSession, group_id: int) -> bool:
-        """Delete a group"""
+        """Deactivate a group (soft-delete)"""
         stmt = select(Group).where(Group.id == group_id)
         result = await db.execute(stmt)
         group = result.scalar_one_or_none()
@@ -261,7 +261,7 @@ class AuthService:
         if not group:
             return False
 
-        await db.delete(group)
+        group.is_active = False
         await db.commit()
         return True
 
@@ -294,9 +294,11 @@ class AuthService:
         await db.refresh(user, attribute_names=["groups"])
         return user
 
-    async def list_groups(self, db: AsyncSession) -> List[Group]:
+    async def list_groups(self, db: AsyncSession, include_inactive: bool = False) -> List[Group]:
         """List all groups with users"""
         stmt = select(Group).options(selectinload(Group.users))
+        if not include_inactive:
+            stmt = stmt.where(Group.is_active == True)
         result = await db.execute(stmt)
         return result.scalars().all()
     

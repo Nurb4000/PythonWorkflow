@@ -73,6 +73,7 @@ export const CItemList: React.FC = () => {
       const params: any = {}
       if (selectedTypeId) params.type_id = selectedTypeId
       if (statusFilter) params.status = statusFilter
+      if (!statusFilter) params.include_inactive = true
       if (searchQuery) params.search = searchQuery
       const res = await cmdbApi.listItems(params)
       return res.data as CIItem[]
@@ -325,7 +326,7 @@ export const CItemList: React.FC = () => {
               value={selectedTypeId ?? ''}
               onChange={e => setSelectedTypeId(e.target.value ? Number(e.target.value) : null)}
             >
-              <option value="">Active Types Only</option>
+              <option value="">All Types</option>
               {types?.filter(t => t.is_active !== false).map(t => (
                 <option key={t.id} value={t.id}>{t.icon ? t.icon + ' ' : ''}{t.name}</option>
               ))}
@@ -338,10 +339,10 @@ export const CItemList: React.FC = () => {
               value={statusFilter}
               onChange={e => setStatusFilter(e.target.value)}
             >
-              <option value="">All</option>
               {STATUS_OPTIONS.map(s => (
                 <option key={s} value={s}>{s}</option>
               ))}
+              <option value="">All</option>
             </select>
           </div>
           <div className="form-group" style={{ marginBottom: 0, flex: 2, minWidth: '200px' }}>
@@ -354,6 +355,15 @@ export const CItemList: React.FC = () => {
               placeholder="Search by name..."
             />
           </div>
+          {(selectedTypeId || statusFilter !== 'active' || searchQuery) && (
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={() => { setSelectedTypeId(null); setStatusFilter('active'); setSearchQuery('') }}
+              style={{ marginBottom: 0 }}
+            >
+              Clear
+            </button>
+          )}
         </div>
       </div>
 

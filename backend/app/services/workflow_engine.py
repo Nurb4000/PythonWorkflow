@@ -187,15 +187,15 @@ class WorkflowEngine:
         return workflow
     
     async def delete_workflow(self, db: AsyncSession, workflow_id: int) -> bool:
-        """Delete a workflow and all its runs"""
+        """Deactivate a workflow (soft-delete), preserving runs for audit"""
         stmt = select(Workflow).where(Workflow.id == workflow_id)
         result = await db.execute(stmt)
         workflow = result.scalar_one_or_none()
-        
+
         if not workflow:
             return False
-        
-        await db.delete(workflow)
+
+        workflow.is_active = False
         await db.commit()
         return True
     
@@ -219,13 +219,18 @@ class WorkflowEngine:
         # Populate SLA targets from service config (Phase 5)
         sla_response_target = None
         sla_resolution_target = None
-        if run_data.priority and workflow.service:
+        if workflow.service:
             sla_config = (workflow.service.custom_data or {}).get("sla_targets", {})
-            priority_key = str(run_data.priority)
-            if priority_key in sla_config.get("response_hours", {}):
+            priority_key = str(run_data.priority) if run_data.priority else None
+            # Check priority override first, then fall back to default
+            if priority_key and priority_key in sla_config.get("response_hours", {}):
                 sla_response_target = sla_config["response_hours"][priority_key]
-            if priority_key in sla_config.get("resolution_hours", {}):
+            elif sla_config.get("response_hours", {}).get("default") is not None:
+                sla_response_target = sla_config["response_hours"]["default"]
+            if priority_key and priority_key in sla_config.get("resolution_hours", {}):
                 sla_resolution_target = sla_config["resolution_hours"][priority_key]
+            elif sla_config.get("resolution_hours", {}).get("default") is not None:
+                sla_resolution_target = sla_config["resolution_hours"]["default"]
 
         # Create run
         run = WorkflowRun(
@@ -413,8 +418,12 @@ class WorkflowEngine:
                 executor = self.step_executors.get(step.step_type)
                 if not executor:
                     raise ValueError(f"No executor for step type: {step.step_type}")
-                
-                output_data = await executor.execute(instance.input_data, step.definition, db=db)
+
+                # Inject run ID so executors (e.g. CalculationExecutor date_target) can reference it
+                step_input = dict(instance.input_data or {})
+                step_input.setdefault("_workflow_run_id", run.id)
+
+                output_data = await executor.execute(step_input, step.definition, db=db)
                 
                 instance.status = "completed"
                 instance.output_data = output_data
@@ -543,18 +552,23 @@ class WorkflowEngine:
         # OLA: populate targets from assigned group's config + run priority
         ola_pickup_target = None
         ola_closure_target = None
-        if assigned_group_id and run.priority:
+        if assigned_group_id:
             from app.models.auth import Group
             grp_stmt = select(Group).where(Group.id == assigned_group_id)
             grp_result = await db.execute(grp_stmt)
             group = grp_result.scalar_one_or_none()
             if group:
                 ola_config = (group.custom_data or {}).get("ola_targets", {})
-                priority_key = str(run.priority)
-                if priority_key in ola_config.get("pickup_hours", {}):
+                priority_key = str(run.priority) if run.priority else None
+                # Check priority override first, then fall back to default
+                if priority_key and priority_key in ola_config.get("pickup_hours", {}):
                     ola_pickup_target = ola_config["pickup_hours"][priority_key]
-                if priority_key in ola_config.get("closure_hours", {}):
+                elif ola_config.get("pickup_hours", {}).get("default") is not None:
+                    ola_pickup_target = ola_config["pickup_hours"]["default"]
+                if priority_key and priority_key in ola_config.get("closure_hours", {}):
                     ola_closure_target = ola_config["closure_hours"][priority_key]
+                elif ola_config.get("closure_hours", {}).get("default") is not None:
+                    ola_closure_target = ola_config["closure_hours"]["default"]
 
         # Create task
         task = Task(
@@ -707,7 +721,7 @@ class WorkflowEngine:
                 return
 
             run.input_data = {**(run.input_data or {}), **input_data}
-            instance.input_data = {**(instance.input_data or {}), **run.input_data}
+            instance.input_data = {**(instance.input_data or {}), **run.input_data, "_workflow_run_id": run.id}
 
             success = await self._execute_single_step(db, run, instance, step)
             if not success:

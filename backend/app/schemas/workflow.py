@@ -39,6 +39,7 @@ class WorkflowCreate(BaseModel):
     portal_icon: str = ""
     portal_order: int = 0
     portal_visible: bool = True
+    show_in_portal: bool = True
     entry_form_id: Optional[int] = None  # P3.3: form to show before triggering
 
 
@@ -53,6 +54,7 @@ class WorkflowUpdate(BaseModel):
     portal_icon: Optional[str] = None
     portal_order: Optional[int] = None
     portal_visible: Optional[bool] = None
+    show_in_portal: Optional[bool] = None
     portal_link_url: Optional[str] = None
     entry_form_id: Optional[int] = None  # P3.3
     service_id: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 1.4
@@ -70,6 +72,7 @@ class WorkflowResponse(BaseModel):
     portal_icon: str = ""
     portal_order: int = 0
     portal_visible: bool = True
+    show_in_portal: bool = True
     entry_form_id: Optional[int] = None  # P3.3
     created_at: datetime
     updated_at: datetime

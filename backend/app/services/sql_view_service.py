@@ -26,9 +26,11 @@ class SQLViewService:
             if re.search(pattern, sql, re.IGNORECASE):
                 raise ValueError(f"View definition contains disallowed keyword: {keyword}")
 
-    async def list_views(self, db: AsyncSession) -> List[SQLView]:
+    async def list_views(self, db: AsyncSession, include_inactive: bool = False) -> List[SQLView]:
         """List all SQL views."""
         stmt = select(SQLView).order_by(SQLView.name)
+        if not include_inactive:
+            stmt = stmt.where(SQLView.is_active == True)
         result = await db.execute(stmt)
         return result.scalars().all()
 
@@ -87,16 +89,16 @@ class SQLViewService:
         return view
 
     async def delete_view(self, db: AsyncSession, view_id: int) -> bool:
-        """Delete a SQL view (drops from database)."""
+        """Deactivate a SQL view (drops from database but keeps record)."""
         view = await self.get_view(db, view_id)
         if not view:
             return False
 
         await db.execute(sa_text(f"DROP VIEW IF EXISTS {view.name}"))
-        await db.delete(view)
+        view.is_active = False
         await db.commit()
 
-        logger.info(f"Dropped SQL view: {view.name}")
+        logger.info(f"Deactivated SQL view: {view.name}")
         return True
 
     async def get_view_by_name(self, db: AsyncSession, name: str) -> Optional[SQLView]:

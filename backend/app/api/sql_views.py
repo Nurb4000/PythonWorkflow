@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from typing import Optional, List
 
@@ -26,12 +26,13 @@ def _view_to_dict(view: SQLView) -> dict:
 
 @router.get("/")
 async def list_views(
+    include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all SQL views."""
+    """List all SQL views. By default excludes deactivated views."""
     try:
-        views = await sql_view_service.list_views(db)
+        views = await sql_view_service.list_views(db, include_inactive=include_inactive)
         return [_view_to_dict(v) for v in views]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -84,12 +85,12 @@ async def delete_view(
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a SQL view (drops from database)."""
+    """Deactivate a SQL view (drops from database but keeps record)."""
     try:
         success = await sql_view_service.delete_view(db, view_id)
         if not success:
             raise HTTPException(status_code=404, detail="View not found")
-        return {"message": "View deleted successfully"}
+        return {"message": "View deactivated successfully"}
     except HTTPException:
         raise
     except Exception as e:

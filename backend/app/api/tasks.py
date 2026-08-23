@@ -32,8 +32,10 @@ async def list_tasks(
         select(Task)
         .options(
             selectinload(Task.assigned_user),
-            selectinload(Task.assigned_group)
+            selectinload(Task.assigned_group),
+            selectinload(Task.workflow_run)
         )
+        .where(Task.is_active == True)
     )
     
     # Filter by status if provided
@@ -109,6 +111,8 @@ async def list_tasks(
                 "priority": task.priority,
                 "ola_pickup_met": task.ola_pickup_met,
                 "ola_closure_met": task.ola_closure_met,
+                "sla_response_met": task.workflow_run.sla_response_met if task.workflow_run else None,
+                "sla_resolution_met": task.workflow_run.sla_resolution_met if task.workflow_run else None,
             }
             for task in tasks
         ],
@@ -460,16 +464,16 @@ async def delete_task(
     current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a task (admin only)"""
-    
+    """Deactivate a task (admin only)"""
+
     stmt = select(Task).where(Task.id == task_id)
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
-    await db.delete(task)
+
+    task.is_active = False
     await db.commit()
-    
-    return {"message": "Task deleted", "task_id": task.id}
+
+    return {"message": "Task deactivated", "task_id": task.id}

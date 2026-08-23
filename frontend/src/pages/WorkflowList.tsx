@@ -36,14 +36,13 @@ export const WorkflowList: React.FC = () => {
   const [showCreate, setShowCreate] = useState(false)
   const [newWorkflow, setNewWorkflow] = useState({ name: '', description: '' })
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
-  const [deleteConfirm, setDeleteConfirm] = useState<{ workflowId: number; workflowName: string; forms: AssociatedForm[] } | null>(null)
-  const [deleteForms, setDeleteForms] = useState(false)
+  const [deleteConfirm, setDeleteConfirm] = useState<{ workflowId: number; workflowName: string } | null>(null)
   const queryClient = useQueryClient()
 
   // Search, filter, sort state
   const [searchInput, setSearchInput] = useState('')
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<string>('')
+  const [statusFilter, setStatusFilter] = useState<string>('active')
   const [sortBy, setSortBy] = useState<string>('name')
   const [sortOrder, setSortOrder] = useState<string>('asc')
   const searchInputRef = useRef<HTMLInputElement>(null)
@@ -62,6 +61,7 @@ export const WorkflowList: React.FC = () => {
       const params: Record<string, string> = {}
       if (searchTerm) params.search = searchTerm
       if (statusFilter) params.status = statusFilter
+      if (!statusFilter) params.include_inactive = 'true'
       if (sortBy) params.sort_by = sortBy
       if (sortOrder) params.sort_order = sortOrder
       const response = await workflowApi.list(params)
@@ -102,7 +102,7 @@ export const WorkflowList: React.FC = () => {
       setSelectedGroupIds([])
       setSearchInput('')
       setSearchTerm('')
-      setStatusFilter('')
+      setStatusFilter('active')
       setError('')
     },
     onError: (err: any) => {
@@ -111,35 +111,23 @@ export const WorkflowList: React.FC = () => {
   })
 
   const deleteMutation = useMutation({
-    mutationFn: async (payload: { id: number; deleteForms: boolean }) => {
-      return workflowApi.delete(payload.id, payload.deleteForms)
+    mutationFn: async (workflowId: number) => {
+      return workflowApi.delete(workflowId)
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['workflows'] })
       setDeleteConfirm(null)
-      setDeleteForms(false)
       setSearchInput('')
       setSearchTerm('')
-      setStatusFilter('')
+      setStatusFilter('active')
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Failed to delete workflow')
+      setError(err.response?.data?.detail || 'Failed to deactivate workflow')
     }
   })
 
   const handleDeleteClick = async (workflowId: number, workflowName: string) => {
-    try {
-      const res = await workflowApi.getAssociatedForms(workflowId)
-      const forms = res.data.forms || []
-      if (forms.length > 0) {
-        setDeleteConfirm({ workflowId, workflowName, forms })
-        setDeleteForms(false)
-      } else {
-        deleteMutation.mutate({ id: workflowId, deleteForms: false })
-      }
-    } catch {
-      deleteMutation.mutate({ id: workflowId, deleteForms: false })
-    }
+    setDeleteConfirm({ workflowId, workflowName })
   }
 
   if (isLoading) {
@@ -242,11 +230,11 @@ export const WorkflowList: React.FC = () => {
               onChange={(e) => setStatusFilter(e.target.value)}
               style={{ minWidth: '150px' }}
             >
-              <option value="">All</option>
               <option value="active">Active</option>
               <option value="inactive">Inactive</option>
               <option value="published">Published</option>
               <option value="draft">Draft</option>
+              <option value="">All</option>
             </select>
           </div>
           <div className="form-group" style={{ marginBottom: 0 }}>
@@ -276,10 +264,10 @@ export const WorkflowList: React.FC = () => {
               <option value="desc">Descending</option>
             </select>
           </div>
-          {(searchInput || statusFilter) && (
+          {(searchInput || statusFilter !== 'active') && (
             <button
               className="btn btn-sm btn-secondary"
-              onClick={() => { setSearchInput(''); setSearchTerm(''); setStatusFilter('') }}
+              onClick={() => { setSearchInput(''); setSearchTerm(''); setStatusFilter('active') }}
               style={{ marginBottom: 0 }}
             >
               Clear
@@ -344,11 +332,11 @@ export const WorkflowList: React.FC = () => {
                       Design
                     </Link>
                     <button
-                      className="btn btn-sm btn-danger"
+                      className="btn btn-sm btn-warning"
                       onClick={() => handleDeleteClick(workflow.id, workflow.name)}
                       disabled={deleteMutation.isPending}
                     >
-                      Delete
+                      Deactivate
                     </button>
                   </td>
                 )}
@@ -364,31 +352,9 @@ export const WorkflowList: React.FC = () => {
           backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
           zIndex: 1000
         }} onClick={() => setDeleteConfirm(null)}>
-          <div className="card" style={{ maxWidth: '500px', width: '90%', maxHeight: '80vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
-            <h3 className="card-title">Delete Workflow</h3>
-            <p>Are you sure you want to delete <strong>{deleteConfirm.workflowName}</strong>?</p>
-
-            {deleteConfirm.forms.length > 0 && (
-              <div style={{ marginTop: '1rem' }}>
-                <p style={{ margin: '0 0 0.5rem', color: '#e74c3c' }}>
-                  This workflow has {deleteConfirm.forms.length} associated form(s) that will become orphaned:
-                </p>
-                <ul style={{ marginBottom: '1rem', paddingLeft: '1.5rem' }}>
-                  {deleteConfirm.forms.map(f => (
-                    <li key={f.id}><strong>{f.name}</strong>{f.description ? ` — ${f.description}` : ''}</li>
-                  ))}
-                </ul>
-                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
-                  <input
-                    type="checkbox"
-                    checked={deleteForms}
-                    onChange={e => setDeleteForms(e.target.checked)}
-                    style={{ width: '18px', height: '18px' }}
-                  />
-                  <span>Delete these forms as well</span>
-                </label>
-              </div>
-            )}
+          <div className="card" style={{ maxWidth: '500px', width: '90%' }} onClick={e => e.stopPropagation()}>
+            <h3 className="card-title">Deactivate Workflow</h3>
+            <p>Are you sure you want to deactivate <strong>{deleteConfirm.workflowName}</strong>? The workflow will be hidden from lists but preserved for audit purposes.</p>
 
             <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1.5rem', justifyContent: 'flex-end' }}>
               <button
@@ -399,11 +365,11 @@ export const WorkflowList: React.FC = () => {
                 Cancel
               </button>
               <button
-                className="btn btn-danger"
-                onClick={() => deleteMutation.mutate({ id: deleteConfirm.workflowId, deleteForms })}
+                className="btn btn-warning"
+                onClick={() => deleteMutation.mutate(deleteConfirm.workflowId)}
                 disabled={deleteMutation.isPending}
               >
-                {deleteMutation.isPending ? 'Deleting...' : 'Delete Workflow'}
+                {deleteMutation.isPending ? 'Deactivating...' : 'Deactivate Workflow'}
               </button>
             </div>
           </div>

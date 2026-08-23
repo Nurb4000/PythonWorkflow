@@ -140,14 +140,14 @@ async def _record_full_history(db: AsyncSession, ci_id: int, changed_by: Optiona
 
 @router.get("/types")
 async def list_ci_types(
-    is_active: Optional[bool] = None,
+    include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all CI types with item counts."""
+    """List all CI types with item counts. By default excludes deactivated types."""
     stmt = select(CIType)
-    if is_active is not None:
-        stmt = stmt.where(CIType.is_active == is_active)
+    if not include_inactive:
+        stmt = stmt.where(CIType.is_active == True)
     stmt = stmt.order_by(CIType.name)
 
     result = await db.execute(stmt)
@@ -312,13 +312,16 @@ async def list_cis(
     type_id: Optional[int] = None,
     status: Optional[str] = None,
     search: Optional[str] = None,
+    include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    """List configuration items with optional filters."""
+    """List configuration items with optional filters. By default excludes deactivated items."""
     stmt = select(ConfigurationItem).options(selectinload(ConfigurationItem.ci_type))
 
     conditions = []
+    if not include_inactive:
+        conditions.append(ConfigurationItem.is_active == True)
     if type_id is not None:
         conditions.append(ConfigurationItem.type_id == type_id)
     if status is not None:
@@ -522,7 +525,7 @@ async def delete_ci(
     current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a configuration item."""
+    """Deactivate a configuration item (soft-delete)."""
     stmt = select(ConfigurationItem).where(ConfigurationItem.id == item_id)
     result = await db.execute(stmt)
     ci = result.scalar_one_or_none()
@@ -531,16 +534,17 @@ async def delete_ci(
 
     old_data = dict(ci.ci_data or {})
 
-    # Record deletion history before removing the CI
+    # Record deactivation history
     await _record_history(db, ci.id, current_user.id, "delete", None, old_data, None)
 
-    await db.delete(ci)
+    ci.is_active = False
+    ci.status = "retired"
     await db.commit()
 
     # Trigger webhook if configured (pass ci data before deletion)
     await _trigger_cmdb_webhook(db, "ci_deleted", ci, old_data=old_data)
 
-    return {"message": f"Configuration item '{ci.name}' deleted"}
+    return {"message": f"Configuration item '{ci.name}' deactivated"}
 
 
 @router.get("/items/{item_id}/relationships")
@@ -556,9 +560,12 @@ async def get_ci_relationships(
         raise HTTPException(status_code=404, detail="Configuration item not found")
 
     stmt = select(CIRelationship).where(
-        or_(
-            CIRelationship.source_ci_id == item_id,
-            CIRelationship.target_ci_id == item_id,
+        and_(
+            or_(
+                CIRelationship.source_ci_id == item_id,
+                CIRelationship.target_ci_id == item_id,
+            ),
+            CIRelationship.is_active == True,
         )
     ).options(
         selectinload(CIRelationship.source_ci),
@@ -658,17 +665,17 @@ async def delete_relationship(
     current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    """Delete a relationship."""
+    """Deactivate a relationship (soft-delete)."""
     stmt = select(CIRelationship).where(CIRelationship.id == rel_id)
     result = await db.execute(stmt)
     rel = result.scalar_one_or_none()
     if not rel:
         raise HTTPException(status_code=404, detail="Relationship not found")
 
-    await db.delete(rel)
+    rel.is_active = False
     await db.commit()
 
-    return {"message": "Relationship deleted"}
+    return {"message": "Relationship deactivated"}
 
 
 # ---------------------------------------------------------------------------

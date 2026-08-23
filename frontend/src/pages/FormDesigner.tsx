@@ -58,6 +58,7 @@ interface Form {
   version: number
   environment: string
   is_published: boolean
+  is_active: boolean
 }
 
 const FIELD_TYPES = [
@@ -98,13 +99,20 @@ export const FormDesigner: React.FC = () => {
   const [dragIndex, setDragIndex] = useState<number | null>(null)
   const [dragOverIndex, setDragOverIndex] = useState<number | null>(null)
   const [formColumns, setFormColumns] = useState<1 | 2 | 3 | 4>(1)
+  const [formSearch, setFormSearch] = useState('')
+  const [formStatusFilter, setFormStatusFilter] = useState('active')
   const queryClient = useQueryClient()
 
   const { data: formsData } = useQuery({
-    queryKey: ['forms'],
+    queryKey: ['forms', formStatusFilter],
     queryFn: async () => {
       const token = localStorage.getItem('token')
+      const params: any = {}
+      if (formStatusFilter === '' || formStatusFilter === 'deactivated') {
+        params.include_inactive = true
+      }
       const response = await axios.get(`${API_URL}/forms`, {
+        params,
         headers: { Authorization: `Bearer ${token}` }
       })
       return response.data as Form[]
@@ -122,6 +130,42 @@ export const FormDesigner: React.FC = () => {
       resetEditor()
     }
   }, [showEditor])
+
+  // Auto-load form from URL params (?editing=1&id=N or ?preview=N)
+  useEffect(() => {
+    const editId = searchParams.get('id')
+    const previewId = searchParams.get('preview')
+    if (!forms.length || !editId && !previewId) return
+
+    const targetId = previewId ? parseInt(previewId) : editId ? parseInt(editId) : NaN
+    if (isNaN(targetId)) return
+
+    const form = forms.find(f => f.id === targetId)
+    if (!form) return
+
+    if (previewId) {
+      // Preview mode: load form, show preview view
+      setSelectedForm(form)
+      setNewForm({ name: form.name, description: form.description })
+      setSearchParams({ editing: '1', id: String(targetId) })
+      const props = form.schema?.properties || {}
+      const loadedFields: FormField[] = Object.entries(props).map(([key, field]) => ({
+        ...field as FormField,
+        name: key,
+        data_size: (field as any).data_size || 'medium',
+        display_size: (field as any).display_size || 'full',
+        column: (field as any).column ?? 0,
+        source: (field as any).source || 'form',
+      }))
+      setFields(loadedFields)
+      setSchema(form.schema || { type: 'object', properties: {}, required: [] })
+      setFormColumns((form.schema?.columns ?? 1) as 1 | 2 | 3 | 4)
+      setView('preview')
+    } else if (editId && showEditor) {
+      // Edit mode: load form for editing
+      loadFormForEdit(form)
+    }
+  }, [forms.length]) // Only run once after forms load
 
   const { data: tableSchemas } = useQuery({
     queryKey: ['data-tables'],
@@ -182,7 +226,7 @@ export const FormDesigner: React.FC = () => {
       queryClient.invalidateQueries({ queryKey: ['forms'] })
     },
     onError: (err: any) => {
-      setError(err.response?.data?.detail || 'Failed to delete form')
+      setError(err.response?.data?.detail || 'Failed to deactivate form')
     }
   })
 
@@ -200,7 +244,7 @@ export const FormDesigner: React.FC = () => {
   const loadFormForEdit = async (form: Form) => {
     setSelectedForm(form)
     setNewForm({ name: form.name, description: form.description })
-    setSearchParams({ editing: '1' })
+    setSearchParams({ editing: '1', id: String(form.id) })
     setError('')
     setSuccessMessage('')
     try {
@@ -959,58 +1003,126 @@ export const FormDesigner: React.FC = () => {
       )}
 
       {!showEditor && (
-      <div className="card">
-        <table className="table">
-          <thead>
-            <tr>
-              <th>Name</th>
-              <th>Description</th>
-              <th>Version</th>
-              <th>Environment</th>
-              <th>Status</th>
-              <th>Actions</th>
-            </tr>
-          </thead>
-          <tbody>
-            {forms.map((form) => (
-              <tr key={form.id}>
-                <td><strong>{form.name}</strong></td>
-                <td>{form.description}</td>
-                <td>v{form.version}</td>
-                <td>
-                  <span className={`badge ${form.environment === 'production' ? 'badge-success' : 'badge-info'}`}>
-                    {form.environment}
-                  </span>
-                </td>
-                <td>
-                  <span className={`badge ${form.is_published ? 'badge-success' : 'badge-warning'}`}>
-                    {form.is_published ? 'Published' : 'Draft'}
-                  </span>
-                </td>
-                <td>
-                  {canDevelop && (
-                    <>
-                      <button
-                        className="btn btn-sm btn-primary"
-                        onClick={() => loadFormForEdit(form)}
-                        style={{ marginRight: '0.5rem' }}
-                      >
-                        Edit
-                      </button>
-                      <button
-                        className="btn btn-sm btn-danger"
-                        onClick={() => deleteFormMutation.mutate(form.id)}
-                      >
-                        Delete
-                      </button>
-                    </>
-                  )}
-                </td>
-              </tr>
-            ))}
-          </tbody>
-        </table>
-      </div>
+        <>
+          <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}>
+                <label className="form-label">Search</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Search forms by name or description..."
+                  value={formSearch}
+                  onChange={(e) => setFormSearch(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0 }}>
+                <label className="form-label">Status</label>
+                <select
+                  className="form-select"
+                  value={formStatusFilter}
+                  onChange={(e) => setFormStatusFilter(e.target.value)}
+                  style={{ minWidth: '150px' }}
+                >
+                  <option value="active">Active</option>
+                  <option value="deactivated">Deactivated</option>
+                  <option value="published">Published</option>
+                  <option value="draft">Draft</option>
+                  <option value="">All</option>
+                </select>
+              </div>
+              {(formSearch || formStatusFilter !== 'active') && (
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => { setFormSearch(''); setFormStatusFilter('active') }}
+                  style={{ marginBottom: 0 }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
+          </div>
+
+          <div className="card">
+            <table className="table">
+              <thead>
+                <tr>
+                  <th>Name</th>
+                  <th>Description</th>
+                  <th>Version</th>
+                  <th>Environment</th>
+                  <th>Status</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {forms
+                  .filter(form => {
+                    if (formStatusFilter === 'active' && !form.is_active) return false
+                    if (formStatusFilter === 'deactivated' && form.is_active) return false
+                    if (formStatusFilter === 'published' && (!form.is_published || !form.is_active)) return false
+                    if (formStatusFilter === 'draft' && (form.is_published || !form.is_active)) return false
+                    if (formSearch) {
+                      const q = formSearch.toLowerCase()
+                      return form.name.toLowerCase().includes(q) || (form.description || '').toLowerCase().includes(q)
+                    }
+                    return true
+                  })
+                  .map((form) => (
+                    <tr key={form.id}>
+                      <td><strong>{form.name}</strong></td>
+                      <td>{form.description}</td>
+                      <td>v{form.version}</td>
+                      <td>
+                        <span className={`badge ${form.environment === 'production' ? 'badge-success' : 'badge-info'}`}>
+                          {form.environment}
+                        </span>
+                      </td>
+                      <td>
+                        <span className={`badge ${form.is_published ? 'badge-success' : 'badge-warning'}`}>
+                          {form.is_published ? 'Published' : 'Draft'}
+                        </span>
+                      </td>
+                      <td>
+                        {canDevelop && (
+                          <>
+                            <button
+                              className="btn btn-sm btn-primary"
+                              onClick={() => loadFormForEdit(form)}
+                              style={{ marginRight: '0.5rem' }}
+                            >
+                              Edit
+                            </button>
+                            <button
+                              className="btn btn-sm btn-warning"
+                              onClick={() => deleteFormMutation.mutate(form.id)}
+                            >
+                              Deactivate
+                            </button>
+                          </>
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+              </tbody>
+            </table>
+            {forms.filter(form => {
+              if (formStatusFilter === 'active' && !form.is_active) return false
+              if (formStatusFilter === 'deactivated' && form.is_active) return false
+              if (formStatusFilter === 'published' && (!form.is_published || !form.is_active)) return false
+              if (formStatusFilter === 'draft' && (form.is_published || !form.is_active)) return false
+              if (formSearch) {
+                const q = formSearch.toLowerCase()
+                return form.name.toLowerCase().includes(q) || (form.description || '').toLowerCase().includes(q)
+              }
+              return true
+            }).length === 0 && (
+              <div style={{ textAlign: 'center', padding: '2rem', color: '#7f8c8d' }}>
+                No forms match your filters.
+              </div>
+            )}
+          </div>
+        </>
       )}
     </div>
   )

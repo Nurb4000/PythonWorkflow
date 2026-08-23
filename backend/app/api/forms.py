@@ -173,12 +173,13 @@ async def create_form(
 @router.get("/forms")
 async def list_forms(
     environment: Optional[str] = None,
+    include_inactive: bool = Query(False),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List forms accessible to user"""
+    """List forms accessible to user. By default excludes deactivated forms."""
     try:
-        forms = await form_service.list_forms(db, current_user, environment)
+        forms = await form_service.list_forms(db, current_user, environment, include_inactive)
         
         return [
             {
@@ -188,6 +189,7 @@ async def list_forms(
                 "version": f.version,
                 "environment": f.environment,
                 "is_published": f.is_published,
+                "is_active": f.is_active,
                 "created_at": f.created_at
             }
             for f in forms
@@ -268,12 +270,12 @@ async def delete_form(
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a form (admin/developer only)"""
+    """Deactivate a form (admin/developer only)"""
     success = await form_service.delete_form(db, form_id)
     if not success:
         raise HTTPException(status_code=404, detail="Form not found")
-    
-    return {"message": "Form deleted successfully"}
+
+    return {"message": "Form deactivated successfully"}
 
 
 @router.post("/forms/{form_id}/submit")

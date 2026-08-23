@@ -71,15 +71,15 @@ class FormService:
         return form
     
     async def delete_form(self, db: AsyncSession, form_id: int) -> bool:
-        """Delete a form"""
+        """Deactivate a form (soft-delete)"""
         stmt = select(Form).where(Form.id == form_id)
         result = await db.execute(stmt)
         form = result.scalar_one_or_none()
-        
+
         if not form:
             return False
-        
-        await db.delete(form)
+
+        form.is_active = False
         await db.commit()
         return True
     
@@ -89,11 +89,13 @@ class FormService:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
     
-    async def list_forms(self, db: AsyncSession, user: User, environment: Optional[str] = None) -> List[Form]:
+    async def list_forms(self, db: AsyncSession, user: User, environment: Optional[str] = None, include_inactive: bool = False) -> List[Form]:
         """List forms accessible to user"""
-        
+
         if user.role in ("admin", "developer"):
             stmt = select(Form)
+            if not include_inactive:
+                stmt = stmt.where(Form.is_active == True)
             if environment:
                 stmt = stmt.where(Form.environment == environment)
         else:

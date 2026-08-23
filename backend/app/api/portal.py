@@ -24,8 +24,8 @@ async def get_available_workflows(
 ):
     """Get workflows available to the current user based on their role and groups (P3.3)"""
     
-    # Published + active workflows only
-    base = and_(Workflow.is_active == True, Workflow.is_published == True, Workflow.portal_visible == True)
+    # Published + active + visible + show_in_portal workflows only
+    base = and_(Workflow.is_active == True, Workflow.is_published == True, Workflow.portal_visible == True, Workflow.show_in_portal == True)
     
     # Admins can see all published workflows
     if current_user.role in ("admin", "developer"):
@@ -69,6 +69,7 @@ async def get_available_workflows(
             "portal_icon": w.portal_icon or "",
             "portal_order": w.portal_order or 0,
             "portal_visible": w.portal_visible,
+            "show_in_portal": w.show_in_portal,
             "portal_link_url": (w.config or {}).get("portal_link_url", ""),
             "entry_form_id": w.entry_form_id,  # P3.3
         }

@@ -90,6 +90,7 @@ async def create_workflow(
 async def list_workflows(
     search: Optional[str] = Query(None, description="Search by name or description"),
     status: Optional[str] = Query(None, description="Filter by status: active, inactive, published, draft"),
+    include_inactive: bool = Query(False, description="Include deactivated workflows"),
     sort_by: Optional[str] = Query("name", description="Sort field: name, created_at, runs_count, steps_count, portal_order"),
     sort_order: Optional[str] = Query("asc", description="Sort direction: asc, desc"),
     current_user: User = Depends(get_current_user),
@@ -97,7 +98,7 @@ async def list_workflows(
 ):
     """List workflows with counts (restricted by group permissions unless admin/developer).
 
-    Supports search, filter, and sort query parameters.
+    By default excludes deactivated workflows. Supports search, filter, and sort query parameters.
     """
     stmt = (
         select(Workflow.id, Workflow.name, Workflow.description, Workflow.is_active, Workflow.created_at,
@@ -130,6 +131,9 @@ async def list_workflows(
             stmt = stmt.where(Workflow.is_published == True)
         elif status_lower == "draft":
             stmt = stmt.where(Workflow.is_published == False)
+    elif not include_inactive:
+        # Default: only show active workflows
+        stmt = stmt.where(Workflow.is_active == True)
 
     # Non-admin/developer users only see workflows permitted to their groups
     if current_user.role not in ("admin", "developer"):
@@ -305,81 +309,22 @@ async def get_workflow_associated_forms(
 @router.delete("/{workflow_id}")
 async def delete_workflow(
     workflow_id: int,
-    delete_forms: bool = Query(False),
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a workflow (admin/developer only). Set delete_forms=true to also remove associated forms."""
-    stmt = select(Workflow).where(Workflow.id == workflow_id).options(
-        selectinload(Workflow.steps)
-    )
+    """Deactivate a workflow (admin/developer only). Preserves runs, tasks, and steps for audit."""
+    stmt = select(Workflow).where(Workflow.id == workflow_id)
     result = await db.execute(stmt)
     workflow = result.scalar_one_or_none()
 
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
 
-    # Collect associated form IDs
-    form_ids = set()
-    if workflow.entry_form_id:
-        form_ids.add(workflow.entry_form_id)
-    for step in workflow.steps:
-        defn = step.definition or {}
-        if defn.get("form_id"):
-            form_ids.add(defn["form_id"])
-
-    # Also check tasks from workflow runs
-    if form_ids:
-        task_stmt = select(Task.form_id).where(
-            Task.workflow_run_id.in_(
-                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
-            ),
-            Task.form_id.isnot(None),
-            Task.form_id.notin_(form_ids)
-        )
-    else:
-        task_stmt = select(Task.form_id).where(
-            Task.workflow_run_id.in_(
-                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
-            ),
-            Task.form_id.isnot(None)
-        )
-    task_result = await db.execute(task_stmt)
-    for row in task_result.scalars().all():
-        if row:
-            form_ids.add(row)
-
-    # Delete associated schedules first (no cascade from Workflow)
-    from sqlalchemy import delete as sa_delete
-    from app.models.schemas import Schedule
-    await db.execute(sa_delete(Schedule).where(Schedule.workflow_id == workflow_id))
-
-    # Delete tasks associated with this workflow's runs (no cascade to tasks)
-    await db.execute(
-        sa_delete(Task).where(
-            Task.workflow_run_id.in_(
-                select(WorkflowRun.id).where(WorkflowRun.workflow_id == workflow_id)
-            )
-        )
-    )
-
-    # Delete the workflow (cascade handles steps, runs, etc.)
-    await db.delete(workflow)
+    workflow.is_active = False
     await db.commit()
 
-    # Optionally delete associated forms
-    deleted_form_count = 0
-    if delete_forms and form_ids:
-        from sqlalchemy import delete as sa_delete
-        for fid in form_ids:
-            await db.execute(sa_delete(FormSubmission).where(FormSubmission.form_id == fid))
-            result = await db.execute(sa_delete(Form).where(Form.id == fid))
-            deleted_form_count += result.rowcount
-        await db.commit()
-
     return {
-        "message": "Workflow deleted successfully",
-        "forms_deleted": deleted_form_count,
+        "message": "Workflow deactivated successfully",
     }
 
 
@@ -496,7 +441,7 @@ async def delete_step(
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a step from a workflow (admin/developer only)"""
+    """Disable a step from a workflow (admin/developer only)"""
     stmt = select(WorkflowStep).where(
         WorkflowStep.id == step_id,
         WorkflowStep.workflow_id == workflow_id
@@ -507,9 +452,9 @@ async def delete_step(
     if not step:
         raise HTTPException(status_code=404, detail="Step not found")
 
-    await db.delete(step)
+    step.is_enabled = False
     await db.commit()
-    return {"message": "Step deleted successfully"}
+    return {"message": "Step disabled successfully"}
 
 
 @router.post("/{workflow_id}/run", response_model=WorkflowRunResponse)

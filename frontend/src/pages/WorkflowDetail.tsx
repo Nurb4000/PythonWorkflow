@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { useParams, Link } from 'react-router-dom'
+import { useParams, Link, useNavigate } from 'react-router-dom'
 import { workflowApi, runApi, authApi, workflowExportApi, marketplaceApi, formsApi, servicesApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
@@ -15,6 +15,7 @@ interface Workflow {
   portal_icon: string
   portal_order: number
   portal_visible: boolean
+  show_in_portal: boolean
   entry_form_id: number | null
   service_id: number | null
   steps: any[]
@@ -38,6 +39,7 @@ interface Group {
 
 export const WorkflowDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
+  const navigate = useNavigate()
   const { user } = useAuth()
   const canDevelop = user?.role === 'admin' || user?.role === 'developer'
   const queryClient = useQueryClient()
@@ -45,7 +47,7 @@ export const WorkflowDetail: React.FC = () => {
   const [selectedGroupIds, setSelectedGroupIds] = useState<number[]>([])
   const [permsInitialized, setPermsInitialized] = useState(false)
   const [permsError, setPermsError] = useState('')
-  const [portalSettings, setPortalSettings] = useState({ icon: '', order: 0, visible: true, linkUrl: '' })
+  const [portalSettings, setPortalSettings] = useState({ icon: '', order: 0, visible: true, showInPortal: true, linkUrl: '' })
   const [editMode, setEditMode] = useState(false)
   const [editName, setEditName] = useState('')
   const [editDescription, setEditDescription] = useState('')
@@ -111,6 +113,7 @@ export const WorkflowDetail: React.FC = () => {
         icon: workflow.portal_icon || '',
         order: workflow.portal_order || 0,
         visible: workflow.portal_visible !== false,
+        showInPortal: workflow.show_in_portal !== false,
         linkUrl: (workflow.config?.portal_link_url || '')
       })
       setEditName(workflow.name || '')
@@ -172,6 +175,7 @@ export const WorkflowDetail: React.FC = () => {
         portal_icon: portalSettings.icon,
         portal_order: portalSettings.order,
         portal_visible: portalSettings.visible,
+        show_in_portal: portalSettings.showInPortal,
         portal_link_url: portalSettings.linkUrl || undefined,
         entry_form_id: entryFormId,
         service_id: selectedServiceId
@@ -327,13 +331,6 @@ export const WorkflowDetail: React.FC = () => {
                   onChange={(e) => setEditName(e.target.value)}
                   placeholder="Workflow name"
                 />
-                <textarea
-                  className="form-textarea"
-                  value={editDescription}
-                  onChange={(e) => setEditDescription(e.target.value)}
-                  placeholder="Workflow description"
-                  rows={3}
-                />
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   <button className="btn btn-success btn-sm" onClick={() => metadataMutation.mutate()}>
                     Save Changes
@@ -377,6 +374,21 @@ export const WorkflowDetail: React.FC = () => {
                 >
                   {publishMutation.isPending ? 'Saving...' : (workflow.is_published ? 'Unpublish' : 'Publish')}
                 </button>
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer', fontSize: '0.85rem', color: '#666' }}>
+                  <input
+                    type="checkbox"
+                    checked={portalSettings.showInPortal}
+                    onChange={(e) => {
+                      if (!e.target.checked && !selectedServiceId) {
+                        if (!confirm('This workflow is not associated with a service. Unchecking will hide it from the Offerings page, making it inaccessible to end users. Continue?')) {
+                          return
+                        }
+                      }
+                      setPortalSettings(s => ({ ...s, showInPortal: e.target.checked }))
+                    }}
+                  />
+                  Show on Offerings page
+                </label>
                 <button
                   className={`btn ${workflow.is_active ? 'btn-warning' : 'btn-success'}`}
                   onClick={() => isActiveMutation.mutate(!workflow.is_active)}
@@ -424,6 +436,25 @@ export const WorkflowDetail: React.FC = () => {
             </button>
           </div>
         </div>
+
+        {!portalSettings.showInPortal && !selectedServiceId && canDevelop && (
+          <div className="error" style={{ marginTop: '1rem' }}>
+            Warning: This workflow is hidden from the Offerings page but has no service assigned. It will be inaccessible to end users until associated with a service in the Offerings Settings below.
+          </div>
+        )}
+
+        {editMode && (
+          <div style={{ padding: '0 1rem 1rem' }}>
+            <textarea
+              className="form-textarea"
+              value={editDescription}
+              onChange={(e) => setEditDescription(e.target.value)}
+              placeholder="Workflow description"
+              rows={3}
+              style={{ width: '100%', boxSizing: 'border-box' }}
+            />
+          </div>
+        )}
 
         <div className="stats-grid">
         <div className="stat-card">
@@ -517,14 +548,6 @@ export const WorkflowDetail: React.FC = () => {
                 style={{ width: '100px' }}
               />
             </div>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.35rem', cursor: 'pointer' }}>
-              <input
-                type="checkbox"
-                checked={portalSettings.visible}
-                onChange={(e) => setPortalSettings(s => ({ ...s, visible: e.target.checked }))}
-              />
-              Visible on Offerings page
-            </label>
           </div>
           <div className="form-group">
             <label className="form-label">External Link URL</label>
@@ -550,6 +573,34 @@ export const WorkflowDetail: React.FC = () => {
                 <option key={f.id} value={f.id}>{f.name}{f.description ? ` — ${f.description}` : ''}</option>
               ))}
             </select>
+            {entryFormId && (
+              <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.35rem' }}>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => navigate(`/forms?preview=${entryFormId}`)}
+                  title="Preview this form"
+                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                >
+                  👁 Preview
+                </button>
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => navigate(`/forms?editing=1&id=${entryFormId}`)}
+                  title="Edit this form"
+                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                >
+                  ✏️ Edit
+                </button>
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => navigate('/forms?editing=1')}
+                  title="Create a new form"
+                  style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+                >
+                  + New Form
+                </button>
+              </div>
+            )}
             <small style={{ color: '#7f8c8d' }}>When set, users must fill out this form before the workflow runs. Form data becomes the workflow's input. Saved with "Save Offerings Settings".</small>
           </div>
           <div className="form-group">
