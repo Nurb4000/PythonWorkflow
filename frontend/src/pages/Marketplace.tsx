@@ -82,6 +82,7 @@ export const Marketplace: React.FC = () => {
     create_forms: true,
     create_groups: true,
     match_users_by_email: true,
+    workflow_name: '',
   })
   const [error, setError] = useState('')
   const [detailTab, setDetailTab] = useState<'details' | 'flow' | 'security'>('details')
@@ -161,6 +162,9 @@ export const Marketplace: React.FC = () => {
         params.create_forms = installOptions.create_forms
         params.create_groups = installOptions.create_groups
         params.match_users_by_email = installOptions.match_users_by_email
+        if (installOptions.workflow_name?.trim()) {
+          params.workflow_name = installOptions.workflow_name.trim()
+        }
       }
       return marketplaceApi.installItem(selectedItem.id, params)
     },
@@ -267,6 +271,7 @@ export const Marketplace: React.FC = () => {
     setInstallResult(null)
     setError('')
     setDetailTab('details')
+    setInstallOptions(prev => ({ ...prev, workflow_name: '' }))
   }
 
   const handleInstall = () => {
@@ -849,6 +854,17 @@ export const Marketplace: React.FC = () => {
                               />
                               Match users by email
                             </label>
+                          </div>
+                          <div className="form-group" style={{ gridColumn: '1 / -1' }}>
+                            <label className="form-label">Workflow Name (optional)</label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={installOptions.workflow_name}
+                              onChange={(e) => setInstallOptions({ ...installOptions, workflow_name: e.target.value })}
+                              placeholder={`Use original name: ${itemDetail?.name || selectedItem.name}`}
+                            />
+                            <small style={{ color: '#7f8c8d' }}>Leave empty to use the original name. If a workflow with this name exists, it will be auto-renamed.</small>
                           </div>
                         </div>
                       </div>

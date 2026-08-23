@@ -199,7 +199,6 @@ async def update_item(
 @router.delete("/items/{item_id}")
 async def delete_item(
     item_id: int,
-    archive: bool = Query(False, description="Archive instead of delete (admin cross-user)"),
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -209,11 +208,11 @@ async def delete_item(
             item_id=item_id,
             author_id=current_user.id,
             is_admin=current_user.role == "admin",
-            archive_only=archive or current_user.role == "admin",
+            archive_only=True,
         )
         if not item:
             raise HTTPException(status_code=404, detail="Item not found")
-        return {"message": "Item deleted", "item_id": item_id}
+        return {"message": "Item archived", "item_id": item_id}
     except ValueError as e:
         raise HTTPException(status_code=403, detail=str(e))
 
@@ -287,6 +286,7 @@ async def install_item(
     create_forms: bool = Query(True, description="Create missing forms during import"),
     create_groups: bool = Query(True, description="Create missing groups during import"),
     match_users_by_email: bool = Query(True, description="Resolve user refs by email"),
+    workflow_name: Optional[str] = Query(None, description="Custom name for the imported workflow"),
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -302,6 +302,8 @@ async def install_item(
     }
     if environment:
         options["environment"] = environment
+    if workflow_name:
+        options["workflow_name"] = workflow_name
 
     try:
         if item.item_type == "workflow":
@@ -324,6 +326,16 @@ async def install_item(
                 "item_type": "node",
                 "step_payload": result["step_payload"],
                 "saved_node": result["saved_node"],
+            }
+        elif item.item_type == "kb_article":
+            result = await marketplace_service.install_kb_article_item(
+                db, item_id, developer.id, options
+            )
+            return {
+                "installed": True,
+                "item_id": item_id,
+                "item_type": "kb_article",
+                **result,
             }
         else:
             raise HTTPException(status_code=400, detail=f"Cannot install item type: {item.item_type}")

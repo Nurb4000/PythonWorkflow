@@ -4,12 +4,12 @@ API endpoints for knowledge base and templates
 import re
 from fastapi import APIRouter, HTTPException, Depends, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, delete, insert
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 from app.core.database import get_db
 from app.services.template_service import template_service
-from app.models.auth import User
+from app.models.auth import User, Group, kb_article_permissions
 from app.api.auth import get_current_user, get_current_admin
 
 router = APIRouter()
@@ -129,6 +129,8 @@ def _kb_article_to_dict(article: KnowledgeBaseArticle) -> dict:
         "content": article.content or "",
         "service_id": article.service_id,
         "is_published": article.is_published,
+        "is_featured": getattr(article, 'is_featured', False),
+        "display_order": getattr(article, 'display_order', 0),
         "sort_order": article.sort_order or 0,
         "created_at": article.created_at,
         "updated_at": article.updated_at,
@@ -140,7 +142,30 @@ def _kb_article_to_dict(article: KnowledgeBaseArticle) -> dict:
             "key": article.service.key,
             "icon": article.service.icon or "",
         }
+    if hasattr(article, 'allowed_groups') and article.allowed_groups:
+        result["allowed_groups"] = [{"id": g.id, "name": g.name} for g in article.allowed_groups]
+    else:
+        result["allowed_groups"] = []
     return result
+
+
+async def _load_article_with_groups(db: AsyncSession, article_id: int):
+    """Load article with service and allowed groups."""
+    stmt = select(KnowledgeBaseArticle).where(
+        KnowledgeBaseArticle.id == article_id
+    ).options(selectinload(KnowledgeBaseArticle.service))
+    result = await db.execute(stmt)
+    article = result.scalar_one_or_none()
+    if not article:
+        return None
+
+    # Load allowed groups
+    grp_stmt = select(Group).join(
+        kb_article_permissions, kb_article_permissions.c.group_id == Group.id
+    ).where(kb_article_permissions.c.article_id == article_id)
+    grp_result = await db.execute(grp_stmt)
+    article.allowed_groups = grp_result.scalars().all()
+    return article
 
 
 @router.get("/kb-articles")
@@ -166,12 +191,198 @@ async def list_kb_articles(
             )
         )
 
+    # Non-admin users only see articles visible to their groups
+    if current_user.role != "admin":
+        user_group_ids = {g.id for g in current_user.groups}
+        # Articles with no group restrictions are visible to all
+        # Articles with group restrictions are only visible if user's group matches
+        if user_group_ids:
+            restricted_stmt = select(kb_article_permissions.c.article_id).where(
+                kb_article_permissions.c.group_id.in_(user_group_ids)
+            )
+            stmt = stmt.where(
+                or_(
+                    # No group restrictions (not in permissions table)
+                    ~KnowledgeBaseArticle.id.in_(select(kb_article_permissions.c.article_id).distinct()),
+                    # User's groups have access
+                    KnowledgeBaseArticle.id.in_(restricted_stmt)
+                )
+            )
+        else:
+            # User with no groups only sees articles with no restrictions
+            stmt = stmt.where(
+                ~KnowledgeBaseArticle.id.in_(select(kb_article_permissions.c.article_id).distinct())
+            )
+
     stmt = stmt.options(selectinload(KnowledgeBaseArticle.service))
     stmt = stmt.order_by(KnowledgeBaseArticle.sort_order.asc(), KnowledgeBaseArticle.title.asc())
     result = await db.execute(stmt)
     articles = result.scalars().all()
 
     return [_kb_article_to_dict(a) for a in articles]
+
+
+@router.get("/kb-articles/featured")
+async def list_featured_kb_articles(
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """List featured (top) KB articles for the browse page."""
+    stmt = select(KnowledgeBaseArticle).where(
+        KnowledgeBaseArticle.is_published == True,
+        KnowledgeBaseArticle.is_featured == True
+    )
+
+    # Non-admin users only see articles visible to their groups
+    if current_user.role != "admin":
+        user_group_ids = {g.id for g in current_user.groups}
+        if user_group_ids:
+            restricted_stmt = select(kb_article_permissions.c.article_id).where(
+                kb_article_permissions.c.group_id.in_(user_group_ids)
+            )
+            stmt = stmt.where(
+                or_(
+                    ~KnowledgeBaseArticle.id.in_(select(kb_article_permissions.c.article_id).distinct()),
+                    KnowledgeBaseArticle.id.in_(restricted_stmt)
+                )
+            )
+        else:
+            stmt = stmt.where(
+                ~KnowledgeBaseArticle.id.in_(select(kb_article_permissions.c.article_id).distinct())
+            )
+
+    stmt = stmt.options(selectinload(KnowledgeBaseArticle.service))
+    stmt = stmt.order_by(KnowledgeBaseArticle.display_order.asc(), KnowledgeBaseArticle.title.asc())
+    result = await db.execute(stmt)
+    articles = result.scalars().all()
+
+    return [_kb_article_to_dict(a) for a in articles]
+
+
+@router.get("/kb-articles/admin")
+async def list_kb_articles_admin(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """List all KB articles including drafts (admin only)."""
+    stmt = select(KnowledgeBaseArticle).options(selectinload(KnowledgeBaseArticle.service))
+    stmt = stmt.order_by(KnowledgeBaseArticle.sort_order.asc(), KnowledgeBaseArticle.title.asc())
+    result = await db.execute(stmt)
+    articles = result.scalars().all()
+
+    # Load allowed groups for each article
+    for article in articles:
+        grp_stmt = select(Group).join(
+            kb_article_permissions, kb_article_permissions.c.group_id == Group.id
+        ).where(kb_article_permissions.c.article_id == article.id)
+        grp_result = await db.execute(grp_stmt)
+        article.allowed_groups = grp_result.scalars().all()
+
+    return [_kb_article_to_dict(a) for a in articles]
+
+
+@router.get("/kb-articles/export")
+async def export_kb_articles(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Export all KB articles as JSON (admin only)."""
+    from fastapi.responses import JSONResponse
+
+    stmt = select(KnowledgeBaseArticle).options(selectinload(KnowledgeBaseArticle.service))
+    result = await db.execute(stmt)
+    articles = result.scalars().all()
+
+    exported = []
+    for article in articles:
+        # Load allowed groups
+        grp_stmt = select(Group).join(
+            kb_article_permissions, kb_article_permissions.c.group_id == Group.id
+        ).where(kb_article_permissions.c.article_id == article.id)
+        grp_result = await db.execute(grp_stmt)
+        allowed_groups = grp_result.scalars().all()
+
+        exported.append({
+            "title": article.title,
+            "slug": article.slug,
+            "content": article.content or "",
+            "service_id": article.service_id,
+            "is_published": article.is_published,
+            "is_featured": getattr(article, 'is_featured', False),
+            "display_order": getattr(article, 'display_order', 0),
+            "sort_order": article.sort_order or 0,
+            "allowed_group_ids": [g.id for g in allowed_groups],
+        })
+
+    return JSONResponse(
+        content=exported,
+        headers={"Content-Disposition": "attachment; filename=kb_articles.json"}
+    )
+
+
+@router.post("/kb-articles/import")
+async def import_kb_articles(
+    articles: List[dict],
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Import KB articles from JSON (admin only)."""
+    imported_count = 0
+
+    for article_data in articles:
+        title = article_data.get("title", "")
+        slug = article_data.get("slug", _slugify(title))
+        content = article_data.get("content", "")
+        service_id = article_data.get("service_id")
+        is_published = article_data.get("is_published", True)
+        is_featured = article_data.get("is_featured", False)
+        display_order = article_data.get("display_order", 0)
+        sort_order = article_data.get("sort_order", 0)
+        allowed_group_ids = article_data.get("allowed_group_ids", [])
+
+        if not title:
+            continue
+
+        # Check for duplicate slug
+        existing = await db.execute(
+            select(KnowledgeBaseArticle).where(KnowledgeBaseArticle.slug == slug)
+        )
+        if existing.scalar_one_or_none():
+            continue
+
+        # Validate service if provided
+        if service_id is not None:
+            svc = await db.execute(select(Service).where(Service.id == service_id))
+            if not svc.scalar_one_or_none():
+                service_id = None
+
+        article = KnowledgeBaseArticle(
+            title=title,
+            slug=slug,
+            content=content,
+            service_id=service_id,
+            is_published=is_published,
+            is_featured=is_featured,
+            display_order=display_order,
+            sort_order=sort_order,
+        )
+        db.add(article)
+        await db.flush()
+
+        # Set group permissions
+        if allowed_group_ids:
+            grp_stmt = select(Group).where(Group.id.in_(allowed_group_ids))
+            grp_result = await db.execute(grp_stmt)
+            groups = grp_result.scalars().all()
+            await db.execute(
+                insert(kb_article_permissions),
+                [{"article_id": article.id, "group_id": g.id} for g in groups]
+            )
+
+        imported_count += 1
+
+    await db.commit()
+    return {"message": f"Imported {imported_count} of {len(articles)} articles"}
 
 
 @router.get("/kb-articles/{article_id}")
@@ -226,6 +437,9 @@ async def create_kb_article(
     service_id: Optional[int] = None,
     slug: Optional[str] = None,
     sort_order: int = 0,
+    is_featured: bool = False,
+    display_order: int = 0,
+    allowed_group_ids: Optional[List[int]] = Query(None),
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
@@ -251,17 +465,31 @@ async def create_kb_article(
         content=content or "",
         service_id=service_id,
         sort_order=sort_order,
+        is_featured=is_featured,
+        display_order=display_order,
     )
     db.add(article)
+    await db.flush()
+
+    # Set group permissions (empty list = visible to all)
+    if allowed_group_ids is not None:
+        await db.execute(delete(kb_article_permissions).where(kb_article_permissions.c.article_id == article.id))
+        if allowed_group_ids:
+            grp_stmt = select(Group).where(Group.id.in_(allowed_group_ids))
+            grp_result = await db.execute(grp_stmt)
+            groups = grp_result.scalars().all()
+            if len(groups) != len(set(allowed_group_ids)):
+                raise HTTPException(status_code=400, detail="One or more groups not found")
+            await db.execute(
+                insert(kb_article_permissions),
+                [{"article_id": article.id, "group_id": g.id} for g in groups]
+            )
+
     await db.commit()
     await db.refresh(article)
 
-    # Reload with service relationship
-    stmt = select(KnowledgeBaseArticle).where(
-        KnowledgeBaseArticle.id == article.id
-    ).options(selectinload(KnowledgeBaseArticle.service))
-    result = await db.execute(stmt)
-    return _kb_article_to_dict(result.scalar_one())
+    result_article = await _load_article_with_groups(db, article.id)
+    return _kb_article_to_dict(result_article)
 
 
 @router.put("/kb-articles/{article_id}")
@@ -300,17 +528,33 @@ async def update_kb_article(
         article.service_id = data["service_id"]
     if "is_published" in data:
         article.is_published = data["is_published"]
+    if "is_featured" in data:
+        article.is_featured = data["is_featured"]
+    if "display_order" in data:
+        article.display_order = data["display_order"]
     if "sort_order" in data:
         article.sort_order = data["sort_order"]
+
+    # Handle group permissions update
+    if "allowed_group_ids" in data:
+        group_ids = data["allowed_group_ids"]
+        await db.execute(delete(kb_article_permissions).where(kb_article_permissions.c.article_id == article.id))
+        if group_ids:
+            grp_stmt = select(Group).where(Group.id.in_(group_ids))
+            grp_result = await db.execute(grp_stmt)
+            groups = grp_result.scalars().all()
+            if len(groups) != len(set(group_ids)):
+                raise HTTPException(status_code=400, detail="One or more groups not found")
+            await db.execute(
+                insert(kb_article_permissions),
+                [{"article_id": article.id, "group_id": g.id} for g in groups]
+            )
 
     await db.commit()
     await db.refresh(article)
 
-    stmt = select(KnowledgeBaseArticle).where(
-        KnowledgeBaseArticle.id == article.id
-    ).options(selectinload(KnowledgeBaseArticle.service))
-    result = await db.execute(stmt)
-    return _kb_article_to_dict(result.scalar_one())
+    result_article = await _load_article_with_groups(db, article.id)
+    return _kb_article_to_dict(result_article)
 
 
 @router.delete("/kb-articles/{article_id}")
@@ -319,7 +563,7 @@ async def delete_kb_article(
     admin: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a KB article (admin only)."""
+    """Unpublish a KB article (soft-delete)."""
     stmt = select(KnowledgeBaseArticle).where(KnowledgeBaseArticle.id == article_id)
     result = await db.execute(stmt)
     article = result.scalar_one_or_none()
@@ -327,6 +571,6 @@ async def delete_kb_article(
     if not article:
         raise HTTPException(status_code=404, detail="Article not found")
 
-    await db.delete(article)
+    article.is_published = False
     await db.commit()
-    return {"message": "Article deleted"}
+    return {"message": "Article unpublished"}

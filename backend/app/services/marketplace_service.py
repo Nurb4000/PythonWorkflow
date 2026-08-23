@@ -95,8 +95,8 @@ class MarketplaceService:
         node_type: Optional[str] = None,
         status: str = "published",
     ) -> MarketplaceItem:
-        if item_type not in ("workflow", "node"):
-            raise ValueError("item_type must be 'workflow' or 'node'")
+        if item_type not in ("workflow", "node", "kb_article"):
+            raise ValueError("item_type must be 'workflow', 'node', or 'kb_article'")
 
         if content_format not in ("xml", "json"):
             raise ValueError("content_format must be 'xml' or 'json'")
@@ -278,7 +278,8 @@ class MarketplaceService:
             item.status = "archived"
             item.is_active = False
         else:
-            await db.delete(item)
+            item.status = "archived"
+            item.is_active = False
 
         await db.commit()
         return item
@@ -329,7 +330,10 @@ class MarketplaceService:
     ) -> List[SavedNodeTemplate]:
         stmt = (
             select(SavedNodeTemplate)
-            .where(SavedNodeTemplate.user_id == user_id)
+            .where(
+                SavedNodeTemplate.user_id == user_id,
+                SavedNodeTemplate.is_enabled == True,
+            )
             .order_by(SavedNodeTemplate.created_at.desc())
         )
         result = await db.execute(stmt)
@@ -357,7 +361,7 @@ class MarketplaceService:
         node = await self.get_saved_node(db, node_id, user_id)
         if not node:
             raise ValueError("Node template not found or access denied")
-        await db.delete(node)
+        node.is_enabled = False
         await db.commit()
         return True
 
@@ -518,6 +522,71 @@ class MarketplaceService:
                 "retry_delay_seconds": saved_node.retry_delay_seconds,
                 "failure_hook_url": saved_node.failure_hook_url,
             },
+        }
+
+    async def install_kb_article_item(
+        self,
+        db: AsyncSession,
+        item_id: int,
+        user_id: int,
+        options: Dict[str, Any],
+    ) -> Dict[str, Any]:
+        """Install a KB article marketplace item."""
+        from app.models.services import KnowledgeBaseArticle
+
+        item = await self.get_item(db, item_id)
+        if not item:
+            raise ValueError(f"Marketplace item {item_id} not found")
+
+        if item.item_type != "kb_article":
+            raise ValueError(f"Item {item_id} is not a KB article (type={item.item_type})")
+
+        if item.status != "published":
+            raise ValueError(f"Item {item_id} is not published (status={item.status})")
+
+        # Parse content as JSON
+        try:
+            article_data = json.loads(item.content)
+        except json.JSONDecodeError:
+            raise ValueError("Invalid KB article content format")
+
+        title = article_data.get("title", item.name)
+        slug = article_data.get("slug", "")
+        content = article_data.get("content", "")
+        is_published = article_data.get("is_published", True)
+        sort_order = article_data.get("sort_order", 0)
+
+        # Check for duplicate slug
+        if slug:
+            existing = await db.execute(
+                select(KnowledgeBaseArticle).where(KnowledgeBaseArticle.slug == slug)
+            )
+            if existing.scalar_one_or_none():
+                # Generate unique slug
+                import re
+                base_slug = re.sub(r'[^\w\s-]', '', title.lower()).strip().replace(' ', '-').replace('_', '-')
+                slug = f"{base_slug}-{item.id}"
+
+        article = KnowledgeBaseArticle(
+            title=title,
+            slug=slug or f"{title.lower().replace(' ', '-')}-{item.id}",
+            content=content,
+            is_published=is_published,
+            sort_order=sort_order,
+        )
+        db.add(article)
+        await db.flush()
+
+        item.downloads_count = (item.downloads_count or 0) + 1
+        await db.commit()
+
+        logger.info(f"Installed KB article item {item.id} ({item.name}) for user {user_id}")
+
+        return {
+            "article_id": article.id,
+            "title": article.title,
+            "slug": article.slug,
+            "message": f"KB article '{title}' installed successfully",
         }
 
     # ── Preview / Audit ───────────────────────────────────────────────

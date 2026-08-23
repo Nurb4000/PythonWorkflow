@@ -86,6 +86,7 @@ class WorkflowImportService:
         create_forms = options.get("create_forms", True)
         create_groups = options.get("create_groups", True)
         match_users_by_email = options.get("match_users_by_email", True)
+        custom_name = options.get("workflow_name")  # Optional: user-provided name
 
         # Build refId → real ID mappings
         ref_to_id: Dict[str, int] = {}
@@ -149,7 +150,7 @@ class WorkflowImportService:
 
         # 4. Create workflow
         wf_data = data["workflow"]
-        wf_name = wf_data["name"]
+        wf_name = custom_name or wf_data["name"]
 
         # Check for existing workflow with same name
         existing_wf = await self._find_workflow_by_name(db, wf_name)
@@ -164,7 +165,7 @@ class WorkflowImportService:
             new_wf.description = wf_data.get("description", "")
             new_wf.is_published = False
             new_wf.environment = "test"
-            new_wf.is_active = False
+            new_wf.is_active = True
             new_wf.version = (new_wf.version or 1) + 1
             new_wf.portal_icon = wf_data.get("portal", {}).get("icon", "")
             new_wf.portal_order = wf_data.get("portal", {}).get("order", 0)
@@ -191,7 +192,7 @@ class WorkflowImportService:
                 name=final_name,
                 description=wf_data.get("description", ""),
                 version=wf_data.get("version", 1),
-                is_active=False,
+                is_active=True,
                 created_by=user_id,
                 is_published=False,
                 environment="test",
@@ -405,6 +406,13 @@ class WorkflowImportService:
         data["workflow"]["isActive"] = wf_el.get("isActive", "true") == "true"
         data["workflow"]["version"] = int(wf_el.get("version", "1"))
 
+        # Description lives in <Metadata><Description> (not on Workflow element)
+        meta_el = root.find("Metadata")
+        if meta_el is not None:
+            desc_el = meta_el.find("Description")
+            if desc_el is not None and desc_el.text:
+                data["workflow"]["description"] = desc_el.text.strip()
+
         # Portal settings
         portal_el = wf_el.find("Portal")
         if portal_el is not None:
@@ -528,6 +536,7 @@ class WorkflowImportService:
         normalized: Dict[str, Any] = {
             "workflow": {
                 "name": wf.get("name", ""),
+                "description": wf.get("description") or data.get("metadata", {}).get("description", ""),
                 "isPublished": wf.get("isPublished", False),
                 "environment": wf.get("environment", "test"),
                 "isActive": wf.get("isActive", True),

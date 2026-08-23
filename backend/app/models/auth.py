@@ -21,6 +21,13 @@ workflow_permissions = Table(
     Column('group_id', Integer, ForeignKey('groups.id'), primary_key=True)
 )
 
+kb_article_permissions = Table(
+    'kb_article_permissions',
+    Base.metadata,
+    Column('article_id', Integer, ForeignKey('knowledge_base_articles.id'), primary_key=True),
+    Column('group_id', Integer, ForeignKey('groups.id'), primary_key=True)
+)
+
 
 class User(Base):
     __tablename__ = "users"

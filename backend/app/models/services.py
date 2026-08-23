@@ -59,6 +59,8 @@ class KnowledgeBaseArticle(Base):
     content = Column(Text, default="")
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
     is_published = Column(Boolean, default=True, server_default=func.true())
+    is_featured = Column(Boolean, default=False, server_default=func.false())
+    display_order = Column(Integer, default=0, server_default="0")
     sort_order = Column(Integer, default=0, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
