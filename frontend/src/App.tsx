@@ -14,7 +14,8 @@ import { AdminTaskDashboard } from './pages/AdminTaskDashboard'
 import { RoleTaskDashboard } from './pages/RoleTaskDashboard'
 import { TaskDetail } from './pages/TaskDetail'
 import { Portal } from './pages/Portal'
-import { UserManagement } from './pages/UserManagement'
+import { UsersPage } from './pages/UsersPage'
+import { GroupsPage } from './pages/GroupsPage'
 import { FormDesigner } from './pages/FormDesigner'
 import { SettingsPage } from './pages/SettingsPage'
 import { FieldManager } from './pages/FieldManager'
@@ -28,6 +29,8 @@ import { MySubmissions } from './pages/MySubmissions'
 import { ServiceManager } from './pages/ServiceManager'
 import { ServiceCatalog } from './pages/ServiceCatalog'
 import { KBArticleViewer } from './pages/KBArticleViewer'
+import { KBManagement } from './pages/KBManagement'
+import { KBBrowse } from './pages/KBBrowse'
 
 const API_URL = '/api'
 
@@ -118,6 +121,7 @@ const RoleAwareNav: React.FC = () => {
       <Link to="/catalog">Catalog</Link>
       <Link to="/offerings">Offerings</Link>
       <Link to="/my-submissions">My Submissions</Link>
+      <Link to="/kb-browse">Knowledge Base</Link>
 
       {/* ── Admin dropdown ── */}
       {user.role === 'admin' && (
@@ -125,7 +129,9 @@ const RoleAwareNav: React.FC = () => {
           <Link to="/admin/runs" onClick={() => navigate('/admin/runs')}>Runs</Link>
           <Link to="/admin/uploads" onClick={() => navigate('/admin/uploads')}>Uploads</Link>
           <Link to="/admin/users" onClick={() => navigate('/admin/users')}>Users</Link>
+          <Link to="/admin/groups" onClick={() => navigate('/admin/groups')}>Groups</Link>
           <Link to="/admin/services" onClick={() => navigate('/admin/services')}>Services</Link>
+          <Link to="/admin/kb" onClick={() => navigate('/admin/kb')}>Knowledge Base</Link>
           <Link to="/settings" onClick={() => navigate('/settings')}>Settings</Link>
           <Link to="/admin/fields" onClick={() => navigate('/admin/fields')}>Field Manager</Link>
         </Dropdown>
@@ -383,15 +389,18 @@ const AppContent: React.FC = () => {
           <Route path="/workflows/import" element={<RoleRoute roles={['admin', 'developer']}><WorkflowImportExport /></RoleRoute>} />
           <Route path="/runs/:runId" element={<ProtectedRoute><RunMonitor /></ProtectedRoute>} />
           <Route path="/admin" element={<RoleRoute roles={['admin']}><AdminDashboard /></RoleRoute>} />
-          <Route path="/admin/users" element={<RoleRoute roles={['admin']}><UserManagement /></RoleRoute>} />
+          <Route path="/admin/users" element={<RoleRoute roles={['admin']}><UsersPage /></RoleRoute>} />
+          <Route path="/admin/groups" element={<RoleRoute roles={['admin']}><GroupsPage /></RoleRoute>} />
           <Route path="/admin/runs" element={<RoleRoute roles={['admin']}><WorkflowRunsAdmin /></RoleRoute>} />
           <Route path="/admin/uploads" element={<RoleRoute roles={['admin']}><UploadsAdmin /></RoleRoute>} />
           <Route path="/admin/tasks" element={<RoleRoute roles={['admin']}><AdminTaskDashboard /></RoleRoute>} />
           <Route path="/admin/services" element={<RoleRoute roles={['admin']}><ServiceManager /></RoleRoute>} />
+          <Route path="/admin/kb" element={<RoleRoute roles={['admin']}><KBManagement /></RoleRoute>} />
           <Route path="/tasks" element={<RoleRoute roles={['admin', 'developer', 'staff']}><RoleTaskDashboard role="developer" title="Tasks" /></RoleRoute>} />
           <Route path="/my-tasks" element={<ProtectedRoute><RoleTaskDashboard role="user" title="My Tasks" /></ProtectedRoute>} />
           <Route path="/tasks/:id" element={<ProtectedRoute><TaskDetail /></ProtectedRoute>} />
           <Route path="/catalog" element={<ProtectedRoute><ServiceCatalog /></ProtectedRoute>} />
+          <Route path="/kb-browse" element={<ProtectedRoute><KBBrowse /></ProtectedRoute>} />
           <Route path="/kb/:slug" element={<ProtectedRoute><KBArticleViewer /></ProtectedRoute>} />
           <Route path="/offerings" element={<ProtectedRoute><Portal /></ProtectedRoute>} />
           <Route path="/my-submissions" element={<ProtectedRoute><MySubmissions /></ProtectedRoute>} />
