@@ -421,21 +421,21 @@ async def delete_schedule(
     current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Delete a schedule"""
+    """Disable a schedule (soft-delete)"""
     stmt = select(Schedule).where(Schedule.id == schedule_id)
     result = await db.execute(stmt)
     schedule = result.scalar_one_or_none()
-    
+
     if not schedule:
         raise HTTPException(status_code=404, detail="Schedule not found")
-    
+
     # Remove from scheduler
     scheduler_service.remove_schedule(schedule_id)
-    
-    await db.delete(schedule)
+
+    schedule.is_enabled = False
     await db.commit()
-    
-    return {"message": "Schedule deleted successfully"}
+
+    return {"message": "Schedule disabled successfully"}
 
 
 @router.post("/schedules/{schedule_id}/test")
@@ -507,4 +507,33 @@ async def list_form_uploads(
             }
             for upload, uploader_username in rows
         ],
+    }
+
+
+@router.post("/seed-demo-data")
+async def seed_demo_data(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Seed all demo data: CMDB types/items, services, KB articles, and forms.
+    
+    Idempotent — safe to call multiple times; existing records are preserved.
+    Admin-only.
+    """
+    from app.services.demo_data_service import seed_all_demo_data, commit_demo_data
+
+    result = await seed_all_demo_data(db)
+    await commit_demo_data(db)
+
+    return {
+        "success": True,
+        "message": "Demo data seeded successfully",
+        "details": {
+            "categories": len(result.get("categories", {})),
+            "services": len(result.get("services", {})),
+            "groups": len(result.get("groups", {})),
+            "ci_types": len(result.get("ci_types", {})),
+            "kb_articles_created": result.get("kb_articles_created", 0),
+            "demo_form_id": result.get("demo_form_id"),
+        },
     }

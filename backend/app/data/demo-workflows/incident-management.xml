@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-08-13T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>Incident Management</Name>
+    <Description>Multi-team incident handling with triage routing, SLA tracking, and optional QC verification. Demonstrates break-fix workflow patterns.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="Incident Management" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="🚨" order="7" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+    <EntryForm refId="form-entry" />
+
+    <Steps>
+      <!-- STEP 1: Entry form — user reports incident -->
+      <Step id="step-1" type="form" position="0" isEnabled="true">
+        <Title>Report Incident</Title>
+        <Description>Affected user or reporter fills out the incident intake form.</Description>
+        <Definition>{"form_id":"form-entry","next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <!-- STEP 2: Triage — IT Triage Team assesses and routes -->
+      <Step id="step-2" type="human_task" position="1" isEnabled="true">
+        <Title>Triage Assessment</Title>
+        <Description>The triage team reviews the incident, assesses priority, and routes to the appropriate support team.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-triage","assigned_group_id":"group-it-triage","description":"Review the reported incident. Assess actual priority, confirm category, and provide initial notes. The workflow will route to the appropriate team based on your selection.","next_step_ids":["step-3"]}</Definition>
+      </Step>
+
+      <!-- STEP 3: Condition — route by triage category -->
+      <Step id="step-3" type="condition" position="2" isEnabled="true">
+        <Title>Route by Category</Title>
+        <Description>Routes the incident to the appropriate team based on triage assessment.</Description>
+        <Definition>{"routes":[{"expression":"data['triage_category'] == 'Network Team'","target_step_id":"step-4"},{"expression":"data['triage_category'] == 'Server Team'","target_step_id":"step-5"},{"expression":"data['triage_category'] == 'Application Team'","target_step_id":"step-6"}],"default_target_step_id":"step-7"}</Definition>
+      </Step>
+
+      <!-- STEP 4: Network Team resolution -->
+      <Step id="step-4" type="human_task" position="3" isEnabled="true">
+        <Title>Network Team Resolution</Title>
+        <Description>Network team investigates and resolves the incident.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-implementation","assigned_group_id":"group-network-team","description":"Resolve the network-related incident. Document your actions and resolution details.","next_step_ids":["step-8"]}</Definition>
+      </Step>
+
+      <!-- STEP 5: Server Team resolution -->
+      <Step id="step-5" type="human_task" position="4" isEnabled="true">
+        <Title>Server Team Resolution</Title>
+        <Description>Server team investigates and resolves the incident.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-implementation","assigned_group_id":"group-server-team","description":"Resolve the server-related incident. Document your actions and resolution details.","next_step_ids":["step-8"]}</Definition>
+      </Step>
+
+      <!-- STEP 6: Application Team resolution -->
+      <Step id="step-6" type="human_task" position="5" isEnabled="true">
+        <Title>Application Team Resolution</Title>
+        <Description>Application team investigates and resolves the incident.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-implementation","assigned_group_id":"group-app-team","description":"Resolve the application-related incident. Document your actions and resolution details.","next_step_ids":["step-8"]}</Definition>
+      </Step>
+
+      <!-- STEP 7: Triage Team handles directly (fallback) -->
+      <Step id="step-7" type="human_task" position="6" isEnabled="true">
+        <Title>Triage Team Resolution</Title>
+        <Description>Triage team resolves the incident directly without escalation.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-implementation","assigned_group_id":"group-it-triage","description":"Resolve this incident directly. Document your actions and resolution details.","next_step_ids":["step-8"]}</Definition>
+      </Step>
+
+      <!-- STEP 8: Condition — QC required? -->
+      <Step id="step-8" type="condition" position="7" isEnabled="true">
+        <Title>QC Required?</Title>
+        <Description>If triage requested QC verification, route to the QC team; otherwise skip to notification.</Description>
+        <Definition>{"routes":[{"expression":"data['enable_qc'] == 'Yes'","target_step_id":"step-9"}],"default_target_step_id":"step-10"}</Definition>
+      </Step>
+
+      <!-- STEP 9: QC Verification -->
+      <Step id="step-9" type="human_task" position="8" isEnabled="true">
+        <Title>QC Verification</Title>
+        <Description>QC team contacts the affected user to confirm resolution.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-qc","assigned_group_id":"group-qc-team","description":"Contact the affected user to confirm the incident is fully resolved to their satisfaction.","routes":[{"expression":"data['customer_confirmed'] == 'No — Requires Further Action'","target_step_id":"step-2"}],"default_target_step_id":"step-10"}</Definition>
+      </Step>
+
+      <!-- STEP 10: Notify resolution -->
+      <Step id="step-10" type="email" position="9" isEnabled="true">
+        <Title>Notify Resolution</Title>
+        <Description>Send resolution notification to the affected user.</Description>
+        <Definition>{"to":"$input.affected_email","subject":"Incident Resolved — $input.issue_description","body":"Your incident has been resolved.\n\nResolution: $input.resolution_description\nResolution Code: $input.resolution_code\n\nIf you have any further questions, please contact the IT Service Desk.","next_step_ids":[]}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules />
+    <Permissions>
+      <Group refId="group-it-triage" />
+      <Group refId="group-network-team" />
+      <Group refId="group-server-team" />
+      <Group refId="group-app-team" />
+      <Group refId="group-qc-team" />
+    </Permissions>
+  </Workflow>
+
+  <Forms>
+    <!-- ENTRY FORM: Incident report -->
+    <Form id="form-entry" name="Incident Report Form" isPublished="true" environment="test">
+      <Description>Report an IT issue. The triage team will assess and route your incident to the appropriate support team.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"incident_heading":{"name":"incident_heading","type":"info","title":"Incident Report","content":"Report an IT issue. The triage team will assess and route your incident to the appropriate support team.","text_align":"left","required":false},"affected_user":{"name":"affected_user","type":"string","title":"Affected User / Name","required":true,"column":0,"data_size":"medium"},"affected_email":{"name":"affected_email","type":"email","title":"Affected User Email","required":true,"column":1,"data_size":"medium"},"department":{"name":"department","type":"select","title":"Department","required":true,"column":0,"options":["Engineering","Finance","HR","IT","Operations","Sales","Other"],"data_size":"medium"},"device_or_system":{"name":"device_or_system","type":"string","title":"Device / System Affected","required":false,"column":1,"data_size":"medium"},"ci_ref":{"name":"ci_ref","type":"string","title":"CMDB CI Reference (optional)","required":false,"column":0,"data_size":"small"},"urgency":{"name":"urgency","type":"select","title":"Urgency","required":true,"column":1,"options":["1-Critical","2-High","3-Medium","4-Low"],"data_size":"medium"},"impact":{"name":"impact","type":"select","title":"Business Impact","required":true,"column":0,"options":["1-Single user","2-Department","3-Multiple departments","4-Entire organization"],"data_size":"medium"},"category":{"name":"category","type":"select","title":"Issue Category","required":true,"column":1,"options":["Network","Server","Application","Hardware","Software","Access/Permissions","Other"],"data_size":"medium"},"issue_description":{"name":"issue_description","type":"textarea","title":"Issue Description","required":true,"column":0,"data_size":"long"},"steps_to_reproduce":{"name":"steps_to_reproduce","type":"textarea","title":"Steps to Reproduce (if applicable)","required":false,"column":1,"data_size":"long"},"workaround_attempted":{"name":"workaround_attempted","type":"string","title":"Workaround Attempted","required":false,"column":0,"data_size":"long"}},"required":["affected_user","affected_email","department","urgency","impact","category","issue_description"]}</Schema>
+    </Form>
+
+    <!-- TRIAGE FORM: Assessment and routing -->
+    <Form id="form-triage" name="Incident Triage Form" isPublished="true" environment="test">
+      <Description>Triage team assessment form. Pre-filled from the entry submission.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"triage_heading":{"name":"triage_heading","type":"info","title":"Incident Triage","content":"Review the reported incident. Assess actual priority, confirm category, and provide initial notes. The workflow will route to the appropriate team based on your selection.","text_align":"left","required":false},"affected_user":{"name":"affected_user","type":"string","title":"Affected User","required":false,"column":0,"data_size":"medium"},"affected_email":{"name":"affected_email","type":"string","title":"Email","required":false,"column":1,"data_size":"medium"},"issue_description":{"name":"issue_description","type":"string","title":"Issue Description","required":false,"column":0,"data_size":"long"},"category":{"name":"category","type":"string","title":"Reported Category","required":false,"column":1,"data_size":"medium"},"triage_priority":{"name":"triage_priority","type":"select","title":"Assessed Priority","required":true,"column":0,"options":["1-Critical","2-High","3-Medium","4-Low"],"data_size":"medium"},"triage_category":{"name":"triage_category","type":"select","title":"Route To (Team)","required":true,"column":1,"options":["Network Team","Server Team","Application Team","Handle in Triage"],"data_size":"medium"},"enable_qc":{"name":"enable_qc","type":"select","title":"Require QC Verification?","required":true,"column":0,"options":["Yes","No"],"data_size":"small"},"triage_notes":{"name":"triage_notes","type":"textarea","title":"Triage Notes / Initial Assessment","required":false,"column":0,"data_size":"long"}},"required":["triage_priority","triage_category"]}</Schema>
+    </Form>
+
+    <!-- IMPLEMENTATION FORM: Shared by all resolution teams -->
+    <Form id="form-implementation" name="Incident Resolution Form" isPublished="true" environment="test">
+      <Description>Resolution form used by all support teams. Pre-filled from triage data.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"impl_heading":{"name":"impl_heading","type":"info","title":"Incident Resolution","content":"Resolve the incident. Document your actions and resolution details.","text_align":"left","required":false},"affected_user":{"name":"affected_user","type":"string","title":"Affected User","required":false,"column":0,"data_size":"medium"},"triage_category":{"name":"triage_category","type":"string","title":"Assigned Team","required":false,"column":1,"data_size":"medium"},"issue_description":{"name":"issue_description","type":"string","title":"Issue","required":false,"column":0,"data_size":"long"},"triage_notes":{"name":"triage_notes","type":"string","title":"Triage Notes","required":false,"column":1,"data_size":"long"},"resolution_description":{"name":"resolution_description","type":"textarea","title":"Resolution Description","required":true,"column":0,"data_size":"long"},"resolution_code":{"name":"resolution_code","type":"select","title":"Resolution Code","required":true,"column":1,"options":["Fixed","Workaround Applied","User Error — Resolved","Duplicate Incident","Cannot Reproduce","Deferred to Change"],"data_size":"medium"},"impl_notes":{"name":"impl_notes","type":"textarea","title":"Additional Notes","required":false,"column":0,"data_size":"long"}},"required":["resolution_description","resolution_code"]}</Schema>
+    </Form>
+
+    <!-- QC FORM: Post-resolution verification -->
+    <Form id="form-qc" name="QC Verification Form" isPublished="true" environment="test">
+      <Description>Quality check form to confirm resolution with the affected user.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"qc_heading":{"name":"qc_heading","type":"info","title":"QC Verification","content":"Contact the affected user to confirm the incident is fully resolved to their satisfaction.","text_align":"left","required":false},"affected_user":{"name":"affected_user","type":"string","title":"Affected User","required":false,"column":0,"data_size":"medium"},"affected_email":{"name":"affected_email","type":"string","title":"Email","required":false,"column":1,"data_size":"medium"},"resolution_description":{"name":"resolution_description","type":"string","title":"Resolution","required":false,"column":0,"data_size":"long"},"customer_confirmed":{"name":"customer_confirmed","type":"select","title":"Customer Confirmed Resolved?","required":true,"column":0,"options":["Yes — Satisfied","No — Requires Further Action"],"data_size":"medium"},"qc_notes":{"name":"qc_notes","type":"textarea","title":"QC Notes","required":false,"column":1,"data_size":"long"}},"required":["customer_confirmed"]}</Schema>
+    </Form>
+  </Forms>
+
+  <Groups>
+    <Group id="group-it-triage" name="IT Triage Team" groupType="internal" isActive="true">
+      <Description>First-line incident triage — assess, categorize, and route.</Description>
+    </Group>
+    <Group id="group-network-team" name="Network Team" groupType="internal" isActive="true">
+      <Description>L2/L3 network infrastructure support.</Description>
+    </Group>
+    <Group id="group-server-team" name="Server Team" groupType="internal" isActive="true">
+      <Description>L2/L3 server and virtualization support.</Description>
+    </Group>
+    <Group id="group-app-team" name="Application Team" groupType="internal" isActive="true">
+      <Description>L2/L3 application support and troubleshooting.</Description>
+    </Group>
+    <Group id="group-qc-team" name="QC Verification Team" groupType="internal" isActive="true">
+      <Description>Post-resolution quality checks with affected users.</Description>
+    </Group>
+  </Groups>
+</WorkflowPackage>

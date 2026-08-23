@@ -2,7 +2,7 @@
 <WorkflowPackage version="1.0" exportedAt="2026-01-01T00:00:00Z" sourceSystem="PythonWorkflow">
   <Metadata>
     <Name>Hello World Workflow</Name>
-    <Description>A simple linear workflow that makes an API call and sends an email notification. Great for testing import/export.</Description>
+    <Description>A simple linear workflow that fetches a random cat fact from an API, displays it in a report, and sends an email notification.</Description>
     <Author>Demo</Author>
   </Metadata>
 
@@ -19,7 +19,13 @@
         <Definition>{"method":"GET","url":"https://catfact.ninja/fact","headers":{},"next_step_ids":["step-2"]}</Definition>
       </Step>
 
-      <Step id="step-2" type="email" position="1" isEnabled="true">
+      <Step id="step-2" type="report" position="1" isEnabled="true">
+        <Title>Display Cat Fact</Title>
+        <Description>Show the cat fact retrieved from the API in a readable format</Description>
+        <Definition>{"report_type":"table","title":"Cat Fact Result","data_source_step_id":"step-1","next_step_ids":["step-3"]}</Definition>
+      </Step>
+
+      <Step id="step-3" type="email" position="2" isEnabled="true">
         <Title>Send Notification</Title>
         <Description>Send email with the cat fact from the API response</Description>
         <Definition>{"to":"admin@example.com","subject":"Hello World - Cat Fact","body":"Here is your random cat fact:\n\n$input.fact\n\n(Fact length: $input.length characters)","next_step_ids":[]}</Definition>

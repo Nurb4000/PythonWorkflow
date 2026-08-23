@@ -48,6 +48,26 @@ export const SettingsPage: React.FC = () => {
   const [messageType, setMessageType] = useState<'success' | 'error'>('success')
   const { branding, refresh: refreshBranding, ready: brandingReady } = useBranding()
   const [brandingForm, setBrandingForm] = useState({ system_name: '' })
+  const [seedingDemo, setSeedingDemo] = useState(false)
+  const [seedResult, setSeedResult] = useState<any>(null)
+  const [seedError, setSeedError] = useState('')
+
+  const handleSeedDemoData = async () => {
+    setSeedingDemo(true)
+    setSeedResult(null)
+    setSeedError('')
+    try {
+      const token = localStorage.getItem('token')
+      const res = await axios.post(`${API_URL}/admin/seed-demo-data`, {}, {
+        headers: { Authorization: `Bearer ${token}` },
+      })
+      setSeedResult(res.data.details)
+    } catch (err: any) {
+      setSeedError(err.response?.data?.detail || err.message || 'Failed to seed demo data')
+    } finally {
+      setSeedingDemo(false)
+    }
+  }
   const [logoPreview, setLogoPreview] = useState<string | null>(null)
   const [imapTestResult, setImapTestResult] = useState<any>(null)
   const [imapTesting, setImapTesting] = useState(false)
@@ -907,6 +927,37 @@ export const SettingsPage: React.FC = () => {
                 </table>
               </div>
             )}
+          </div>
+        )}
+      </div>
+
+      {/* Seed Demo Data */}
+      <div className="card" style={{ marginTop: '2rem' }}>
+        <h3 className="card-title">Demo Data</h3>
+        <p style={{ color: '#7f8c8d', marginBottom: '1rem' }}>
+          Populate the system with sample CMDB types, configuration items, services, knowledge base articles, and forms for testing.
+          This is idempotent — existing records are preserved.
+        </p>
+        <button
+          className="btn btn-primary"
+          onClick={handleSeedDemoData}
+          disabled={seedingDemo}
+        >
+          {seedingDemo ? 'Seeding...' : 'Seed Demo Data'}
+        </button>
+        {seedResult && (
+          <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#d4edda', borderRadius: '4px' }}>
+            <strong>Demo data seeded successfully!</strong>
+            <div style={{ marginTop: '0.5rem', fontSize: '0.85rem' }}>
+              Categories: {seedResult.categories} | Services: {seedResult.services} | Groups: {seedResult.groups} |{' '}
+              CI Types: {seedResult.ci_types} | KB Articles: {seedResult.kb_articles_created} |{' '}
+              Demo Form ID: {seedResult.demo_form_id || '—'}
+            </div>
+          </div>
+        )}
+        {seedError && (
+          <div style={{ marginTop: '1rem', padding: '0.75rem', backgroundColor: '#f8d7da', borderRadius: '4px' }}>
+            <strong>Error:</strong> {seedError}
           </div>
         )}
       </div>

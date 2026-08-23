@@ -1,0 +1,147 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<WorkflowPackage version="1.0" exportedAt="2026-08-13T00:00:00Z" sourceSystem="PythonWorkflow">
+  <Metadata>
+    <Name>Change Management</Name>
+    <Description>Multi-stage change approval workflow with manager sign-off, team supervisor review, CAB assessment, date-targeted implementation, and post-implementation review.</Description>
+    <Author>Demo</Author>
+  </Metadata>
+
+  <Workflow name="Change Management" isPublished="false" environment="test" isActive="true" version="1">
+    <Portal icon="🔄" order="8" visible="true" />
+    <Config>
+      <StartStepIds>step-1</StartStepIds>
+    </Config>
+    <EntryForm refId="form-entry" />
+
+    <Steps>
+      <!-- STEP 1: Entry form — submit change request -->
+      <Step id="step-1" type="form" position="0" isEnabled="true">
+        <Title>Submit Change Request</Title>
+        <Description>Requester fills out the RFC (Request for Change) form with all required details.</Description>
+        <Definition>{"form_id":"form-entry","next_step_ids":["step-2"]}</Definition>
+      </Step>
+
+      <!-- STEP 2: Manager Approval — first gate -->
+      <Step id="step-2" type="approval" position="1" isEnabled="true">
+        <Title>Manager Approval</Title>
+        <Description>The submitter's manager reviews and approves or rejects the change request.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-manager","assigned_group_id":"group-managers","description":"Review the change request submitted by your team member. Approve to proceed to affected team review, or reject with feedback.","routes":[{"expression":"data['approval_decision'] == 'approved'","target_step_id":"step-3"},{"expression":"data['approval_decision'] == 'rejected'","target_step_id":"step-9"}],"default_target_step_id":"step-9"}</Definition>
+      </Step>
+
+      <!-- STEP 3: Team Supervisor Approval — second gate -->
+      <Step id="step-3" type="approval" position="2" isEnabled="true">
+        <Title>Affected Team Supervisor Approval</Title>
+        <Description>The supervisor of the team affected by this change reviews and approves or rejects.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-supervisor","assigned_group_id":"group-team-supervisors","description":"Review the change request that affects your team. Confirm the implementation plan, rollback strategy, and scheduling are acceptable.","routes":[{"expression":"data['approval_decision'] == 'approved'","target_step_id":"step-4"},{"expression":"data['approval_decision'] == 'rejected'","target_step_id":"step-9"}],"default_target_step_id":"step-9"}</Definition>
+      </Step>
+
+      <!-- STEP 4: CAB Review — final approval gate -->
+      <Step id="step-4" type="approval" position="3" isEnabled="true">
+        <Title>CAB Review</Title>
+        <Description>The Change Advisory Board performs final risk assessment and scheduling confirmation.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-cab","assigned_group_id":"group-cab","description":"Final approval gate. Assess overall risk, confirm scheduling doesn't conflict with other changes, and authorize or reject.","routes":[{"expression":"data['approval_decision'] == 'approved'","target_step_id":"step-5"},{"expression":"data['approval_decision'] == 'rejected'","target_step_id":"step-9"}],"default_target_step_id":"step-9"}</Definition>
+      </Step>
+
+      <!-- STEP 5: Calculation — set date target from change window -->
+      <Step id="step-5" type="calculation" position="4" isEnabled="true">
+        <Title>Set Implementation Date Target</Title>
+        <Description>Evaluates the target end date from the change request and creates a calendar-based deadline for tracking.</Description>
+        <Definition>{"expression":"data['target_end_date']","date_target_key":"change_target_completion","next_step_ids":["step-6"]}</Definition>
+      </Step>
+
+      <!-- STEP 6: Implement Change — assigned team executes -->
+      <Step id="step-6" type="human_task" position="5" isEnabled="true">
+        <Title>Implement Change</Title>
+        <Description>The implementation team executes the approved change within the target window.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-implementation","assigned_group_id":"group-change-impl-team","description":"Execute the approved change. Complete within the target window and document results. This task is tracked against a calendar date target, not a traditional OLA.","next_step_ids":["step-7"]}</Definition>
+      </Step>
+
+      <!-- STEP 7: Post-Implementation Review -->
+      <Step id="step-7" type="human_task" position="6" isEnabled="true">
+        <Title>Post-Implementation Review</Title>
+        <Description>Document lessons learned and confirm the change is stable.</Description>
+        <MaxRetries>0</MaxRetries>
+        <Definition>{"form_id":"form-pir","assigned_group_id":"group-team-supervisors","description":"Review the implemented change. Confirm stability, document lessons learned, and determine if follow-up is required.","next_step_ids":["step-8"]}</Definition>
+      </Step>
+
+      <!-- STEP 8: Notify completion -->
+      <Step id="step-8" type="email" position="7" isEnabled="true">
+        <Title>Notify Change Complete</Title>
+        <Description>Send completion notification to the requester and stakeholders.</Description>
+        <Definition>{"to":"$input.requester_email","subject":"Change Complete: $input.change_title","body":"Your change request has been completed.\n\nChange: $input.change_title\nOutcome: $input.change_outcome\nStable: $input.stable_confirmation\n\nLessons Learned: $input.lessons_learned\nFollow-up Required: $input.follow_up_required","next_step_ids":[]}</Definition>
+      </Step>
+
+      <!-- STEP 9: Notify rejection -->
+      <Step id="step-9" type="email" position="8" isEnabled="true">
+        <Title>Notify Change Rejected</Title>
+        <Description>Send rejection notification to the requester with feedback.</Description>
+        <Definition>{"to":"$input.requester_email","subject":"Change Request Rejected: $input.change_title","body":"Your change request has been rejected.\n\nChange: $input.change_title\nReason: $input.approval_decision\nComments: $input.manager_comments\n\nPlease address the feedback and resubmit if appropriate.","next_step_ids":[]}</Definition>
+      </Step>
+    </Steps>
+
+    <Schedules />
+    <Permissions>
+      <Group refId="group-managers" />
+      <Group refId="group-team-supervisors" />
+      <Group refId="group-cab" />
+      <Group refId="group-change-impl-team" />
+    </Permissions>
+  </Workflow>
+
+  <Forms>
+    <!-- ENTRY FORM: RFC — comprehensive change request -->
+    <Form id="form-entry" name="Change Request Form (RFC)" isPublished="true" environment="test">
+      <Description>Submit a change request for review and approval. All changes go through manager approval, affected team sign-off, and Change Advisory Board (CAB) review.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"change_heading":{"name":"change_heading","type":"info","title":"Request for Change (RFC)","content":"Submit a change request for review and approval. All changes go through manager approval, affected team sign-off, and Change Advisory Board (CAB) review.","text_align":"left","required":false},"change_title":{"name":"change_title","type":"string","title":"Change Title","required":true,"column":0,"data_size":"long"},"requester_name":{"name":"requester_name","type":"string","title":"Requester Name","required":true,"column":1,"data_size":"medium"},"requester_email":{"name":"requester_email","type":"email","title":"Requester Email","required":true,"column":0,"data_size":"medium"},"change_type":{"name":"change_type","type":"select","title":"Change Type","required":true,"column":1,"options":["Standard","Normal","Emergency"],"data_size":"medium"},"service_affected":{"name":"service_affected","type":"select","title":"Service Affected","required":true,"column":0,"options":["Email Service","File Storage","Network Infrastructure","Application Platform","Database Services","Other"],"data_size":"medium"},"ci_affected":{"name":"ci_affected","type":"string","title":"Configuration Items Affected","required":false,"column":1,"data_size":"long"},"change_description":{"name":"change_description","type":"textarea","title":"Change Description — What &amp; Why","required":true,"column":0,"data_size":"long"},"implementation_plan":{"name":"implementation_plan","type":"textarea","title":"Implementation Plan — How","required":true,"column":1,"data_size":"long"},"rollback_plan":{"name":"rollback_plan","type":"textarea","title":"Rollback Plan","required":true,"column":0,"data_size":"long"},"risk_level":{"name":"risk_level","type":"select","title":"Risk Level","required":true,"column":1,"options":["Low","Medium","High"],"data_size":"small"},"risk_justification":{"name":"risk_justification","type":"textarea","title":"Risk Justification","required":false,"column":0,"data_size":"long"},"target_start_date":{"name":"target_start_date","type":"datetime","title":"Target Implementation Start","required":true,"column":1,"data_size":"medium"},"target_end_date":{"name":"target_end_date","type":"datetime","title":"Target Implementation End","required":true,"column":0,"data_size":"medium"},"outage_window":{"name":"outage_window","type":"select","title":"Expected Outage","required":true,"column":1,"options":["None","Minimal (&lt; 15 min)","Short (15-60 min)","Extended (1-4 hours)","Major (&gt; 4 hours)"],"data_size":"medium"},"outage_scope":{"name":"outage_scope","type":"select","title":"Outage Scope / Scale","required":false,"column":0,"options":["Single user","Department","Building/Campus","All locations","External customers"],"data_size":"medium"},"test_plan":{"name":"test_plan","type":"textarea","title":"Test Plan / Verification Steps","required":false,"column":0,"data_size":"long"},"backout_criteria":{"name":"backout_criteria","type":"textarea","title":"Backout Criteria — When to Rollback","required":false,"column":1,"data_size":"long"}},"required":["change_title","requester_name","requester_email","change_type","service_affected","change_description","implementation_plan","rollback_plan","risk_level","target_start_date","target_end_date","outage_window"]}</Schema>
+    </Form>
+
+    <!-- MANAGER APPROVAL FORM -->
+    <Form id="form-manager" name="Manager Approval Form" isPublished="true" environment="test">
+      <Description>Manager review form for change requests. Pre-filled from the RFC submission.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"mgr_heading":{"name":"mgr_heading","type":"info","title":"Manager Approval — Change Request","content":"Review the change request submitted by your team member. Approve to proceed to affected team review, or reject with feedback.","text_align":"left","required":false},"change_title":{"name":"change_title","type":"string","title":"Change Title","required":false,"column":0,"data_size":"long"},"requester_name":{"name":"requester_name","type":"string","title":"Requester","required":false,"column":1,"data_size":"medium"},"risk_level":{"name":"risk_level","type":"string","title":"Risk Level","required":false,"column":0,"data_size":"small"},"outage_window":{"name":"outage_window","type":"string","title":"Expected Outage","required":false,"column":1,"data_size":"medium"},"change_description":{"name":"change_description","type":"string","title":"Description","required":false,"column":0,"data_size":"long"},"approval_decision":{"name":"approval_decision","type":"select","title":"Decision","required":true,"column":0,"options":["approved","rejected"],"data_size":"small"},"manager_comments":{"name":"manager_comments","type":"textarea","title":"Manager Comments","required":false,"column":1,"data_size":"long"}},"required":["approval_decision"]}</Schema>
+    </Form>
+
+    <!-- TEAM SUPERVISOR APPROVAL FORM -->
+    <Form id="form-supervisor" name="Team Supervisor Approval Form" isPublished="true" environment="test">
+      <Description>Affected team supervisor review form. Pre-filled from RFC + manager comments.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"sup_heading":{"name":"sup_heading","type":"info","title":"Team Supervisor Approval","content":"Review the change request that affects your team. Confirm the implementation plan, rollback strategy, and scheduling are acceptable.","text_align":"left","required":false},"change_title":{"name":"change_title","type":"string","title":"Change Title","required":false,"column":0,"data_size":"long"},"requester_name":{"name":"requester_name","type":"string","title":"Requester","required":false,"column":1,"data_size":"medium"},"service_affected":{"name":"service_affected","type":"string","title":"Service Affected","required":false,"column":0,"data_size":"medium"},"risk_level":{"name":"risk_level","type":"string","title":"Risk Level","required":false,"column":1,"data_size":"small"},"target_start_date":{"name":"target_start_date","type":"string","title":"Target Start","required":false,"column":0,"data_size":"medium"},"target_end_date":{"name":"target_end_date","type":"string","title":"Target End","required":false,"column":1,"data_size":"medium"},"implementation_plan":{"name":"implementation_plan","type":"string","title":"Implementation Plan","required":false,"column":0,"data_size":"long"},"rollback_plan":{"name":"rollback_plan","type":"string","title":"Rollback Plan","required":false,"column":1,"data_size":"long"},"manager_comments":{"name":"manager_comments","type":"string","title":"Manager Comments","required":false,"column":0,"data_size":"long"},"approval_decision":{"name":"approval_decision","type":"select","title":"Decision","required":true,"column":0,"options":["approved","rejected"],"data_size":"small"},"supervisor_comments":{"name":"supervisor_comments","type":"textarea","title":"Supervisor Comments","required":false,"column":1,"data_size":"long"}},"required":["approval_decision"]}</Schema>
+    </Form>
+
+    <!-- CAB REVIEW FORM -->
+    <Form id="form-cab" name="CAB Review Form" isPublished="true" environment="test">
+      <Description>Change Advisory Board review form with risk assessment and scheduling confirmation.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"cab_heading":{"name":"cab_heading","type":"info","title":"Change Advisory Board Review","content":"Final approval gate. Assess overall risk, confirm scheduling doesn't conflict with other changes, and authorize or reject.","text_align":"left","required":false},"change_title":{"name":"change_title","type":"string","title":"Change Title","required":false,"column":0,"data_size":"long"},"risk_level":{"name":"risk_level","type":"string","title":"Submitted Risk","required":false,"column":1,"data_size":"small"},"target_start_date":{"name":"target_start_date","type":"string","title":"Target Start","required":false,"column":0,"data_size":"medium"},"target_end_date":{"name":"target_end_date","type":"string","title":"Target End","required":false,"column":1,"data_size":"medium"},"outage_window":{"name":"outage_window","type":"string","title":"Expected Outage","required":false,"column":0,"data_size":"medium"},"outage_scope":{"name":"outage_scope","type":"string","title":"Outage Scope","required":false,"column":1,"data_size":"medium"},"implementation_plan":{"name":"implementation_plan","type":"string","title":"Implementation Plan","required":false,"column":0,"data_size":"long"},"rollback_plan":{"name":"rollback_plan","type":"string","title":"Rollback Plan","required":false,"column":1,"data_size":"long"},"manager_comments":{"name":"manager_comments","type":"string","title":"Manager Comments","required":false,"column":0,"data_size":"long"},"supervisor_comments":{"name":"supervisor_comments","type":"string","title":"Supervisor Comments","required":false,"column":1,"data_size":"long"},"cab_risk_assessment":{"name":"cab_risk_assessment","type":"select","title":"CAB Risk Assessment","required":true,"column":0,"options":["Accept as Submitted","Elevated Risk — Approved with Conditions","Elevated Risk — Rejected"],"data_size":"medium"},"schedule_conflict":{"name":"schedule_conflict","type":"select","title":"Schedule Conflict?","required":true,"column":1,"options":["No Conflicts","Conflict — Reschedule Required"],"data_size":"medium"},"cab_conditions":{"name":"cab_conditions","type":"textarea","title":"Conditions / Additional Requirements","required":false,"column":0,"data_size":"long"},"approval_decision":{"name":"approval_decision","type":"select","title":"CAB Decision","required":true,"column":1,"options":["approved","rejected"],"data_size":"small"},"cab_comments":{"name":"cab_comments","type":"textarea","title":"CAB Comments","required":false,"column":0,"data_size":"long"}},"required":["cab_risk_assessment","schedule_conflict","approval_decision"]}</Schema>
+    </Form>
+
+    <!-- IMPLEMENTATION FORM -->
+    <Form id="form-implementation" name="Change Implementation Form" isPublished="true" environment="test">
+      <Description>Implementation team form to execute the change and document results.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"impl_heading":{"name":"impl_heading","type":"info","title":"Change Implementation","content":"Execute the approved change. Complete within the target window and document results.","text_align":"left","required":false},"change_title":{"name":"change_title","type":"string","title":"Change Title","required":false,"column":0,"data_size":"long"},"implementation_plan":{"name":"implementation_plan","type":"string","title":"Implementation Plan","required":false,"column":0,"data_size":"long"},"rollback_plan":{"name":"rollback_plan","type":"string","title":"Rollback Plan","required":false,"column":1,"data_size":"long"},"target_start_date":{"name":"target_start_date","type":"string","title":"Target Start","required":false,"column":0,"data_size":"medium"},"target_end_date":{"name":"target_end_date","type":"string","title":"Target End","required":false,"column":1,"data_size":"medium"},"cab_conditions":{"name":"cab_conditions","type":"string","title":"CAB Conditions","required":false,"column":0,"data_size":"long"},"actual_start_date":{"name":"actual_start_date","type":"datetime","title":"Actual Start Date/Time","required":true,"column":0,"data_size":"medium"},"actual_end_date":{"name":"actual_end_date","type":"datetime","title":"Actual End Date/Time","required":true,"column":1,"data_size":"medium"},"change_outcome":{"name":"change_outcome","type":"select","title":"Change Outcome","required":true,"column":0,"options":["Successful","Successful with Minor Issues","Failed — Rolled Back","Deferred"],"data_size":"medium"},"outage_experienced":{"name":"outage_experienced","type":"string","title":"Actual Outage Duration","required":false,"column":1,"data_size":"small"},"impl_notes":{"name":"impl_notes","type":"textarea","title":"Implementation Notes","required":false,"column":0,"data_size":"long"}},"required":["actual_start_date","actual_end_date","change_outcome"]}</Schema>
+    </Form>
+
+    <!-- POST-IMPLEMENTATION REVIEW FORM -->
+    <Form id="form-pir" name="Post-Implementation Review Form" isPublished="true" environment="test">
+      <Description>PIR form to document lessons learned and confirm change stability.</Description>
+      <Schema>{"type":"object","columns":2,"properties":{"pir_heading":{"name":"pir_heading","type":"info","title":"Post-Implementation Review","content":"Document lessons learned and confirm the change is stable.","text_align":"left","required":false},"change_title":{"name":"change_title","type":"string","title":"Change Title","required":false,"column":0,"data_size":"long"},"change_outcome":{"name":"change_outcome","type":"string","title":"Outcome","required":false,"column":1,"data_size":"medium"},"stable_confirmation":{"name":"stable_confirmation","type":"select","title":"Change Stable?","required":true,"column":0,"options":["Yes — Stable","No — Issues Detected"],"data_size":"medium"},"lessons_learned":{"name":"lessons_learned","type":"textarea","title":"Lessons Learned","required":false,"column":0,"data_size":"long"},"follow_up_required":{"name":"follow_up_required","type":"select","title":"Follow-Up Required?","required":true,"column":1,"options":["Yes","No"],"data_size":"small"},"follow_up_notes":{"name":"follow_up_notes","type":"textarea","title":"Follow-Up Notes","required":false,"column":0,"data_size":"long"}},"required":["stable_confirmation","follow_up_required"]}</Schema>
+    </Form>
+  </Forms>
+
+  <Groups>
+    <Group id="group-managers" name="Managers" groupType="internal" isActive="true">
+      <Description>Department managers with approval authority for change requests.</Description>
+    </Group>
+    <Group id="group-team-supervisors" name="Team Supervisors" groupType="internal" isActive="true">
+      <Description>Supervisors for affected teams — change sign-off and PIR.</Description>
+    </Group>
+    <Group id="group-cab" name="Change Advisory Board" groupType="internal" isActive="true">
+      <Description>CAB — final change approval gate with risk assessment authority.</Description>
+    </Group>
+    <Group id="group-change-impl-team" name="Change Implementation Team" groupType="internal" isActive="true">
+      <Description>Team that executes approved changes within the target window.</Description>
+    </Group>
+  </Groups>
+</WorkflowPackage>

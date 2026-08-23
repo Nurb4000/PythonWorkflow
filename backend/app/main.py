@@ -11,7 +11,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets
 from app.services.scheduler import scheduler_service
 
 # Configure logging
@@ -21,9 +21,9 @@ logger = logging.getLogger(__name__)
 DEMO_METADATA = {
     "hello-world.xml": {
         "name": "Hello World",
-        "description": "A simple linear workflow that fetches a random cat fact via API and sends an email notification. Great for testing import/export.",
+        "description": "A simple linear workflow that fetches a random cat fact via API, displays it in a report, and sends an email notification. Great for testing import/export.",
         "category": "General",
-        "tags": ["demo", "api", "email", "getting-started"],
+        "tags": ["demo", "api", "report", "email", "getting-started"],
     },
     "expense-approval.xml": {
         "name": "Expense Approval",
@@ -55,12 +55,24 @@ DEMO_METADATA = {
         "category": "Forms & Tasks",
         "tags": ["demo", "form", "4-column", "review", "pass-through"],
     },
+    "incident-management.xml": {
+        "name": "Incident Management",
+        "description": "Multi-team incident handling with triage routing, SLA tracking, and optional QC verification. Demonstrates break-fix workflow patterns.",
+        "category": "IT Operations",
+        "tags": ["demo", "incident", "triage", "sla", "multi-team", "itil"],
+    },
+    "change-management.xml": {
+        "name": "Change Management",
+        "description": "Multi-stage change approval workflow with manager sign-off, team supervisor review, CAB assessment, date-targeted implementation, and post-implementation review.",
+        "category": "IT Operations",
+        "tags": ["demo", "change", "approval", "cab", "date-target", "itil"],
+    },
 }
 
 _demo_seeded = False
 
 app = FastAPI(
-    title="Python Workflow System",
+    title="Instant Workflow",
     description="Web-based workflow management with AI-generated steps",
     version="0.1.0"
 )
@@ -95,6 +107,7 @@ app.include_router(workflow_import_export.router, prefix="/workflows", tags=["wo
 app.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace"])
 app.include_router(cmdb.router, prefix="/cmdb", tags=["cmdb"])
 app.include_router(services.router, prefix="/services", tags=["services"])
+app.include_router(date_targets.router, prefix="/date-targets", tags=["date-targets"])
 
 
 async def create_default_admin():
@@ -162,17 +175,27 @@ async def seed_marketplace_demos():
                     logger.warning(f"Demo file not found: {fpath}")
                     continue
 
+                content = fpath.read_text(encoding="utf-8")
+
+                # Check for existing item — update content so XML changes propagate
                 result = await db.execute(
                     select(MarketplaceItem).where(
                         MarketplaceItem.name == metadata["name"],
                         MarketplaceItem.author_id == admin_user.id,
                     )
                 )
-                if result.scalar_one_or_none():
+                existing = result.scalar_one_or_none()
+                if existing:
+                    old_steps = existing.content.count("<Step")
+                    existing.content = content
+                    existing.description = metadata["description"]
+                    existing.category = metadata["category"]
+                    existing.version += 1
+                    existing.tags_list = metadata["tags"]
+                    new_steps = content.count("<Step")
+                    logger.info(f"Updated demo: {metadata['name']} (id={existing.id}, version={existing.version}, steps: {old_steps}->{new_steps})")
                     skipped += 1
                     continue
-
-                content = fpath.read_text(encoding="utf-8")
                 item = MarketplaceItem(
                     item_type="workflow",
                     name=metadata["name"],
@@ -191,8 +214,116 @@ async def seed_marketplace_demos():
                 seeded += 1
                 logger.info(f"Seeded demo: {item.name} (id={item.id})")
 
+            # Seed KB article demos
+            kb_demos = [
+                {
+                    "name": "Getting Started Guide",
+                    "description": "A comprehensive guide for new users on how to navigate the system, submit requests, and track their workflow progress.",
+                    "category": "General",
+                    "tags": ["demo", "getting-started", "guide"],
+                    "content": {
+                        "title": "Getting Started Guide",
+                        "slug": "getting-started-guide",
+                        "content": """# Getting Started Guide
+
+Welcome to the workflow system! This guide will help you get up and running quickly.
+
+## Navigating the System
+
+- **Offerings**: Browse available workflows and services
+- **My Submissions**: Track your submitted requests
+- **Catalog**: Explore all available services
+
+## Submitting a Request
+
+1. Go to the Offerings page
+2. Select a workflow you'd like to use
+3. Fill out the required form
+4. Submit and track progress in My Submissions
+
+## Need Help?
+
+Check the Knowledge Base for detailed articles or contact your administrator.""",
+                        "is_published": True,
+                        "sort_order": 1,
+                    },
+                },
+                {
+                    "name": "FAQ — Common Questions",
+                    "description": "Frequently asked questions about account management, workflow status, and system features.",
+                    "category": "General",
+                    "tags": ["demo", "faq", "help"],
+                    "content": {
+                        "title": "FAQ — Common Questions",
+                        "slug": "faq-common-questions",
+                        "content": """# Frequently Asked Questions
+
+## Account & Access
+
+**Q: How do I reset my password?**
+A: Click the 'Change Password' button in the top navigation bar.
+
+**Q: I can't see a workflow I was told about.**
+A: Workflows may be restricted to specific groups. Contact your administrator to verify your group membership.
+
+## Workflow Status
+
+**Q: What does 'Pending' mean?**
+A: Your request has been submitted and is waiting for the next step in the workflow.
+
+**Q: How long do approvals take?**
+A: This depends on the workflow configuration and the availability of approvers. Check with your team lead for expected timelines.
+
+## General
+
+**Q: Can I edit a submission after sending it?**
+A: No, submissions cannot be edited once submitted. If you need changes, please submit a new request.""",
+                        "is_published": True,
+                        "sort_order": 2,
+                    },
+                },
+            ]
+
+            kb_seeded = 0
+            kb_skipped = 0
+            for demo in kb_demos:
+                result = await db.execute(
+                    select(MarketplaceItem).where(
+                        MarketplaceItem.name == demo["name"],
+                        MarketplaceItem.author_id == admin_user.id,
+                    )
+                )
+                existing = result.scalar_one_or_none()
+                if existing:
+                    existing.content = json.dumps(demo["content"])
+                    existing.description = demo["description"]
+                    existing.category = demo["category"]
+                    existing.version += 1
+                    existing.tags_list = demo["tags"]
+                    logger.info(f"Updated KB demo: {demo['name']} (id={existing.id}, version={existing.version})")
+                    kb_skipped += 1
+                    continue
+
+                item = MarketplaceItem(
+                    item_type="kb_article",
+                    name=demo["name"],
+                    description=demo["description"],
+                    category=demo["category"],
+                    author_id=admin_user.id,
+                    content=json.dumps(demo["content"]),
+                    content_format="json",
+                    status="published",
+                    is_active=True,
+                    downloads_count=0,
+                )
+                item.tags_list = demo["tags"]
+                db.add(item)
+                await db.flush()
+                kb_seeded += 1
+                logger.info(f"Seeded KB demo: {item.name} (id={item.id})")
+
             await db.commit()
-            logger.info(f"Marketplace demo seeding done. Seeded={seeded}, Skipped={skipped}")
+            logger.info(f"Marketplace demo seeding done. Workflows: Seeded={seeded}, Skipped={skipped}. KB Articles: Seeded={kb_seeded}, Skipped={kb_skipped}")
 
         _demo_seeded = True
     except Exception as e:
@@ -223,7 +354,7 @@ async def shutdown_event():
 
 @app.get("/")
 async def root():
-    return {"message": "Python Workflow System API", "version": "0.1.0"}
+    return {"message": "Instant Workflow API", "version": "0.1.0"}
 
 
 @app.get("/health")

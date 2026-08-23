@@ -41,7 +41,7 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
     await db.commit()
 
 
-DEFAULT_SYSTEM_NAME = "Workflow System"
+DEFAULT_SYSTEM_NAME = "Instant Workflow"
 
 
 class Settings:

@@ -8,7 +8,7 @@ from typing import List
 
 class Settings(BaseSettings):
     # Application
-    app_name: str = "Python Workflow System"
+    app_name: str = "Instant Workflow"
     debug: bool = True
     
     # Database (PostgreSQL only)
