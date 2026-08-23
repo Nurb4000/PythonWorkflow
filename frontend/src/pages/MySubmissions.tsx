@@ -97,7 +97,7 @@ export const MySubmissions: React.FC = () => {
                     {run.error_message ? <span style={{ color: '#e74c3c', fontSize: '0.8rem' }}>{run.error_message}</span> : '-'}
                   </td>
                   <td>
-                    <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">Graph</Link>
+                    <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">View</Link>
                   </td>
                 </tr>
               ))}

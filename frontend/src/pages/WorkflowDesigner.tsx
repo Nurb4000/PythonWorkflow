@@ -191,7 +191,7 @@ const renderStepNode = (data: any, cfg: { icon: string; title: string; subtitle?
   const count = Math.max(1, data.next_step_ids?.length || 1)
   const displayTitle = data.title || cfg.title
   const displaySubtitle = data.description || cfg.subtitle
-  
+
   return (
     <div style={{ padding: '10px 16px', borderRadius: '8px', minWidth: '150px', cursor: 'pointer', ...cfg.style }}>
       <Handle type="target" position={Position.Top} />
@@ -567,6 +567,8 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       setIsDirty(false)
       setSaveError('')
       setSavedMessage('')
+      // Clear stale node positions when loading a new workflow
+      nodePositions.current = {}
     }
   }, [workflow])
 
@@ -578,6 +580,16 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   const [aiDiagnoseLoading, setAiDiagnoseLoading] = useState(false)
   const [aiDiagnoseResult, setAiDiagnoseResult] = useState<any>(null)
   const [aiDiagnoseError, setAiDiagnoseError] = useState('')
+
+  // Close instance detail popup on Escape key
+  useEffect(() => {
+    if (!selectedInstance) return
+    const handler = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') setSelectedInstance(null)
+    }
+    window.addEventListener('keydown', handler)
+    return () => window.removeEventListener('keydown', handler)
+  }, [selectedInstance])
 
   // Marketplace / My Nodes state
   const [showSaveNodeModal, setShowSaveNodeModal] = useState<'marketplace' | 'my-nodes' | null>(null)
@@ -633,31 +645,40 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       const savedPos = step.definition?.pos_x != null ? { x: step.definition.pos_x, y: step.definition.pos_y } : null
       const movedPos = nodePositions.current[`step-${step.id}`]
       const def = step.definition || {}
-      // Resolve user/group names for display on nodes
-      const assignedUserName = def.assigned_to_user_id ? (userLookup.get(def.assigned_to_user_id) || `User #${def.assigned_to_user_id}`) : null
-      const assignedGroupName = def.assigned_group_id ? (groupLookup.get(def.assigned_group_id) || `Group #${def.assigned_group_id}`) : null
-      const inst = instMap.get(step.id)
-      newNodes.push({
-        id: `step-${step.id}`,
-        type: stepTypeToNodeType(step.step_type),
-        position: savedPos || movedPos || { x: 250, y: 100 + (index * 140) },
-        draggable: !readOnly,
-        selectable: true,
-        data: {
-          stepId: step.id,
-          label: step.step_type,
-          title: step.title || '',
-          description: step.description || '',
-          ...def,
-          condition_expr: step.condition_expr,
-          routes,
-          assigned_user_name: assignedUserName,
-          assigned_group_name: assignedGroupName,
-          // Run-state overlay data
-          instanceStatus: inst?.status,
-          instanceRouteTaken: inst?.route_taken || [],
+       // Resolve user/group names for display on nodes
+       const assignedUserName = def.assigned_to_user_id ? (userLookup.get(def.assigned_to_user_id) || `User #${def.assigned_to_user_id}`) : null
+       const assignedGroupName = def.assigned_group_id ? (groupLookup.get(def.assigned_group_id) || `Group #${def.assigned_group_id}`) : null
+       // Lookup instance: normalize step.id to number for map key match
+       const graphStepId = Number(step.id)
+       let inst = instMap.get(graphStepId)
+        // Fallback: linear scan matching step_id field
+        if (!inst && opts?.instanceStatusMap) {
+          const allInsts = Array.from(opts.instanceStatusMap.values())
+          inst = allInsts.find((i: any) => Number(i.step_id || i.id) === graphStepId) || null
         }
-      })
+       newNodes.push({
+         id: `step-${step.id}`,
+         type: stepTypeToNodeType(step.step_type),
+         position: savedPos || movedPos || { x: 250, y: 100 + (index * 140) },
+         draggable: true,
+         selectable: true,
+         data: {
+           stepId: step.id,
+           label: step.step_type,
+           title: step.title || '',
+           description: step.description || '',
+           ...def,
+           condition_expr: step.condition_expr,
+           routes,
+           assigned_user_name: assignedUserName,
+           assigned_group_name: assignedGroupName,
+           // Run-state overlay data
+           instanceStatus: inst?.status,
+           instanceRouteTaken: inst?.route_taken || [],
+           // Embed full instance for click handler (readOnly inspector mode)
+           _instanceData: inst || null,
+         }
+       })
     })
 
     // Build edges from step definitions — connections are drawn ONLY from node settings
@@ -773,23 +794,22 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     setEdges(newEdges)
   }, [draftSteps, configDraft, users, groups])
 
-  // Build instance status map from inspector data
+  // Build instance status map from inspector data — kept as ref fallback for handleNodeClick
   const instanceStatusMap = useRef<Map<number, any>>(new Map())
-  useEffect(() => {
-    if (inspectorData?.steps) {
-      const m = new Map<number, any>()
-      inspectorData.steps.forEach((s: any) => {
-        m.set(s.step_id, { status: s.status, route_taken: s.route_taken || [], ...s })
-      })
-      instanceStatusMap.current = m
-    } else {
-      instanceStatusMap.current = new Map()
-    }
-  }, [inspectorData])
 
   useEffect(() => {
+    // Build the map inline so buildGraph always receives a fresh, correct map
+    // (eliminates cross-effect ordering dependency)
+    const instMap = new Map<number, any>()
+    if (inspectorData?.steps) {
+      inspectorData.steps.forEach((s: any) => {
+        const key = s.step_id != null && s.step_id !== '' ? Number(s.step_id) : Number(s.id)
+        instMap.set(key, { status: s.status, route_taken: s.route_taken || [], ...s })
+      })
+    }
+    instanceStatusMap.current = instMap
     buildGraph({
-      instanceStatusMap: instanceStatusMap.current,
+      instanceStatusMap: instMap,
       graphData: inspectorData?.graph,
     })
   }, [buildGraph, inspectorData])
@@ -802,7 +822,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       if (node && reactFlowInstance.current) {
         reactFlowInstance.current.fitView({ padding: 1.5, includeHiddenNodes: false })
         // Trigger a click to open the detail panel
-        handleNodeClick(nodeId)
+        handleNodeClick(nodeId, node?.data)
       }
     }
   }, [focusStepId, nodes.length])
@@ -844,14 +864,42 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     }
   }, [])
 
-  const handleNodeClick = (nodeId: string) => {
+  const handleNodeClick = (nodeId: string, nodeData?: any) => {
+    console.log('[WF] handleNodeClick called:', nodeId, 'readOnly=', readOnly, 'hasInspector=', !!inspectorData)
     if (readOnly && inspectorData) {
       // Run inspector mode: show instance detail panel
       if (!nodeId.startsWith('step-')) return
       const stepId = parseInt(nodeId.replace('step-', ''))
-      const inst = inspectorData.steps.find((s: any) => s.step_id === stepId)
+      // Primary: use instance embedded in node data at build time
+      let inst = nodeData?._instanceData
+      // Fallback: lookup from map by normalized key
+      if (!inst) {
+        inst = instanceStatusMap.current.get(stepId)
+      }
+      // Second fallback: linear scan of inspector steps
+      if (!inst && inspectorData.steps) {
+        const matches = inspectorData.steps.filter((s: any) => Number(s.step_id || s.id) === stepId)
+        if (matches.length > 0) {
+          inst = { status: matches[0].status, route_taken: matches[0].route_taken || [], ...matches[0] }
+        }
+      }
       if (inst) {
         setSelectedInstance(inst)
+        setAiDiagnoseResult(null)
+        setAiDiagnoseError('')
+      } else {
+        // Step was not executed in this run — show definition info from nodeData
+        console.warn('[WorkflowDesigner] No instance found for node', nodeId, 'stepId=', stepId,
+          'map keys:', Array.from(instanceStatusMap.current.keys()),
+          'inspector step_ids:', inspectorData?.steps?.map((s: any) => s.step_id))
+        setSelectedInstance({
+          _notExecuted: true,
+          title: nodeData?.title || '',
+          step_type: nodeData?.label || '',
+          description: nodeData?.description || '',
+          status: 'pending',
+          definition: nodeData?.definition || nodeData?.config || {},
+        })
         setAiDiagnoseResult(null)
         setAiDiagnoseError('')
       }
@@ -947,170 +995,214 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   const renderInstanceDetailPanel = () => {
     if (!selectedInstance) return null
     const inst = selectedInstance
+    const isNotExecuted = inst._notExecuted === true
     const statusBadge = inst.status === 'completed' ? 'success' :
       inst.status === 'failed' ? 'danger' :
       inst.status === 'running' ? 'info' :
       inst.status === 'skipped' ? 'secondary' : 'warning'
 
     return (
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
-          <h3 className="card-title" style={{ margin: 0 }}>
-            Step Instance Details
-          </h3>
-          <button className="btn btn-sm btn-secondary" onClick={() => setSelectedInstance(null)}>✕ Close</button>
-        </div>
-
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
-          <div><strong>Step:</strong> {inst.title || inst.step_type}</div>
-          <div><strong>Status:</strong> <span className={`badge badge-${statusBadge}`}>{inst.status}</span></div>
-          <div><strong>Position:</strong> {inst.position}</div>
-          <div><strong>Duration:</strong> {inst.duration_seconds != null ? `${inst.duration_seconds.toFixed(3)}s` : '-'}</div>
-          <div><strong>Started:</strong> {inst.started_at ? new Date(inst.started_at).toLocaleString() : '-'}</div>
-          <div><strong>Completed:</strong> {inst.completed_at ? new Date(inst.completed_at).toLocaleString() : '-'}</div>
-          <div><strong>Retries:</strong> {inst.retry_count} / {inst.max_retries}</div>
-          <div><strong>Route to:</strong> {inst.route_taken?.length ? inst.route_taken.join(', ') : '-'}</div>
-        </div>
-
-        {inst.last_error && (
-          <div style={{ marginBottom: '0.75rem' }}>
-            <strong>Last Error:</strong>
-            <pre style={{ background: '#fdf2f2', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', marginTop: '0.25rem', overflow: 'auto', maxHeight: '100px' }}>{inst.last_error}</pre>
+      <div
+        style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center',
+          zIndex: 1100
+        }}
+        onClick={() => setSelectedInstance(null)}
+      >
+        <div
+          className="card"
+          style={{ maxWidth: '700px', width: '92%', maxHeight: '85vh', overflow: 'auto' }}
+          onClick={(e) => e.stopPropagation()}
+        >
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <h3 className="card-title" style={{ margin: 0 }}>
+              {isNotExecuted ? 'Step Definition' : 'Step Instance Details'}
+            </h3>
+            <button className="btn btn-sm btn-secondary" onClick={() => setSelectedInstance(null)}>✕ Close</button>
           </div>
-        )}
 
-        {inst.error_message && (
-          <div style={{ marginBottom: '0.75rem' }}>
-            <strong>Error:</strong>
-            <pre style={{ background: '#fdf2f2', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', marginTop: '0.25rem', overflow: 'auto', maxHeight: '100px' }}>{inst.error_message}</pre>
-            <button
-              className="btn btn-sm btn-warning"
-              onClick={handleInstanceAiDiagnose}
-              disabled={aiDiagnoseLoading}
-              style={{ marginTop: '0.5rem' }}
-            >
-              {aiDiagnoseLoading ? 'Analyzing...' : '🤖 AI Diagnose'}
-            </button>
+          {isNotExecuted && (
+            <div style={{ padding: '0.75rem', background: '#fef9e7', borderRadius: '4px', border: '1px solid #f9e79f', marginBottom: '1rem' }}>
+              <strong>This step was not executed in this run.</strong>
+              <span style={{ marginLeft: '0.5rem', color: '#666' }}>
+                It may have been skipped by a conditional branch, or the run failed before reaching it.
+              </span>
+            </div>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '1rem' }}>
+            <div><strong>Step:</strong> {inst.title || inst.step_type}</div>
+            {!isNotExecuted && <div><strong>Status:</strong> <span className={`badge badge-${statusBadge}`}>{inst.status}</span></div>}
+            {isNotExecuted && <div><strong>Type:</strong> {inst.step_type}</div>}
+            {!isNotExecuted && <div><strong>Position:</strong> {inst.position}</div>}
+            {!isNotExecuted && <div><strong>Duration:</strong> {inst.duration_seconds != null ? `${inst.duration_seconds.toFixed(3)}s` : '-'}</div>}
+            {!isNotExecuted && <div><strong>Started:</strong> {inst.started_at ? new Date(inst.started_at).toLocaleString() : '-'}</div>}
+            {!isNotExecuted && <div><strong>Completed:</strong> {inst.completed_at ? new Date(inst.completed_at).toLocaleString() : '-'}</div>}
+            {!isNotExecuted && <div><strong>Retries:</strong> {inst.retry_count} / {inst.max_retries}</div>}
+            {!isNotExecuted && <div><strong>Route to:</strong> {inst.route_taken?.length ? inst.route_taken.join(', ') : '-'}</div>}
           </div>
-        )}
 
-        {aiDiagnoseError && <div className="error" style={{ marginTop: '0.5rem' }}>{aiDiagnoseError}</div>}
+          {isNotExecuted && inst.description && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <strong>Description:</strong>
+              <p style={{ margin: '0.25rem 0', color: '#555' }}>{inst.description}</p>
+            </div>
+          )}
 
-        {aiDiagnoseResult && (
-          <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fef9e7', borderRadius: '6px', border: '1px solid #f9e79f' }}>
-            <strong>AI Analysis:</strong>
-            {aiDiagnoseResult.explanation && <p style={{ margin: '0.25rem 0' }}>{aiDiagnoseResult.explanation}</p>}
-            {aiDiagnoseResult.root_cause && <p style={{ margin: '0.25rem 0' }}><strong>Root cause:</strong> {aiDiagnoseResult.root_cause}</p>}
-            {aiDiagnoseResult.suggested_fix && <p style={{ margin: '0.25rem 0' }}><strong>Suggested fix:</strong> {aiDiagnoseResult.suggested_fix}</p>}
-          </div>
-        )}
+          {isNotExecuted && (inst.definition || inst.config) && (
+            <details style={{ marginBottom: '0.5rem' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Step Configuration</summary>
+              <pre style={{ background: '#f8f9fa', padding: '0.75rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>
+                {JSON.stringify(inst.definition || inst.config, null, 2)}
+              </pre>
+            </details>
+          )}
 
-        {/* Input→Output delta */}
-        <details style={{ marginBottom: '0.5rem' }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input → Output Delta</summary>
-          <div style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
-            {(() => {
-              const input = inst.input_data || {}
-              const output = inst.output_data || {}
-              const allKeys = new Set([...Object.keys(input), ...Object.keys(output)])
-              if (allKeys.size === 0) return <span style={{ color: '#95a5a6' }}>No data</span>
-              return (
-                <table className="table" style={{ fontSize: '0.75rem', margin: 0 }}>
-                  <thead><tr><th>Key</th><th>Input</th><th>Output</th><th>Changed</th></tr></thead>
-                  <tbody>
-                    {Array.from(allKeys).map(key => {
-                      const inVal = input[key]
-                      const outVal = output[key]
-                      const changed = JSON.stringify(inVal) !== JSON.stringify(outVal)
-                      return (
-                        <tr key={key} style={{ background: changed ? '#fef9e7' : 'transparent' }}>
-                          <td><code>{key}</code></td>
-                          <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {typeof inVal === 'object' ? JSON.stringify(inVal) : (inVal ?? '-')}
-                          </td>
-                          <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                            {typeof outVal === 'object' ? JSON.stringify(outVal) : (outVal ?? '-')}
-                          </td>
-                          <td>{changed ? <span style={{ color: '#e67e22' }}>→</span> : <span style={{ color: '#95a5a6' }}>=</span>}</td>
-                        </tr>
-                      )
-                    })}
-                  </tbody>
-                </table>
-              )
-            })()}
-          </div>
-        </details>
+          {isNotExecuted ? null : (
+            <>
+          {inst.last_error && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <strong>Last Error:</strong>
+              <pre style={{ background: '#fdf2f2', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', marginTop: '0.25rem', overflow: 'auto', maxHeight: '100px' }}>{inst.last_error}</pre>
+            </div>
+          )}
 
-        <details style={{ marginBottom: '0.5rem' }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input Data</summary>
-          <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.input_data, null, 2)}</pre>
-        </details>
+          {inst.error_message && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <strong>Error:</strong>
+              <pre style={{ background: '#fdf2f2', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', marginTop: '0.25rem', overflow: 'auto', maxHeight: '100px' }}>{inst.error_message}</pre>
+              <button
+                className="btn btn-sm btn-warning"
+                onClick={handleInstanceAiDiagnose}
+                disabled={aiDiagnoseLoading}
+                style={{ marginTop: '0.5rem' }}
+              >
+                {aiDiagnoseLoading ? 'Analyzing...' : '🤖 AI Diagnose'}
+              </button>
+            </div>
+          )}
 
-        <details style={{ marginBottom: '0.5rem' }}>
-          <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Output Data</summary>
-          <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.output_data, null, 2)}</pre>
-        </details>
+          {aiDiagnoseError && <div className="error" style={{ marginTop: '0.5rem' }}>{aiDiagnoseError}</div>}
 
-        {/* API response status (if available in output or custom_data) */}
-        {(() => {
-          const output = inst.output_data || {}
-          const customData = inst.custom_data || {}
-          const statusCode = output.status_code ?? output.response_status ?? customData.http_status_code ?? customData.response_status_code
-          const responseTime = output.response_time_ms ?? customData.response_time_ms ?? customData.duration_ms
-          if (statusCode != null) {
-            return (
-              <div style={{ marginBottom: '0.5rem', padding: '0.5rem', background: '#e8f6f3', borderRadius: '4px', fontSize: '0.8rem' }}>
-                <strong>API Response:</strong>{' '}
-                <span className={`badge ${statusCode >= 200 && statusCode < 300 ? 'badge-success' : 'badge-danger'}`}>
-                  {statusCode}
-                </span>
-                {responseTime != null && <span style={{ marginLeft: '0.5rem' }}>{responseTime}ms</span>}
-              </div>
-            )
-          }
-          return null
-        })()}
+          {aiDiagnoseResult && (
+            <div style={{ marginBottom: '0.75rem', padding: '0.75rem', background: '#fef9e7', borderRadius: '6px', border: '1px solid #f9e79f' }}>
+              <strong>AI Analysis:</strong>
+              {aiDiagnoseResult.explanation && <p style={{ margin: '0.25rem 0' }}>{aiDiagnoseResult.explanation}</p>}
+              {aiDiagnoseResult.root_cause && <p style={{ margin: '0.25rem 0' }}><strong>Root cause:</strong> {aiDiagnoseResult.root_cause}</p>}
+              {aiDiagnoseResult.suggested_fix && <p style={{ margin: '0.25rem 0' }}><strong>Suggested fix:</strong> {aiDiagnoseResult.suggested_fix}</p>}
+            </div>
+          )}
 
-        {inst.custom_data && Object.keys(inst.custom_data).length > 0 && (
-          <details>
-            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Custom Data</summary>
-            <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '150px' }}>{JSON.stringify(inst.custom_data, null, 2)}</pre>
-          </details>
-        )}
-
-        {/* Step timeline — shows all steps for this run in order */}
-        {inspectorData && (
-          <details style={{ marginTop: '0.5rem' }}>
-            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Run Timeline (all steps)</summary>
+          {/* Input→Output delta */}
+          <details style={{ marginBottom: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input → Output Delta</summary>
             <div style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
-              {inspectorData.steps
-                .sort((a: any, b: any) => a.position - b.position)
-                .map((s: any) => {
-                  const isActive = s.id === inst.id
-                  return (
-                    <div
-                      key={s.id}
-                      style={{
-                        display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0',
-                        background: isActive ? '#eaf2f8' : 'transparent', cursor: 'pointer',
-                        borderRadius: '3px',
-                      }}
-                      onClick={() => setSelectedInstance(s)}
-                    >
-                      <span className={`badge ${s.status === 'completed' ? 'badge-success' : s.status === 'failed' ? 'badge-danger' : s.status === 'running' ? 'badge-info' : s.status === 'skipped' ? 'badge-secondary' : 'badge-warning'}`} style={{ fontSize: '0.65rem', minWidth: '60px', textAlign: 'center' }}>
-                        {s.status}
-                      </span>
-                      <span style={{ flex: 1 }}>{s.title || s.step_type}</span>
-                      <span style={{ color: '#95a5a6', fontSize: '0.7rem' }}>
-                        {s.duration_seconds != null ? `${s.duration_seconds.toFixed(2)}s` : '-'}
-                      </span>
-                    </div>
-                  )
-                })}
+              {(() => {
+                const input = inst.input_data || {}
+                const output = inst.output_data || {}
+                const allKeys = new Set([...Object.keys(input), ...Object.keys(output)])
+                if (allKeys.size === 0) return <span style={{ color: '#95a5a6' }}>No data</span>
+                return (
+                  <table className="table" style={{ fontSize: '0.75rem', margin: 0 }}>
+                    <thead><tr><th>Key</th><th>Input</th><th>Output</th><th>Changed</th></tr></thead>
+                    <tbody>
+                      {Array.from(allKeys).map(key => {
+                        const inVal = input[key]
+                        const outVal = output[key]
+                        const changed = JSON.stringify(inVal) !== JSON.stringify(outVal)
+                        return (
+                          <tr key={key} style={{ background: changed ? '#fef9e7' : 'transparent' }}>
+                            <td><code>{key}</code></td>
+                            <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {typeof inVal === 'object' ? JSON.stringify(inVal) : (inVal ?? '-')}
+                            </td>
+                            <td style={{ maxWidth: '150px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                              {typeof outVal === 'object' ? JSON.stringify(outVal) : (outVal ?? '-')}
+                            </td>
+                            <td>{changed ? <span style={{ color: '#e67e22' }}>→</span> : <span style={{ color: '#95a5a6' }}>=</span>}</td>
+                          </tr>
+                        )
+                      })}
+                    </tbody>
+                  </table>
+                )
+              })()}
             </div>
           </details>
-        )}
+
+          <details style={{ marginBottom: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Input Data</summary>
+            <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.input_data, null, 2)}</pre>
+          </details>
+
+          <details style={{ marginBottom: '0.5rem' }}>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Output Data</summary>
+            <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '200px' }}>{JSON.stringify(inst.output_data, null, 2)}</pre>
+          </details>
+
+          {/* API response status (if available in output or custom_data) */}
+          {(() => {
+            const output = inst.output_data || {}
+            const customData = inst.custom_data || {}
+            const statusCode = output.status_code ?? output.response_status ?? customData.http_status_code ?? customData.response_status_code
+            const responseTime = output.response_time_ms ?? customData.response_time_ms ?? customData.duration_ms
+            if (statusCode != null) {
+              return (
+                <div style={{ marginBottom: '0.5rem', padding: '0.5rem', background: '#e8f6f3', borderRadius: '4px', fontSize: '0.8rem' }}>
+                  <strong>API Response:</strong>{' '}
+                  <span className={`badge ${statusCode >= 200 && statusCode < 300 ? 'badge-success' : 'badge-danger'}`}>
+                    {statusCode}
+                  </span>
+                  {responseTime != null && <span style={{ marginLeft: '0.5rem' }}>{responseTime}ms</span>}
+                </div>
+              )
+            }
+            return null
+          })()}
+
+          {inst.custom_data && Object.keys(inst.custom_data).length > 0 && (
+            <details>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Custom Data</summary>
+              <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.8rem', overflow: 'auto', maxHeight: '150px' }}>{JSON.stringify(inst.custom_data, null, 2)}</pre>
+            </details>
+          )}
+
+          {/* Step timeline — shows all steps for this run in order */}
+          {inspectorData && (
+            <details style={{ marginTop: '0.5rem' }}>
+              <summary style={{ cursor: 'pointer', fontWeight: 'bold' }}>Run Timeline (all steps)</summary>
+              <div style={{ padding: '0.5rem', fontSize: '0.8rem' }}>
+                {inspectorData.steps
+                  .sort((a: any, b: any) => a.position - b.position)
+                  .map((s: any) => {
+                    const isActive = s.id === inst.id
+                    return (
+                      <div
+                        key={s.id}
+                        style={{
+                          display: 'flex', alignItems: 'center', gap: '0.5rem', padding: '0.25rem 0',
+                          background: isActive ? '#eaf2f8' : 'transparent', cursor: 'pointer',
+                          borderRadius: '3px',
+                        }}
+                        onClick={() => setSelectedInstance(s)}
+                      >
+                        <span className={`badge ${s.status === 'completed' ? 'badge-success' : s.status === 'failed' ? 'badge-danger' : s.status === 'running' ? 'badge-info' : s.status === 'skipped' ? 'badge-secondary' : 'badge-warning'}`} style={{ fontSize: '0.65rem', minWidth: '60px', textAlign: 'center' }}>
+                          {s.status}
+                        </span>
+                        <span style={{ flex: 1 }}>{s.title || s.step_type}</span>
+                        <span style={{ color: '#95a5a6', fontSize: '0.7rem' }}>
+                          {s.duration_seconds != null ? `${s.duration_seconds.toFixed(2)}s` : '-'}
+                        </span>
+                      </div>
+                    )
+                  })}
+              </div>
+            </details>
+          )}
+            </>
+          )}
+        </div>
       </div>
     )
   }
@@ -1553,6 +1645,39 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     navigate(`/workflows/${workflowId}`)
   }
 
+  // Quick-action buttons next to form_id selectors in step editors
+  const renderFormActions = (formId: number | null | undefined) => {
+    if (!formId) return null
+    return (
+      <div style={{ display: 'flex', gap: '0.35rem', marginTop: '0.35rem' }}>
+        <button
+          className="btn btn-sm btn-secondary"
+          onClick={() => navigate(`/forms?preview=${formId}`)}
+          title="Preview this form"
+          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+        >
+          👁 Preview
+        </button>
+        <button
+          className="btn btn-sm btn-secondary"
+          onClick={() => navigate(`/forms?editing=1&id=${formId}`)}
+          title="Edit this form"
+          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+        >
+          ✏️ Edit
+        </button>
+        <button
+          className="btn btn-sm btn-primary"
+          onClick={() => navigate('/forms?editing=1')}
+          title="Create a new form"
+          style={{ padding: '2px 8px', fontSize: '0.75rem' }}
+        >
+          + New Form
+        </button>
+      </div>
+    )
+  }
+
   const renderStepEditor = () => {
     if (!selectedStep) return null
 
@@ -1843,6 +1968,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                     <option key={f.id} value={f.id}>{f.name}{f.is_published ? '' : ' (draft)'}</option>
                   ))}
                 </select>
+                {renderFormActions(editingDef.form_id)}
               </div>
             </>
           )
@@ -1885,6 +2011,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                     <option key={f.id} value={f.id}>{f.name}{f.is_published ? '' : ' (draft)'}</option>
                   ))}
                 </select>
+                {renderFormActions(editingDef.form_id)}
               </div>
               <div className="form-group">
                 <label className="form-label">Task Description</label>
@@ -2544,7 +2671,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         edges={edges}
         onNodesChange={readOnly ? () => {} : handleNodesChange}
         onNodeDragStop={readOnly ? () => {} : handleNodeDragStop}
-        onNodeClick={(_, node) => handleNodeClick(node.id)}
+        onNodeClick={(_, node) => handleNodeClick(node.id, node.data)}
         onNodesInitialized={(instance) => { reactFlowInstance.current = instance }}
       />
 

@@ -64,9 +64,8 @@ export const ScheduleManager: React.FC = () => {
   }
 
   return (
-    <div>
-      <div className="card-header">
-        <h3>Schedules</h3>
+    <div style={{ marginTop: '1rem' }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1rem' }}>
         <button 
           className="btn btn-primary"
           onClick={() => setShowAdd(!showAdd)}

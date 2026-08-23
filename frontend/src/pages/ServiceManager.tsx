@@ -1,6 +1,6 @@
 import React, { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import { servicesApi, authApi, kbApi } from '../services/api'
+import { servicesApi, authApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 
 interface ServiceItem {
@@ -57,10 +57,13 @@ export const ServiceManager: React.FC = () => {
   })
   const [svcError, setSvcError] = useState('')
   const [svcSuccess, setSvcSuccess] = useState('')
-  const [svcIncludeInactive, setSvcIncludeInactive] = useState(false)
+  const [svcStatusFilter, setSvcStatusFilter] = useState<string>('active')
+  const [svcSearch, setSvcSearch] = useState('')
 
   // SLA editor state (Phase 3)
   const [slaEnabled, setSlaEnabled] = useState(false)
+  const [slaResponseDefault, setSlaResponseDefault] = useState('')
+  const [slaResolutionDefault, setSlaResolutionDefault] = useState('')
   const [slaResponseHours, setSlaResponseHours] = useState({ '1': '', '2': '', '3': '', '4': '' })
   const [slaResolutionHours, setSlaResolutionHours] = useState({ '1': '', '2': '', '3': '', '4': '' })
 
@@ -77,30 +80,6 @@ export const ServiceManager: React.FC = () => {
   const [catError, setCatError] = useState('')
   const [catSuccess, setCatSuccess] = useState('')
 
-  // --- KB Articles state (Phase 6) ---
-  interface KbArticleItem {
-    id: number
-    title: string
-    slug: string
-    content: string
-    service_id: number | null
-    is_published: boolean
-    sort_order: number
-    service?: { id: number; name: string; key: string; icon: string }
-  }
-  const [kbShowForm, setKbShowForm] = useState(false)
-  const [kbEditingId, setKbEditingId] = useState<number | null>(null)
-  const [kbFormData, setKbFormData] = useState({
-    title: '',
-    slug: '',
-    content: '',
-    service_id: '',
-    sort_order: 0,
-    is_published: true,
-  })
-  const [kbError, setKbError] = useState('')
-  const [kbSuccess, setKbSuccess] = useState('')
-
   // --- Users & Groups for pickers ---
   const { data: users } = useQuery({
     queryKey: ['users'],
@@ -116,9 +95,9 @@ export const ServiceManager: React.FC = () => {
 
   // --- Services queries/mutations ---
   const { data: services, isLoading: svcLoading } = useQuery({
-    queryKey: ['services', svcIncludeInactive],
+    queryKey: ['services', svcStatusFilter],
     queryFn: () =>
-      servicesApi.listServices({ include_inactive: svcIncludeInactive }).then(r => r.data as ServiceItem[]),
+      servicesApi.listServices({ include_inactive: !svcStatusFilter || svcStatusFilter === 'inactive' }).then(r => r.data as ServiceItem[]),
     enabled: activeTab === 'services' || activeTab === 'kb-articles',
   })
 
@@ -219,61 +198,12 @@ export const ServiceManager: React.FC = () => {
     },
   })
 
-  // --- KB Articles queries/mutations (Phase 6) ---
-  const { data: kbArticles, isLoading: kbLoading } = useQuery({
-    queryKey: ['kb-articles'],
-    queryFn: () => kbApi.listArticles().then(r => r.data as KbArticleItem[]),
-    enabled: activeTab === 'kb-articles',
-  })
-
-  const kbCreateMutation = useMutation({
-    mutationFn: (data: any) => kbApi.createArticle(data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
-      setKbShowForm(false)
-      resetKbForm()
-      setKbSuccess('Article created successfully')
-      setTimeout(() => setKbSuccess(''), 3000)
-    },
-    onError: (err: any) => {
-      setKbError(err.response?.data?.detail || 'Failed to create article')
-      setTimeout(() => setKbError(''), 5000)
-    },
-  })
-
-  const kbUpdateMutation = useMutation({
-    mutationFn: ({ id, data }: { id: number; data: any }) => kbApi.updateArticle(id, data),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
-      setKbShowForm(false)
-      setKbEditingId(null)
-      resetKbForm()
-      setKbSuccess('Article updated successfully')
-      setTimeout(() => setKbSuccess(''), 3000)
-    },
-    onError: (err: any) => {
-      setKbError(err.response?.data?.detail || 'Failed to update article')
-      setTimeout(() => setKbError(''), 5000)
-    },
-  })
-
-  const kbDeleteMutation = useMutation({
-    mutationFn: (id: number) => kbApi.deleteArticle(id),
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['kb-articles'] })
-      setKbSuccess('Article deleted')
-      setTimeout(() => setKbSuccess(''), 3000)
-    },
-    onError: (err: any) => {
-      setKbError(err.response?.data?.detail || 'Failed to delete article')
-      setTimeout(() => setKbError(''), 5000)
-    },
-  })
-
   // --- Services handlers ---
   const resetSvcForm = () => {
     setSvcFormData({ name: '', key: '', description: '', icon: '', category_id: '', owner_id: '', support_group_id: '', sort_order: 0 })
     setSlaEnabled(false)
+    setSlaResponseDefault('')
+    setSlaResolutionDefault('')
     setSlaResponseHours({ '1': '', '2': '', '3': '', '4': '' })
     setSlaResolutionHours({ '1': '', '2': '', '3': '', '4': '' })
   }
@@ -296,16 +226,18 @@ export const ServiceManager: React.FC = () => {
     if (slaEnabled) {
       customData.sla_targets = {
         response_hours: {
-          '1': slaResponseHours['1'] ? parseInt(slaResponseHours['1']) : null,
-          '2': slaResponseHours['2'] ? parseInt(slaResponseHours['2']) : null,
-          '3': slaResponseHours['3'] ? parseInt(slaResponseHours['3']) : null,
-          '4': slaResponseHours['4'] ? parseInt(slaResponseHours['4']) : null,
+          default: slaResponseDefault ? parseInt(slaResponseDefault) : null,
+          '1': slaResponseHours['1'] ? parseInt(slaResponseHours['1']) : undefined,
+          '2': slaResponseHours['2'] ? parseInt(slaResponseHours['2']) : undefined,
+          '3': slaResponseHours['3'] ? parseInt(slaResponseHours['3']) : undefined,
+          '4': slaResponseHours['4'] ? parseInt(slaResponseHours['4']) : undefined,
         },
         resolution_hours: {
-          '1': slaResolutionHours['1'] ? parseInt(slaResolutionHours['1']) : null,
-          '2': slaResolutionHours['2'] ? parseInt(slaResolutionHours['2']) : null,
-          '3': slaResolutionHours['3'] ? parseInt(slaResolutionHours['3']) : null,
-          '4': slaResolutionHours['4'] ? parseInt(slaResolutionHours['4']) : null,
+          default: slaResolutionDefault ? parseInt(slaResolutionDefault) : null,
+          '1': slaResolutionHours['1'] ? parseInt(slaResolutionHours['1']) : undefined,
+          '2': slaResolutionHours['2'] ? parseInt(slaResolutionHours['2']) : undefined,
+          '3': slaResolutionHours['3'] ? parseInt(slaResolutionHours['3']) : undefined,
+          '4': slaResolutionHours['4'] ? parseInt(slaResolutionHours['4']) : undefined,
         },
       }
     }
@@ -333,6 +265,8 @@ export const ServiceManager: React.FC = () => {
     const sla = (svc.custom_data || {}).sla_targets
     if (sla) {
       setSlaEnabled(true)
+      setSlaResponseDefault(sla.response_hours?.default ?? '')
+      setSlaResolutionDefault(sla.resolution_hours?.default ?? '')
       setSlaResponseHours({
         '1': sla.response_hours?.['1'] ?? '',
         '2': sla.response_hours?.['2'] ?? '',
@@ -347,6 +281,8 @@ export const ServiceManager: React.FC = () => {
       })
     } else {
       setSlaEnabled(false)
+      setSlaResponseDefault('')
+      setSlaResolutionDefault('')
       setSlaResponseHours({ '1': '', '2': '', '3': '', '4': '' })
       setSlaResolutionHours({ '1': '', '2': '', '3': '', '4': '' })
     }
@@ -406,42 +342,6 @@ export const ServiceManager: React.FC = () => {
     }
   }
 
-  // --- KB Articles handlers (Phase 6) ---
-  const resetKbForm = () => {
-    setKbFormData({ title: '', slug: '', content: '', service_id: '', sort_order: 0, is_published: true })
-  }
-
-  const handleKbSubmit = (e: React.FormEvent) => {
-    e.preventDefault()
-    const payload: any = {
-      title: kbFormData.title,
-      content: kbFormData.content,
-      sort_order: kbFormData.sort_order,
-      is_published: kbFormData.is_published,
-    }
-    if (kbFormData.slug) payload.slug = kbFormData.slug
-    if (kbFormData.service_id) payload.service_id = parseInt(kbFormData.service_id)
-
-    if (kbEditingId) {
-      kbUpdateMutation.mutate({ id: kbEditingId, data: payload })
-    } else {
-      kbCreateMutation.mutate(payload)
-    }
-  }
-
-  const editKbArticle = (article: KbArticleItem) => {
-    setKbEditingId(article.id)
-    setKbFormData({
-      title: article.title,
-      slug: article.slug,
-      content: article.content,
-      service_id: article.service_id?.toString() || '',
-      sort_order: article.sort_order,
-      is_published: article.is_published,
-    })
-    setKbShowForm(true)
-  }
-
   // --- Render ---
   if (!isAdmin) {
     return <div className="error">Access denied. Admin role required.</div>
@@ -481,46 +381,60 @@ export const ServiceManager: React.FC = () => {
         >
           Categories ({categories?.length || 0})
         </button>
-        <button
-          className="btn"
-          style={{
-            borderBottom: activeTab === 'kb-articles' ? '2px solid #3498db' : '2px solid transparent',
-            color: activeTab === 'kb-articles' ? '#3498db' : '#6c757d',
-            backgroundColor: 'transparent',
-            marginBottom: '-2px',
-            fontWeight: activeTab === 'kb-articles' ? 700 : 400,
-          }}
-          onClick={() => setActiveTab('kb-articles')}
-        >
-          KB Articles ({kbArticles?.length || 0})
-        </button>
       </div>
 
       {svcError && <div className="error">{svcError}</div>}
       {svcSuccess && <div className="success">{svcSuccess}</div>}
       {catError && <div className="error">{catError}</div>}
       {catSuccess && <div className="success">{catSuccess}</div>}
-      {kbError && <div className="error">{kbError}</div>}
-      {kbSuccess && <div className="success">{kbSuccess}</div>}
 
       {/* ==================== SERVICES TAB ==================== */}
       {activeTab === 'services' && (
         <>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem', flexWrap: 'wrap' }}>
+          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
             <button
               className="btn btn-primary"
               onClick={() => { resetSvcForm(); setSvcEditingId(null); setSvcShowForm(!svcShowForm) }}
             >
               {svcShowForm ? 'Cancel' : '+ New Service'}
             </button>
-            <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem', fontSize: '0.9rem', color: '#6c757d' }}>
-              <input
-                type="checkbox"
-                checked={svcIncludeInactive}
-                onChange={e => setSvcIncludeInactive(e.target.checked)}
-              />
-              Show inactive
-            </label>
+          </div>
+
+          {/* Services Search and Filter */}
+          <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+            <div style={{ display: 'flex', gap: '1rem', alignItems: 'flex-end', flexWrap: 'wrap' }}>
+              <div className="form-group" style={{ flex: 1, minWidth: '200px', marginBottom: 0 }}>
+                <label className="form-label">Search</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  placeholder="Search by name, key, or description..."
+                  value={svcSearch}
+                  onChange={e => setSvcSearch(e.target.value)}
+                />
+              </div>
+              <div className="form-group" style={{ marginBottom: 0, minWidth: '130px' }}>
+                <label className="form-label">Status</label>
+                <select
+                  className="form-select"
+                  value={svcStatusFilter}
+                  onChange={e => setSvcStatusFilter(e.target.value)}
+                >
+                  <option value="active">Active</option>
+                  <option value="inactive">Inactive</option>
+                  <option value="">All</option>
+                </select>
+              </div>
+              {(svcSearch || svcStatusFilter !== 'active') && (
+                <button
+                  className="btn btn-sm btn-secondary"
+                  onClick={() => { setSvcSearch(''); setSvcStatusFilter('active') }}
+                  style={{ marginBottom: 0 }}
+                >
+                  Clear
+                </button>
+              )}
+            </div>
           </div>
 
           {/* Service Create/Edit Form */}
@@ -635,57 +549,98 @@ export const ServiceManager: React.FC = () => {
                   {slaEnabled && (
                     <div>
                       <p style={{ fontSize: '0.85rem', color: '#6c757d', margin: '0 0 0.75rem' }}>
-                        Set response and resolution time targets (in hours) for each priority level. Leave blank for no target.
+                        Set default response and resolution time targets (in hours). Optionally override per priority below. Leave blank for no target.
                       </p>
-                      <table className="table" style={{ marginBottom: 0 }}>
+                      <table className="table" style={{ marginBottom: '0.75rem' }}>
                         <thead>
                           <tr>
-                            <th>Priority</th>
-                            <th>Response (hours)</th>
-                            <th>Resolution (hours)</th>
+                            <th>Target</th>
+                            <th>Default (hours)</th>
                           </tr>
                         </thead>
                         <tbody>
-                          {[
-                            { id: '1', name: 'Critical', color: '#dc3545' },
-                            { id: '2', name: 'High', color: '#fd7e14' },
-                            { id: '3', name: 'Medium', color: '#ffc107' },
-                            { id: '4', name: 'Low', color: '#28a745' },
-                          ].map((lvl: any) => (
-                            <tr key={lvl.id}>
-                              <td>
-                                <span style={{
-                                  display: 'inline-block', width: '10px', height: '10px',
-                                  borderRadius: '50%', backgroundColor: lvl.color, marginRight: '6px'
-                                }} />
-                                {lvl.name}
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ width: '100px' }}
-                                  value={slaResponseHours[lvl.id]}
-                                  onChange={e => setSlaResponseHours({ ...slaResponseHours, [lvl.id]: e.target.value })}
-                                  placeholder="—"
-                                  min="0"
-                                />
-                              </td>
-                              <td>
-                                <input
-                                  type="number"
-                                  className="form-input"
-                                  style={{ width: '100px' }}
-                                  value={slaResolutionHours[lvl.id]}
-                                  onChange={e => setSlaResolutionHours({ ...slaResolutionHours, [lvl.id]: e.target.value })}
-                                  placeholder="—"
-                                  min="0"
-                                />
-                              </td>
-                            </tr>
-                          ))}
+                          <tr>
+                            <td>Response</td>
+                            <td>
+                              <input
+                                type="number"
+                                className="form-input"
+                                style={{ width: '100px' }}
+                                value={slaResponseDefault}
+                                onChange={e => setSlaResponseDefault(e.target.value)}
+                                placeholder="—"
+                                min="0"
+                              />
+                            </td>
+                          </tr>
+                          <tr>
+                            <td>Resolution</td>
+                            <td>
+                              <input
+                                type="number"
+                                className="form-input"
+                                style={{ width: '100px' }}
+                                value={slaResolutionDefault}
+                                onChange={e => setSlaResolutionDefault(e.target.value)}
+                                placeholder="—"
+                                min="0"
+                              />
+                            </td>
+                          </tr>
                         </tbody>
                       </table>
+                      <details>
+                        <summary style={{ cursor: 'pointer', fontSize: '0.85rem', color: '#6c757d' }}>Per-priority overrides (optional)</summary>
+                        <table className="table" style={{ marginTop: '0.5rem', marginBottom: 0 }}>
+                          <thead>
+                            <tr>
+                              <th>Priority</th>
+                              <th>Response (hours)</th>
+                              <th>Resolution (hours)</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                             {([
+                               { id: '1', name: 'Critical', color: '#dc3545' },
+                               { id: '2', name: 'High', color: '#fd7e14' },
+                               { id: '3', name: 'Medium', color: '#ffc107' },
+                               { id: '4', name: 'Low', color: '#28a745' },
+                             ] as const).map((lvl) => (
+                              <tr key={lvl.id}>
+                                <td>
+                                  <span style={{
+                                    display: 'inline-block', width: '10px', height: '10px',
+                                    borderRadius: '50%', backgroundColor: lvl.color, marginRight: '6px'
+                                  }} />
+                                  {lvl.name}
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    className="form-input"
+                                    style={{ width: '100px' }}
+                                    value={slaResponseHours[lvl.id]}
+                                    onChange={e => setSlaResponseHours({ ...slaResponseHours, [lvl.id]: e.target.value })}
+                                    placeholder="use default"
+                                    min="0"
+                                  />
+                                </td>
+                                <td>
+                                  <input
+                                    type="number"
+                                    className="form-input"
+                                    style={{ width: '100px' }}
+                                    value={slaResolutionHours[lvl.id]}
+                                    onChange={e => setSlaResolutionHours({ ...slaResolutionHours, [lvl.id]: e.target.value })}
+                                    placeholder="use default"
+                                    min="0"
+                                  />
+                                </td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </details>
                     </div>
                   )}
                 </div>
@@ -702,59 +657,80 @@ export const ServiceManager: React.FC = () => {
             </div>
           )}
 
-          {/* Services Table */}
-          <div className="card">
-            <h3 className="card-title">Services ({services?.length || 0})</h3>
-            {svcLoading ? <div className="loading">Loading services...</div> : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Icon</th>
-                    <th>Name</th>
-                    <th>Key</th>
-                    <th>Category</th>
-                    <th>Owner</th>
-                    <th>Support Group</th>
-                    <th>Workflows</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(!services || services.length === 0) && (
-                    <tr><td colSpan={9} style={{ textAlign: 'center', padding: '2rem', color: '#6c757d' }}>No services yet. Create one to get started.</td></tr>
-                  )}
-                  {services?.map(svc => (
-                    <tr key={svc.id}>
-                      <td style={{ fontSize: '1.3rem' }}>{svc.icon || '📋'}</td>
-                      <td><strong>{svc.name}</strong></td>
-                      <td><code>{svc.key}</code></td>
-                      <td>{svc.category?.name || '—'}</td>
-                      <td>{svc.owner?.full_name || svc.owner?.username || '—'}</td>
-                      <td>{svc.support_group?.name || '—'}</td>
-                      <td><span className="badge badge-info">{svc.workflow_count}</span></td>
-                      <td>
-                        <span className={`badge ${svc.is_active ? 'badge-success' : 'badge-danger'}`}>
-                          {svc.is_active ? 'Active' : 'Inactive'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.3rem' }}>
-                          <button className="btn btn-sm btn-primary" onClick={() => editService(svc)}>Edit</button>
-                          <button
-                            className={`btn btn-sm ${svc.is_active ? 'btn-danger' : 'btn-success'}`}
-                            onClick={() => toggleServiceActive(svc)}
-                          >
-                            {svc.is_active ? 'Deactivate' : 'Reactivate'}
-                          </button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
+          {/* Services Table — hidden when editing */}
+          {!svcShowForm && (
+            <div className="card">
+              {svcLoading ? <div className="loading">Loading services...</div> : (() => {
+                const filtered = (services || []).filter(svc => {
+                  if (svcStatusFilter === 'active' && !svc.is_active) return false
+                  if (svcStatusFilter === 'inactive' && svc.is_active) return false
+                  if (svcSearch) {
+                    const q = svcSearch.toLowerCase()
+                    return (
+                      svc.name.toLowerCase().includes(q) ||
+                      svc.key.toLowerCase().includes(q) ||
+                      (svc.description || '').toLowerCase().includes(q)
+                    )
+                  }
+                  return true
+                })
+                return (
+                  <>
+                    <h3 className="card-title">Services ({filtered.length})</h3>
+                    <table className="table">
+                      <thead>
+                        <tr>
+                          <th>Icon</th>
+                          <th>Name</th>
+                          <th>Key</th>
+                          <th>Category</th>
+                          <th>Owner</th>
+                          <th>Support Group</th>
+                          <th>Sort Order</th>
+                          <th>Workflows</th>
+                          <th>Status</th>
+                          <th>Actions</th>
+                        </tr>
+                      </thead>
+                      <tbody>
+                        {filtered.length === 0 && (
+                          <tr><td colSpan={10} style={{ textAlign: 'center', padding: '2rem', color: '#6c757d' }}>No services match your filters.</td></tr>
+                        )}
+                        {filtered.map(svc => (
+                          <tr key={svc.id}>
+                            <td style={{ fontSize: '1.3rem' }}>{svc.icon || '📋'}</td>
+                            <td><strong>{svc.name}</strong></td>
+                            <td><code>{svc.key}</code></td>
+                            <td>{svc.category?.name || '—'}</td>
+                            <td>{svc.owner?.full_name || svc.owner?.username || '—'}</td>
+                            <td>{svc.support_group?.name || '—'}</td>
+                            <td>{svc.sort_order}</td>
+                            <td><span className="badge badge-info">{svc.workflow_count}</span></td>
+                            <td>
+                              <span className={`badge ${svc.is_active ? 'badge-success' : 'badge-danger'}`}>
+                                {svc.is_active ? 'Active' : 'Inactive'}
+                              </span>
+                            </td>
+                            <td>
+                              <div style={{ display: 'flex', gap: '0.3rem' }}>
+                                <button className="btn btn-sm btn-primary" onClick={() => editService(svc)}>Edit</button>
+                                <button
+                                  className={`btn btn-sm ${svc.is_active ? 'btn-danger' : 'btn-success'}`}
+                                  onClick={() => toggleServiceActive(svc)}
+                                >
+                                  {svc.is_active ? 'Deactivate' : 'Reactivate'}
+                                </button>
+                              </div>
+                            </td>
+                          </tr>
+                        ))}
+                      </tbody>
+                    </table>
+                  </>
+                )
+              })()}
+            </div>
+          )}
         </>
       )}
 
@@ -888,138 +864,6 @@ export const ServiceManager: React.FC = () => {
         </>
       )}
 
-      {/* ==================== KB ARTICLES TAB (Phase 6) ==================== */}
-      {activeTab === 'kb-articles' && (
-        <>
-          <div style={{ display: 'flex', gap: '0.5rem', marginBottom: '1rem' }}>
-            <button
-              className="btn btn-primary"
-              onClick={() => { resetKbForm(); setKbEditingId(null); setKbShowForm(!kbShowForm) }}
-            >
-              {kbShowForm ? 'Cancel' : '+ New Article'}
-            </button>
-          </div>
-
-          {/* KB Article Create/Edit Form */}
-          {kbShowForm && (
-            <div className="card" style={{ marginBottom: '1.5rem' }}>
-              <h3 className="card-title">{kbEditingId ? 'Edit Article' : 'New Article'}</h3>
-              <form onSubmit={handleKbSubmit}>
-                <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(250px, 1fr))', gap: '1rem' }}>
-                  <div className="form-group">
-                    <label className="form-label">Title *</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={kbFormData.title}
-                      onChange={e => setKbFormData({ ...kbFormData, title: e.target.value })}
-                      required
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Slug (auto-generated if empty)</label>
-                    <input
-                      type="text"
-                      className="form-input"
-                      value={kbFormData.slug}
-                      onChange={e => setKbFormData({ ...kbFormData, slug: e.target.value })}
-                      placeholder="e.g. how-to-submit-request"
-                    />
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Service (optional)</label>
-                    <select
-                      className="form-select"
-                      value={kbFormData.service_id}
-                      onChange={e => setKbFormData({ ...kbFormData, service_id: e.target.value })}
-                    >
-                      <option value="">— None —</option>
-                      {(services || []).map(svc => (
-                        <option key={svc.id} value={svc.id}>{svc.icon} {svc.name}</option>
-                      ))}
-                    </select>
-                  </div>
-                  <div className="form-group">
-                    <label className="form-label">Sort Order</label>
-                    <input
-                      type="number"
-                      className="form-input"
-                      value={kbFormData.sort_order}
-                      onChange={e => setKbFormData({ ...kbFormData, sort_order: parseInt(e.target.value) || 0 })}
-                    />
-                  </div>
-                </div>
-                <div className="form-group" style={{ marginTop: '1rem' }}>
-                  <label className="form-label">Content (Markdown supported)</label>
-                  <textarea
-                    className="form-textarea"
-                    value={kbFormData.content}
-                    onChange={e => setKbFormData({ ...kbFormData, content: e.target.value })}
-                    rows={8}
-                  />
-                </div>
-                <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem', alignItems: 'center' }}>
-                  <label style={{ display: 'flex', alignItems: 'center', gap: '0.3rem' }}>
-                    <input
-                      type="checkbox"
-                      checked={kbFormData.is_published}
-                      onChange={e => setKbFormData({ ...kbFormData, is_published: e.target.checked })}
-                    />
-                    Published
-                  </label>
-                  <button type="submit" className="btn btn-success" disabled={kbCreateMutation.isPending || kbUpdateMutation.isPending}>
-                    {kbEditingId ? 'Update Article' : 'Create Article'}
-                  </button>
-                  <button type="button" className="btn btn-secondary" onClick={() => { setKbShowForm(false); resetKbForm(); setKbEditingId(null) }}>
-                    Cancel
-                  </button>
-                </div>
-              </form>
-            </div>
-          )}
-
-          {/* KB Articles Table */}
-          <div className="card">
-            <h3 className="card-title">Knowledge Base Articles ({kbArticles?.length || 0})</h3>
-            {kbLoading ? <div className="loading">Loading articles...</div> : (
-              <table className="table">
-                <thead>
-                  <tr>
-                    <th>Title</th>
-                    <th>Slug</th>
-                    <th>Service</th>
-                    <th>Status</th>
-                    <th>Actions</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {(!kbArticles || kbArticles.length === 0) && (
-                    <tr><td colSpan={5} style={{ textAlign: 'center', padding: '2rem', color: '#6c757d' }}>No articles yet. Create one to get started.</td></tr>
-                  )}
-                  {kbArticles?.map(article => (
-                    <tr key={article.id}>
-                      <td><strong>{article.title}</strong></td>
-                      <td><code>{article.slug}</code></td>
-                      <td>{article.service ? `${article.service.icon} ${article.service.name}` : '—'}</td>
-                      <td>
-                        <span className={`badge ${article.is_published ? 'badge-success' : 'badge-warning'}`}>
-                          {article.is_published ? 'Published' : 'Draft'}
-                        </span>
-                      </td>
-                      <td>
-                        <div style={{ display: 'flex', gap: '0.3rem' }}>
-                          <button className="btn btn-sm btn-primary" onClick={() => editKbArticle(article)}>Edit</button>
-                          <button className="btn btn-sm btn-danger" onClick={() => kbDeleteMutation.mutate(article.id)}>Delete</button>
-                        </div>
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
-            )}
-          </div>
-        </>
-      )}
     </div>
   )
 }

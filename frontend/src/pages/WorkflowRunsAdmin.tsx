@@ -199,7 +199,7 @@ export const WorkflowRunsAdmin: React.FC = () => {
 
   const actions = (run: Run) => (
     <div style={{ display: 'flex', gap: '0.35rem' }}>
-      <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">Graph</Link>
+      <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">View</Link>
       {run.workflow_id != null && (
         <Link to={`/workflows/${run.workflow_id}/design`} className="btn btn-sm btn-secondary">Edit</Link>
       )}

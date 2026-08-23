@@ -42,6 +42,7 @@ interface KbArticle {
   title: string
   slug: string
   content: string
+  service?: { id: number; name: string }
 }
 
 export const ServiceCatalog: React.FC = () => {
@@ -69,6 +70,7 @@ export const ServiceCatalog: React.FC = () => {
   // KB search results (Phase 6)
   const [kbSearchResults, setKbSearchResults] = useState<KbArticle[]>([])
   const [kbSearching, setKbSearching] = useState(false)
+  const [kbSearchTerm, setKbSearchTerm] = useState('')
 
   useEffect(() => {
     if (!toast) return
@@ -100,14 +102,14 @@ export const ServiceCatalog: React.FC = () => {
 
   // KB search on catalog query (Phase 6)
   useEffect(() => {
-    if (!searchTerm.trim() || searchTerm.length < 2) {
+    if (!kbSearchTerm.trim() || kbSearchTerm.length < 2) {
       setKbSearchResults([])
       return
     }
     const timer = setTimeout(async () => {
       setKbSearching(true)
       try {
-        const res = await kbApi.listArticles({ search: searchTerm })
+        const res = await kbApi.listArticles({ search: kbSearchTerm })
         setKbSearchResults(res.data.slice(0, 5) as KbArticle[])
       } catch {
         setKbSearchResults([])
@@ -116,7 +118,7 @@ export const ServiceCatalog: React.FC = () => {
       }
     }, 300)
     return () => clearTimeout(timer)
-  }, [searchTerm])
+  }, [kbSearchTerm])
 
   const loadServiceDetail = async (serviceId: number) => {
     setDetailLoading(true)
@@ -159,23 +161,12 @@ export const ServiceCatalog: React.FC = () => {
   }
 
   const initiateWorkflow = (wf: CatalogWorkflow) => {
-    const hasSla = detail && detail.custom_data?.sla_targets && priorityLevels.length > 0
+    const hasSla = detail && detail.custom_data?.sla_targets
     if (hasSla) {
       setSelectedPriority(null)
       setShowPriorityModal(wf)
     } else {
       runWorkflow(wf)
-    }
-  }
-
-  const submitEntryForm = async (data: Record<string, any>) => {
-    if (!entryFormWorkflow) return
-    try {
-      const response = await portalApi.runWorkflow(entryFormWorkflow.id, data)
-      setToast(`Started "${entryFormWorkflow.name}" (run #${response.data.run_id})`)
-      setEntryFormWorkflow(null)
-    } catch (error: any) {
-      setToast(error?.response?.data?.detail || 'Failed to start workflow')
     }
   }
 
@@ -263,7 +254,7 @@ export const ServiceCatalog: React.FC = () => {
             background: 'rgba(0,0,0,0.5)', display: 'flex',
             alignItems: 'center', justifyContent: 'center', zIndex: 1000
           }} onClick={() => setEntryFormWorkflow(null)}>
-            <div className="card" style={{ maxWidth: '900px', width: '94%', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+            <div className="card" style={{ maxWidth: '1200px', width: '94%', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
               {entryFormWorkflow.entry_form_id && (
                 <FormRenderer
                   formId={entryFormWorkflow.entry_form_id}
@@ -360,7 +351,7 @@ export const ServiceCatalog: React.FC = () => {
         </div>
 
         {/* SLA Targets display (Phase 3) */}
-        {detail.custom_data?.sla_targets && priorityLevels.length > 0 && (
+        {detail.custom_data?.sla_targets && (
           <div className="card" style={{ marginBottom: '1.5rem' }}>
             <h3 className="card-title">Response & Resolution Targets</h3>
             <table className="table">
@@ -374,6 +365,10 @@ export const ServiceCatalog: React.FC = () => {
               <tbody>
                 {(() => {
                   const sla = detail.custom_data.sla_targets
+                  const getTarget = (targetKey: string, priorityId: string) => {
+                    const targets = sla[targetKey] || {}
+                    return targets[priorityId] != null ? targets[priorityId] : (targets.default != null ? targets.default : null)
+                  }
                   return priorityLevels.map((lvl: any) => (
                     <tr key={lvl.id}>
                       <td>
@@ -384,8 +379,8 @@ export const ServiceCatalog: React.FC = () => {
                         }} />
                         {lvl.name}
                       </td>
-                      <td>{sla.response_hours?.[String(lvl.id)] ? `${sla.response_hours[String(lvl.id)]}h` : '—'}</td>
-                      <td>{sla.resolution_hours?.[String(lvl.id)] ? `${sla.resolution_hours[String(lvl.id)]}h` : '—'}</td>
+                      <td>{getTarget('response_hours', String(lvl.id)) != null ? `${getTarget('response_hours', String(lvl.id))}h` : '—'}</td>
+                      <td>{getTarget('resolution_hours', String(lvl.id)) != null ? `${getTarget('resolution_hours', String(lvl.id))}h` : '—'}</td>
                     </tr>
                   ))
                 })()}
@@ -476,27 +471,7 @@ export const ServiceCatalog: React.FC = () => {
           )}
         </div>
 
-        {/* Related Services (same category) — Phase 4.3 */}
-        {detail.category && (
-          <div className="card" style={{ marginTop: '1.5rem' }}>
-            <h3 className="card-title">Related Services</h3>
-            <div style={{ display: 'flex', gap: '0.75rem', flexWrap: 'wrap', marginTop: '0.5rem' }}>
-              {services
-                .filter(s => s.category?.key === detail.category?.key && s.id !== detail.id)
-                .map(s => (
-                  <button
-                    key={s.id}
-                    className="btn btn-sm btn-secondary"
-                    onClick={() => selectService(s)}
-                    style={{ textDecoration: 'none' }}
-                  >
-                    {s.icon || '📋'} {s.name}
-                  </button>
-                ))
-              }
-            </div>
-          </div>
-        )}
+
       </div>
     )
   }
@@ -506,14 +481,24 @@ export const ServiceCatalog: React.FC = () => {
     <div>
       {/* Search */}
       <div style={{ marginBottom: '1rem' }}>
-        <input
-          className="form-input"
-          type="text"
-          placeholder="Search services..."
-          value={searchTerm}
-          onChange={e => setSearchTerm(e.target.value)}
-          style={{ width: '100%', boxSizing: 'border-box' }}
-        />
+        <div style={{ display: 'flex', gap: '1rem' }}>
+          <input
+            className="form-input"
+            type="text"
+            placeholder="Search services..."
+            value={searchTerm}
+            onChange={e => setSearchTerm(e.target.value)}
+            style={{ flex: 1, minWidth: 0 }}
+          />
+          <input
+            className="form-input"
+            type="text"
+            placeholder="Search for Helpful Knowledge Articles..."
+            value={kbSearchTerm}
+            onChange={e => setKbSearchTerm(e.target.value)}
+            style={{ flex: 1, minWidth: 0 }}
+          />
+        </div>
       </div>
 
       {/* Category filter pills */}
@@ -537,7 +522,7 @@ export const ServiceCatalog: React.FC = () => {
       )}
 
       {/* Helpful Articles from KB search (Phase 6) */}
-      {searchTerm.trim().length >= 2 && kbSearchResults.length > 0 && (
+      {kbSearchTerm.trim().length >= 2 && kbSearchResults.length > 0 && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
           <h3 className="card-title">Helpful Articles</h3>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>

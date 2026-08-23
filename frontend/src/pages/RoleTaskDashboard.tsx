@@ -26,6 +26,8 @@ interface Task {
   priority?: number | null
   ola_pickup_met?: boolean | null
   ola_closure_met?: boolean | null
+  sla_response_met?: boolean | null
+  sla_resolution_met?: boolean | null
 }
 
 type Tab = 'active' | 'open' | 'review' | 'owned' | 'completed' | 'closed' | 'all'
@@ -174,6 +176,28 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
           : <span className="badge badge-danger">Breached</span>
       },
       csv: r => r.ola_closure_met === null ? 'Pending' : r.ola_closure_met ? 'Met' : 'Breached'
+    },
+    {
+      key: 'sla_response',
+      label: 'SLA Response',
+      render: r => {
+        if (r.sla_response_met === null || r.sla_response_met === undefined) return <span className="badge badge-warning">Pending</span>
+        return r.sla_response_met
+          ? <span className="badge badge-success">Met</span>
+          : <span className="badge badge-danger">Breached</span>
+      },
+      csv: r => r.sla_response_met === null ? 'Pending' : r.sla_response_met ? 'Met' : 'Breached'
+    },
+    {
+      key: 'sla_resolution',
+      label: 'SLA Resolution',
+      render: r => {
+        if (r.sla_resolution_met === null || r.sla_resolution_met === undefined) return <span className="badge badge-warning">Pending</span>
+        return r.sla_resolution_met
+          ? <span className="badge badge-success">Met</span>
+          : <span className="badge badge-danger">Breached</span>
+      },
+      csv: r => r.sla_resolution_met === null ? 'Pending' : r.sla_resolution_met ? 'Met' : 'Breached'
     }
   ], [])
 

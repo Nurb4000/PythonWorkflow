@@ -27,6 +27,8 @@ interface Run {
 export const AdminDashboard: React.FC = () => {
   const [days, setDays] = useState(30)
   const [statusFilter, setStatusFilter] = useState<string>('')
+  const [showSchedules, setShowSchedules] = useState(false)
+  const [showRecentRuns, setShowRecentRuns] = useState(false)
 
   const { data: stats, isLoading: statsLoading } = useQuery({
     queryKey: ['admin-stats', days],
@@ -117,83 +119,107 @@ export const AdminDashboard: React.FC = () => {
         </div>
       </div>
 
-      <ScheduleManager />
+      <div className="card" style={{ marginTop: '2rem' }}>
+        <div className="card-header">
+          <h3 className="card-title">Schedules</h3>
+          <button
+            className={`btn btn-sm ${showSchedules ? 'btn-secondary' : 'btn-primary'}`}
+            onClick={() => setShowSchedules(!showSchedules)}
+          >
+            {showSchedules ? 'Hide Schedules' : 'View Schedules'}
+          </button>
+        </div>
+
+        {showSchedules && <ScheduleManager />}
+      </div>
 
       <div className="card" style={{ marginTop: '2rem' }}>
         <div className="card-header">
           <h3 className="card-title">Recent Runs</h3>
-          <div style={{ display: 'flex', gap: '0.5rem' }}>
-            <button 
-              className={`btn btn-sm ${!statusFilter ? 'btn-primary' : 'btn-secondary'}`}
-              onClick={() => setStatusFilter('')}
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <button
+              className={`btn btn-sm ${showRecentRuns ? 'btn-secondary' : 'btn-primary'}`}
+              onClick={() => setShowRecentRuns(!showRecentRuns)}
             >
-              All
+              {showRecentRuns ? 'Hide Runs' : 'View Runs'}
             </button>
-            <button 
-              className={`btn btn-sm ${statusFilter === 'completed' ? 'btn-success' : 'btn-secondary'}`}
-              onClick={() => setStatusFilter('completed')}
-            >
-              Completed
-            </button>
-            <button 
-              className={`btn btn-sm ${statusFilter === 'failed' ? 'btn-danger' : 'btn-secondary'}`}
-              onClick={() => setStatusFilter('failed')}
-            >
-              Failed
-            </button>
-            <button 
-              className={`btn btn-sm ${statusFilter === 'running' ? 'btn-info' : 'btn-secondary'}`}
-              onClick={() => setStatusFilter('running')}
-            >
-              Running
-            </button>
+            {showRecentRuns && (
+              <>
+                <button 
+                  className={`btn btn-sm ${!statusFilter ? 'btn-primary' : 'btn-secondary'}`}
+                  onClick={() => setStatusFilter('')}
+                >
+                  All
+                </button>
+                <button 
+                  className={`btn btn-sm ${statusFilter === 'completed' ? 'btn-success' : 'btn-secondary'}`}
+                  onClick={() => setStatusFilter('completed')}
+                >
+                  Completed
+                </button>
+                <button 
+                  className={`btn btn-sm ${statusFilter === 'failed' ? 'btn-danger' : 'btn-secondary'}`}
+                  onClick={() => setStatusFilter('failed')}
+                >
+                  Failed
+                </button>
+                <button 
+                  className={`btn btn-sm ${statusFilter === 'running' ? 'btn-info' : 'btn-secondary'}`}
+                  onClick={() => setStatusFilter('running')}
+                >
+                  Running
+                </button>
+              </>
+            )}
           </div>
         </div>
 
-        <table className="table">
-          <thead>
-            <tr>
-               <th>ID</th>
-               <th>Workflow</th>
-               <th>Status</th>
-               <th>Triggered By</th>
-               <th>Started</th>
-               <th>Completed</th>
-               <th>Duration</th>
-               <th>Error</th>
-               <th>Actions</th>
-             </tr>
-           </thead>
-           <tbody>
-             {runs?.map((run: Run) => (
-               <tr key={run.id}>
-                 <td><Link to={`/runs/${run.id}`}>#{run.id}</Link></td>
-                 <td>{run.workflow_name || (run.workflow_id != null ? `#${run.workflow_id}` : 'Unknown')}</td>
-                 <td>
-                   <span className={`badge ${getStatusBadgeClass(run.status)}`}>
-                     {run.status}
-                   </span>
-                 </td>
-                 <td>{run.triggered_by}</td>
-                 <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
-                 <td>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '-'}</td>
-                 <td>{calculateDuration(run.started_at, run.completed_at)}</td>
-                 <td style={{ 
-                   color: run.error_message ? '#e74c3c' : 'inherit',
-                   maxWidth: '200px',
-                   overflow: 'hidden',
-                   textOverflow: 'ellipsis',
-                   whiteSpace: 'nowrap'
-                 }}>
-                   {run.error_message || '-'}
-                 </td>
-                 <td>
-                   <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">Graph</Link>
-                 </td>
-               </tr>
-             ))}
-          </tbody>
-        </table>
+        {showRecentRuns && (
+          <table className="table">
+            <thead>
+              <tr>
+                 <th>ID</th>
+                 <th>Workflow</th>
+                 <th>Status</th>
+                 <th>Triggered By</th>
+                 <th>Started</th>
+                 <th>Completed</th>
+                 <th>Duration</th>
+                 <th>Error</th>
+                 <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody>
+                {runs?.map((run: Run) => (
+                  <tr key={run.id}>
+                    <td><Link to={`/runs/${run.id}`}>#{run.id}</Link></td>
+                    <td>{run.workflow_name || (run.workflow_id != null ? `#${run.workflow_id}` : 'Unknown')}</td>
+                    <td>
+                      <span className={`badge ${getStatusBadgeClass(run.status)}`}>
+                        {run.status}
+                      </span>
+                    </td>
+                    <td>{run.triggered_by}</td>
+                    <td>{run.started_at ? new Date(run.started_at).toLocaleString() : '-'}</td>
+                    <td>{run.completed_at ? new Date(run.completed_at).toLocaleString() : '-'}</td>
+                    <td>{calculateDuration(run.started_at, run.completed_at)}</td>
+                    <td style={{ 
+                      color: run.error_message ? '#e74c3c' : 'inherit',
+                      maxWidth: '200px',
+                      overflow: 'hidden',
+                      textOverflow: 'ellipsis',
+                      whiteSpace: 'nowrap'
+                    }}>
+                      {run.error_message || '-'}
+                    </td>
+                    <td>
+                      <Link to={`/runs/${run.id}`} className="btn btn-sm btn-primary">View</Link>
+                    </td>
+                  </tr>
+                ))}
+             </tbody>
+          </table>
+        )}
       </div>
 
       {/* System Logs */}

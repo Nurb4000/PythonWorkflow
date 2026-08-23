@@ -1,6 +1,7 @@
 import React, { useCallback, useEffect, useMemo, useState } from 'react'
+import { useNavigate } from 'react-router-dom'
 import axios from 'axios'
-import { portalApi } from '../services/api'
+import { portalApi, kbApi } from '../services/api'
 import { FormRenderer } from '../components/FormRenderer'
 
 interface PortalWorkflow {
@@ -23,7 +24,15 @@ interface PortalBanner {
   color: string
 }
 
+interface KbArticle {
+  id: number
+  title: string
+  slug: string
+  service?: { id: number; name: string }
+}
+
 export const Portal: React.FC = () => {
+  const navigate = useNavigate()
   const [workflows, setWorkflows] = useState<PortalWorkflow[]>([])
   const [loading, setLoading] = useState(true)
   const [running, setRunning] = useState<number | null>(null)
@@ -31,6 +40,8 @@ export const Portal: React.FC = () => {
   const [entryFormWorkflow, setEntryFormWorkflow] = useState<PortalWorkflow | null>(null)
   const [banner, setBanner] = useState<PortalBanner>({ enabled: false, title: '', message: '', color: '#f39c12' })
   const [searchTerm, setSearchTerm] = useState('')
+  const [kbSearchTerm, setKbSearchTerm] = useState('')
+  const [kbSearchResults, setKbSearchResults] = useState<KbArticle[]>([])
 
   const load = useCallback(async () => {
     try {
@@ -58,6 +69,23 @@ export const Portal: React.FC = () => {
     const t = setTimeout(() => setToast(null), 4000)
     return () => clearTimeout(t)
   }, [toast])
+
+  // KB search on portal query
+  useEffect(() => {
+    if (!kbSearchTerm.trim() || kbSearchTerm.length < 2) {
+      setKbSearchResults([])
+      return
+    }
+    const timer = setTimeout(async () => {
+      try {
+        const res = await kbApi.listArticles({ search: kbSearchTerm })
+        setKbSearchResults(res.data.slice(0, 5) as KbArticle[])
+      } catch {
+        setKbSearchResults([])
+      }
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [kbSearchTerm])
 
   const runWorkflow = async (wf: PortalWorkflow) => {
     // P3.3: If workflow has an entry form, show it first
@@ -149,7 +177,7 @@ export const Portal: React.FC = () => {
           background: 'rgba(0,0,0,0.5)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }} onClick={() => setEntryFormWorkflow(null)}>
-          <div className="card" style={{ maxWidth: '900px', width: '94%', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
+          <div className="card" style={{ maxWidth: '1200px', width: '94%', maxHeight: '90vh', overflow: 'auto' }} onClick={e => e.stopPropagation()}>
             {entryFormWorkflow.entry_form_id && (
               <FormRenderer
                 formId={entryFormWorkflow.entry_form_id}
@@ -171,15 +199,51 @@ export const Portal: React.FC = () => {
       ) : (
         <>
           <div style={{ marginBottom: '1rem', maxWidth: '1400px' }}>
-            <input
-              className="form-input"
-              type="text"
-              placeholder="Search workflows by name or description..."
-              value={searchTerm}
-              onChange={e => setSearchTerm(e.target.value)}
-              style={{ width: '100%', boxSizing: 'border-box' }}
-            />
+            <div style={{ display: 'flex', gap: '1rem' }}>
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Search Offerings by name or description..."
+                value={searchTerm}
+                onChange={e => setSearchTerm(e.target.value)}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+              <input
+                className="form-input"
+                type="text"
+                placeholder="Search for Helpful Knowledge Articles..."
+                value={kbSearchTerm}
+                onChange={e => setKbSearchTerm(e.target.value)}
+                style={{ flex: 1, minWidth: 0 }}
+              />
+            </div>
           </div>
+
+          {/* KB Search Results */}
+          {kbSearchTerm.trim().length >= 2 && kbSearchResults.length > 0 && (
+            <div className="card" style={{ marginBottom: '1.5rem', maxWidth: '1400px' }}>
+              <h3 className="card-title">Helpful Articles</h3>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: '0.5rem', marginTop: '0.5rem' }}>
+                {kbSearchResults.map(article => (
+                  <div key={article.id} style={{
+                    display: 'flex', alignItems: 'center', gap: '0.6rem',
+                    padding: '0.5rem 0.75rem', borderRadius: '4px',
+                    backgroundColor: '#f8f9fa', cursor: 'pointer',
+                  }} onClick={() => navigate(`/kb/${article.slug}`)}>
+                    <span>📖</span>
+                    <div style={{ flex: 1 }}>
+                      <strong style={{ fontSize: '0.9rem' }}>{article.title}</strong>
+                      {article.service && (
+                        <span className="badge badge-info" style={{ marginLeft: '0.5rem', fontSize: '0.7rem' }}>
+                          {article.service.name}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
           {filteredWorkflows.length === 0 && searchTerm.trim() ? (
             <div className="card" style={{ textAlign: 'center', padding: '2rem', opacity: 0.7, marginBottom: '2rem' }}>
               No workflows match "{searchTerm}"

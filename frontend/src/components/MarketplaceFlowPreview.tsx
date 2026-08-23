@@ -1,4 +1,4 @@
-import React, { useMemo } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import {
   ReactFlow,
@@ -63,7 +63,7 @@ const StepNode: React.FC<any> = ({ data }) => (
     <div style={{
       padding: '10px 16px', borderRadius: '8px', background: data.bg || '#f5f5f5',
       border: `2px solid ${data.border || '#999'}`, minWidth: '170px', textAlign: 'center',
-      fontSize: '0.85rem', fontWeight: 500, color: '#333',
+      fontSize: '0.85rem', fontWeight: 500, color: '#333', cursor: 'pointer',
     }}>
       <div style={{ fontSize: '1.3rem' }}>{data.icon || '\ud83d\udce6'}</div>
       <div style={{ fontWeight: 600 }}>{data.title}</div>
@@ -83,6 +83,7 @@ const FlowGraph: React.FC<{ graphData: any }> = ({ graphData }) => {
   const toNum = (v: any) => (typeof v === 'string' ? Number(v) : v)
   const steps = graphData.steps
   const stepMap = useMemo(() => new Map(steps.map((s: any) => [s.id, s])), [steps])
+  const [selectedStep, setSelectedStep] = useState<any>(null)
 
   const [nodes] = useNodesState(
     [
@@ -99,6 +100,7 @@ const FlowGraph: React.FC<{ graphData: any }> = ({ graphData }) => {
             description: step.description || '',
             bg: info.bg,
             border: info.border,
+            stepData: step,
           },
         }
       }),
@@ -198,19 +200,87 @@ const FlowGraph: React.FC<{ graphData: any }> = ({ graphData }) => {
     return result
   }, [steps, graphData.start_step_ids, stepMap]))
 
+  const handleNodeClick = (_: any, node: any) => {
+    if (!node.id.startsWith('step-')) {
+      setSelectedStep(null)
+      return
+    }
+    const stepId = parseInt(node.id.replace('step-', ''))
+    const step = stepMap.get(stepId)
+    if (step) {
+      setSelectedStep(step)
+    }
+  }
+
   return (
-    <div style={{ height: '480px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #eee' }}>
-      <ReactFlow
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={nodeTypes}
-        fitView
-        zoomOnScroll
-        panOnScroll
-      >
-        <Background color="#eee" gap={16} />
-        <Controls />
-      </ReactFlow>
+    <div>
+      <div style={{ height: '480px', borderRadius: '6px', overflow: 'hidden', border: '1px solid #eee' }}>
+        <ReactFlow
+          nodes={nodes}
+          edges={edges}
+          nodeTypes={nodeTypes}
+          fitView
+          zoomOnScroll
+          panOnScroll
+          onNodeClick={handleNodeClick}
+        >
+          <Background color="#eee" gap={16} />
+          <Controls />
+        </ReactFlow>
+      </div>
+
+      {selectedStep && (
+        <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '0.75rem' }}>
+            <h4 style={{ margin: 0 }}>
+              {nodeTypeInfo[selectedStep.step_type]?.icon || '\ud83d\udce6'} Step Details: {selectedStep.title || selectedStep.step_type}
+            </h4>
+            <button className="btn btn-sm btn-secondary" onClick={() => setSelectedStep(null)}>✕ Close</button>
+          </div>
+
+          {selectedStep.description && (
+            <p style={{ color: '#666', fontSize: '0.9rem', margin: '0 0 0.75rem' }}>{selectedStep.description}</p>
+          )}
+
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '0.5rem', marginBottom: '0.75rem' }}>
+            <div><strong>Step Type:</strong> {selectedStep.step_type}</div>
+            <div><strong>Position:</strong> {selectedStep.position}</div>
+          </div>
+
+          {selectedStep.step_type === 'condition' && (selectedStep.definition?.routes || []).length > 0 && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <strong>Routes:</strong>
+              <ul style={{ margin: '0.25rem 0 0 1.25rem', fontSize: '0.85rem' }}>
+                {(selectedStep.definition.routes || []).map((route: any, i: number) => (
+                  <li key={i}>
+                    <code>{route.expression || `Route ${i + 1}`}</code> →{' '}
+                    {route.target_step_id === END_TARGET ? 'End' : route.target_step_id ? `Step #${route.target_step_id}` : 'Unconnected'}
+                  </li>
+                ))}
+              </ul>
+            </div>
+          )}
+
+          {(selectedStep.definition?.next_step_ids || []).length > 0 && (
+            <div style={{ marginBottom: '0.75rem' }}>
+              <strong>Outputs:</strong>{' '}
+              {(selectedStep.definition.next_step_ids || []).map((tid: number, i: number) => (
+                <span key={i}>
+                  {tid === END_TARGET ? 'End' : `Step #${tid}`}
+                  {i < (selectedStep.definition.next_step_ids || []).length - 1 ? ', ' : ''}
+                </span>
+              ))}
+            </div>
+          )}
+
+          <details>
+            <summary style={{ cursor: 'pointer', fontWeight: 'bold', fontSize: '0.85rem' }}>Step Definition (JSON)</summary>
+            <pre style={{ background: '#f8f9fa', padding: '0.5rem', borderRadius: '4px', fontSize: '0.75rem', overflow: 'auto', maxHeight: '200px', marginTop: '0.5rem' }}>
+              {JSON.stringify(selectedStep.definition, null, 2)}
+            </pre>
+          </details>
+        </div>
+      )}
     </div>
   )
 }
