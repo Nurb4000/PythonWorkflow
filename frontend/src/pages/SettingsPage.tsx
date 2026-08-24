@@ -4,6 +4,25 @@ import { useBranding } from '../components/Branding'
 
 const API_URL = '/api'
 
+function CollapsibleCard({ title, defaultOpen = false, children }: {
+  title: string
+  defaultOpen?: boolean
+  children: React.ReactNode
+}) {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">{title}</h3>
+        <button className={`btn btn-sm ${open ? 'btn-secondary' : 'btn-primary'}`} onClick={() => setOpen(!open)}>
+          {open ? 'Hide' : 'Show'}
+        </button>
+      </div>
+      {open && children}
+    </div>
+  )
+}
+
 interface Settings {
   llama_cpp_url: string
   llama_cpp_model: string
@@ -485,8 +504,7 @@ export const SettingsPage: React.FC = () => {
 
       {message && <div className={messageType === 'error' ? 'error' : 'success'} style={{ marginBottom: '1rem' }}>{message}</div>}
 
-      <div className="card">
-        <h3 className="card-title">LLM Configuration (llama.cpp)</h3>
+<CollapsibleCard title="LLM Configuration (llama.cpp)" defaultOpen={false}>
         <form onSubmit={handleLLMUpdate}>
           <div className="form-group">
             <label className="form-label">llama.cpp Server URL</label>
@@ -510,10 +528,9 @@ export const SettingsPage: React.FC = () => {
           </div>
           <button type="submit" className="btn btn-success">Save LLM Settings</button>
         </form>
-      </div>
+</CollapsibleCard>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Email Configuration</h3>
+<CollapsibleCard title="Email Configuration" defaultOpen={true}>
         <form onSubmit={handleEmailUpdate}>
           <div className="grid grid-2">
             <div className="form-group">
@@ -634,10 +651,9 @@ export const SettingsPage: React.FC = () => {
             </div>
           )}
         </div>
-      </div>
+</CollapsibleCard>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Branding</h3>
+<CollapsibleCard title="Branding" defaultOpen={false}>
         <form onSubmit={handleBrandingSave}>
           <div className="form-group">
             <label className="form-label">System Name</label>
@@ -663,10 +679,9 @@ export const SettingsPage: React.FC = () => {
           <input type="file" accept="image/*" className="form-input" onChange={handleLogoUpload} />
           <small style={{ color: '#7f8c8d' }}>PNG, JPG, SVG, GIF, or WebP. Shown in the navbar and login page.</small>
         </div>
-      </div>
+</CollapsibleCard>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Offerings Banner</h3>
+<CollapsibleCard title="Offerings Banner" defaultOpen={false}>
         <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
           Optional banner displayed at the top of the Offerings page for important notices. Hidden when disabled.
         </p>
@@ -734,10 +749,9 @@ export const SettingsPage: React.FC = () => {
 
           <button type="submit" className="btn btn-success">Save Banner Settings</button>
         </form>
-      </div>
+</CollapsibleCard>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Marketplace Categories</h3>
+<CollapsibleCard title="Marketplace Categories" defaultOpen={false}>
         <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
           Manage the categories available when publishing workflows or nodes to the marketplace.
         </p>
@@ -770,11 +784,10 @@ export const SettingsPage: React.FC = () => {
           />
           <button type="submit" className="btn btn-primary" disabled={!newCategory.trim()}>Add</button>
         </form>
-      </div>
+</CollapsibleCard>
 
       {/* Priority Matrix Configuration (Phase 3) */}
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Priority Matrix & SLA</h3>
+<CollapsibleCard title="Priority Matrix & SLA" defaultOpen={false}>
         <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
           Configure priority levels used across the service catalog. Each level has a name and color used in SLA tracking and request submission.
         </p>
@@ -860,10 +873,9 @@ export const SettingsPage: React.FC = () => {
             <button type="button" className="btn btn-secondary" onClick={addPriorityLevel}>+ Add Level</button>
           </div>
         </form>
-      </div>
+</CollapsibleCard>
 
-      <div className="card" style={{ marginTop: '1rem' }}>
-        <h3 className="card-title">Incoming Email Monitor (IMAP)</h3>
+<CollapsibleCard title="Incoming Email Monitor (IMAP)" defaultOpen={false}>
         <p style={{ color: '#7f8c8d', marginBottom: '1rem', fontSize: '0.9rem' }}>
           Monitor an email inbox for incoming messages. Emails containing <code>{`{Rule####}`}</code> in the subject or body will trigger the matching workflow ID.
           Emails without a rule tag will trigger the default workflow (if configured). Processed emails are moved to the trash folder.
@@ -1031,11 +1043,10 @@ export const SettingsPage: React.FC = () => {
             )}
           </div>
         )}
-      </div>
+</CollapsibleCard>
 
       {/* Seed Demo Data */}
-      <div className="card" style={{ marginTop: '2rem' }}>
-        <h3 className="card-title">Demo Data</h3>
+<CollapsibleCard title="Demo Data" defaultOpen={false}>
         <p style={{ color: '#7f8c8d', marginBottom: '1rem' }}>
           Populate the system with sample CMDB types, configuration items, services, knowledge base articles, and forms for testing.
           This is idempotent — existing records are preserved.
@@ -1062,7 +1073,7 @@ export const SettingsPage: React.FC = () => {
             <strong>Error:</strong> {seedError}
           </div>
         )}
-      </div>
+</CollapsibleCard>
     </div>
   )
 }
