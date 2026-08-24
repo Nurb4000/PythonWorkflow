@@ -163,9 +163,10 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
    3.13: bump pins first (`pydantic≥2.9`, `bcrypt≥4.2` — current pins have no cp313
    wheels), switch `Dockerfile.backend` base, full container test rerun. If staying,
    document that choice here.
-8. **CI**: no workflows exist. A minimal GitHub Action = postgres service container +
+8. ~~**CI**: no workflows exist. A minimal GitHub Action = postgres service container +
    `docker compose`-style backend pytest + `tsc --noEmit` would lock in today's green
-   baseline.
+   baseline.~~ DONE 2026-08-24 (commit `ci-setup`): `.github/workflows/ci.yml` runs
+   backend tests (Postgres 15 service container) + frontend typecheck on push/PR.
 9. ~~**Prod compose data check**~~ DONE 2026-08-23: prod override now mounts named
    volumes for `/app/uploads` + `/app/backend_data`; usage documented in
    `docs/docker-deployment.md` (override file — never run standalone).
