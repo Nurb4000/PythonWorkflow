@@ -67,10 +67,23 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
      (masked only by a no-op `onNodesChange`). Restore `!readOnly` semantics and
      verify node-drag stays disabled when inspecting a run.
    - Same function block has mixed-indentation churn — normalize while there.
-2. **Run the E2E suite** (hasn't been run since the users/groups page split):
-   `bash tests/e2e/run-e2e.sh` (needs Chromium on 127.0.0.1:9222, see
-   `tests/e2e/README.md`). Pay attention to admin Users/Groups flows that replaced
-   `UserManagement.tsx`.
+2. ~~**Run the E2E suite**~~ DONE 2026-08-24: all 21 checks green (smoke 8,
+   designer-save 2, entry-form-task 11) against the dockerized stack. Fixes
+   shipped in commit `e4611eb`; stale expectations updated for the Portal→
+   Offerings rename and the TaskDetail raw-data toggle; designer-save now
+   asserts the persisted A→B edge (edge count doesn't grow when wiring
+   replaces an auto-connect-to-end edge). Environment notes for next run:
+   - Frontend is on `:9000` — run with
+     `E2E_BASE=http://localhost:9000 E2E_ADMIN_PASS=admin123 bash tests/e2e/run-e2e.sh`.
+   - Dev credentials drifted from README fixtures: admin's password is the
+     bootstrap `admin123` (not `admin`); `dev`/`staff` users were missing and
+     have been created (username===password). `lib.js creds()` reads
+     `E2E_<NAME>_USER`/`E2E_<NAME>_PASS` overrides so no DB mutation needed.
+   - Fixture workflow "Test WF" was recreated via API as id 12 (old id 22 was
+     gone); smoke.js takes `E2E_WF_ID`.
+   - Needs host headless Chrome on 127.0.0.1:9222 (`tests/e2e/README.md`).
+   Admin Users/Groups flows (post-UserManagement.tsx split) are exercised only
+   indirectly by smoke.js settings checks — deeper coverage still open.
 3. ~~**Decide branding once**~~ DONE 2026-08-23: "Instant Workflow" is the brand.
    Swept README/DESIGN/TESTING_GUIDE titles, frontend `<title>`, header fallback,
    Branding default, Settings placeholder, main.py docstring. Infrastructure
