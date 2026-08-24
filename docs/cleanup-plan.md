@@ -173,8 +173,9 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
     Cosmetic unless item 9 reveals a real problem.
 11. **npm audit** report flagged advisories during uninstall — triage someday;
     not urgent for an internal tool.
-12. **`tests/e2e/demo-shots.js`** is a screenshot demo, not a test — move to
-    `scripts/demos/` or delete if nobody uses it.
+12. ~~**`tests/e2e/demo-shots.js`** is a screenshot demo, not a test — move to
+    `scripts/demos/` or delete if nobody uses it.~~ DONE 2026-08-24 (moved to
+    `scripts/demos/demo-shots.js`).
 
 ---
 
