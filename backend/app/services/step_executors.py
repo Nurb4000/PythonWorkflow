@@ -885,6 +885,9 @@ class ProgrammableDelayExecutor(BaseExecutor):
                     "cron_expression": cron_expr,
                     "executed_at": datetime.utcnow().isoformat(),
                 }
+        
+        else:
+            raise ValueError(f"Unknown delay type: {delay_type}")
 
 
 class CmdbLookupExecutor(BaseExecutor):
