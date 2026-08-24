@@ -530,7 +530,7 @@ export const SettingsPage: React.FC = () => {
         </form>
 </CollapsibleCard>
 
-<CollapsibleCard title="Email Configuration" defaultOpen={true}>
+<CollapsibleCard title="Email Configuration" defaultOpen={false}>
         <form onSubmit={handleEmailUpdate}>
           <div className="grid grid-2">
             <div className="form-group">

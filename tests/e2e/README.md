@@ -41,3 +41,16 @@ Env overrides: `E2E_BASE` (default `http://localhost:3000`), `E2E_CDP`
 Write a script that `require('./lib')` (helpers: `connect`, `newPage`, `login`,
 `apiLogin`, `request`) and `process.exit(1)` on failure. It will be picked up by
 `run-e2e.sh` when named explicitly, or added to the default list.
+
+## Writing ad-hoc probes (gotchas)
+
+- **Always run scripts through `run-e2e.sh`, not `node <script>` directly.**
+  The image installs `puppeteer-core` into `/work/node_modules`; run-e2e.sh
+  passes `-e NODE_PATH=/work/node_modules` so `require('./lib')` resolves.
+  Running on the host or a plain `docker run` without NODE_PATH fails with
+  `Cannot find module 'puppeteer-core'`.
+- **`creds(role)` returns an array `[user, pass]`, keyed by env vars
+  `E2E_<ROLE>_USER` / `E2E_<ROLE>_PASS`** (defaults to the role name for
+  both). Destructure it: `const [user, pass] = creds('admin')`. Passing
+  `creds.admin` (object-style) yields `undefined` credentials and confusing
+  puppeteer errors like `text is not iterable`.
