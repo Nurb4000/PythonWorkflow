@@ -3,7 +3,10 @@
 **Purpose:** pick-up point after the housekeeping sessions. Read "Where things stand",
 then work the backlog top-down. Keep the tree green per commit.
 
-**Last updated:** 2026-08-23
+**Last updated:** 2026-08-24 (all items complete)
+
+**Status: COMPLETE** — All P1/P2/P3 items resolved. Next plan: `docs/scale-governance-plan.md`
+for naming conventions, field library, data dictionary, and governance ops.
 
 ---
 
