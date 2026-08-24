@@ -1,9 +1,10 @@
 import React, { useState, useCallback } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { runApi, aiApi } from '../services/api'
+import { runApi, aiApi, dateTargetsApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 import { WorkflowDesigner } from './WorkflowDesigner'
+import { DateTargetBadge, DateTargetInfo } from '../components/DateTargetBadge'
 
 export const RunMonitor: React.FC = () => {
   const { runId } = useParams<{ runId: string }>()
@@ -39,6 +40,16 @@ export const RunMonitor: React.FC = () => {
   const run = inspector?.run
   const steps = inspector?.steps || []
   const workflow = inspector?.workflow
+
+  // Phase 4.3: date targets for this run (calendar deadlines from calc steps)
+  const { data: dateTargets } = useQuery({
+    queryKey: ['run-date-targets', runIdNum],
+    queryFn: async () => {
+      const response = await dateTargetsApi.list({ run_id: runIdNum })
+      return ((response.data || []) as DateTargetInfo[])
+    },
+    enabled: !!runId,
+  })
 
   // Stats
   const completedSteps = steps.filter((s: any) => s.status === 'completed')
@@ -227,12 +238,44 @@ export const RunMonitor: React.FC = () => {
         )}
       </div>
 
+      {/* Date targets (Phase 4.3) — calendar deadlines alongside SLA/OLA tracking */}
+      {dateTargets && dateTargets.length > 0 && (
+        <div className="card" style={{ marginBottom: '1rem', padding: '1rem' }}>
+          <h3 className="card-title" style={{ marginBottom: '0.5rem' }}>Date Targets ({dateTargets.length})</h3>
+          <table className="table" style={{ fontSize: '0.85rem', marginBottom: 0 }}>
+            <thead>
+              <tr>
+                <th>Key</th>
+                <th>Status</th>
+                <th>Due</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              {dateTargets.map(t => (
+                <tr key={t.id}>
+                  <td><code>{t.target_key}</code></td>
+                  <td><DateTargetBadge target={t} /></td>
+                  <td>{new Date(t.target_datetime).toLocaleString()}</td>
+                  <td style={{ textAlign: 'right' }}>
+                    {t.step_id != null && (
+                      <Link to={`/runs/${runIdNum}?focus=${t.step_id}`}>Go to step</Link>
+                    )}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+
       {/* Graph view — WorkflowDesigner in readOnly mode */}
       {inspector && (
         <WorkflowDesigner
           readOnly
           inspectorData={inspector}
           focusStepId={focusStepId || firstFailedStepId}
+          dateTargets={dateTargets}
         />
       )}
 
@@ -267,22 +310,29 @@ export const RunMonitor: React.FC = () => {
                   <th>Type</th>
                   <th>Title</th>
                   <th>Duration</th>
+                  <th>Date Target</th>
                   <th>Error</th>
                 </tr>
               </thead>
               <tbody>
-                {steps.map((step: any) => (
-                  <tr key={step.id}>
-                    <td>{step.position}</td>
-                    <td><span className={`badge ${getStatusBadgeClass(step.status)}`}>{step.status}</span></td>
-                    <td>{step.step_type}</td>
-                    <td>{step.title || '-'}</td>
-                    <td>{step.duration_seconds != null ? `${step.duration_seconds.toFixed(3)}s` : '-'}</td>
-                    <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-                      {step.error_message || '-'}
-                    </td>
-                  </tr>
-                ))}
+                {steps.map((step: any) => {
+                  const target = (dateTargets || []).find(
+                    (t: DateTargetInfo) => t.step_id != null && Number(t.step_id) === Number(step.step_id)
+                  )
+                  return (
+                    <tr key={step.id}>
+                      <td>{step.position}</td>
+                      <td><span className={`badge ${getStatusBadgeClass(step.status)}`}>{step.status}</span></td>
+                      <td>{step.step_type}</td>
+                      <td>{step.title || '-'}</td>
+                      <td>{step.duration_seconds != null ? `${step.duration_seconds.toFixed(3)}s` : '-'}</td>
+                      <td>{target ? <DateTargetBadge target={target} /> : '-'}</td>
+                      <td style={{ maxWidth: '200px', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
+                        {step.error_message || '-'}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           ) : (

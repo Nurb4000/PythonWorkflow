@@ -17,6 +17,7 @@ import {
 } from '@xyflow/react'
 import { workflowApi, authApi, aiApi, dataQueryApi, marketplaceApi, cmdbApi } from '../services/api'
 import { QueryBuilder, VisualQuery, TableInfo } from '../components/QueryBuilder'
+import { DateTargetBadge, DateTargetInfo } from '../components/DateTargetBadge'
 import axios from 'axios'
 import '@xyflow/react/dist/style.css'
 
@@ -187,6 +188,20 @@ function nodeLabel(stepType: string, data: any) {
   }
 }
 
+// INCIDENT_CHANGE_PLAN Phase 4.3: date-target annotation chip on inspector nodes
+const DateTargetChip = ({ data }: { data: any }) => {
+  const t = data?.dateTarget as DateTargetInfo | undefined
+  if (!t) return null
+  return (
+    <div style={{ marginTop: '5px', fontSize: '0.7rem' }}>
+      <DateTargetBadge target={t} />
+      <span style={{ marginLeft: '4px', opacity: 0.75 }}>
+        {new Date(t.target_datetime).toLocaleString()}
+      </span>
+    </div>
+  )
+}
+
 const renderStepNode = (data: any, cfg: { icon: string; title: string; subtitle?: string; style: any }) => {
   const count = Math.max(1, data.next_step_ids?.length || 1)
   const displayTitle = data.title || cfg.title
@@ -197,6 +212,7 @@ const renderStepNode = (data: any, cfg: { icon: string; title: string; subtitle?
       <Handle type="target" position={Position.Top} />
       <strong>{cfg.icon} {displayTitle}</strong>
       {displaySubtitle && <div style={{ fontSize: '0.7rem', marginTop: '3px', wordBreak: 'break-word', opacity: 0.8 }}>{displaySubtitle}</div>}
+      <DateTargetChip data={data} />
       {Array.from({ length: count }).map((_, i) => (
         <Handle key={i} type="source" position={Position.Bottom} id={`out-${i}`}
           style={{ left: `${((i + 1) * 100) / (count + 1)}%`, background: '#1565c0' }} />
@@ -242,6 +258,7 @@ const nodeTypes = {
         <strong>❓ {displayTitle}</strong>
         {data.description && <div style={{ fontSize: '0.7rem', marginTop: '3px', opacity: 0.8 }}>{data.description}</div>}
         {displayExpr && <div style={{ fontSize: '0.65rem', marginTop: '2px', fontFamily: 'monospace', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap', maxWidth: '160px' }}>{displayExpr}</div>}
+        <DateTargetChip data={data} />
         {data.routes?.map((_: any, i: number) => (
           <Handle key={i} type="source" position={Position.Bottom} id={`route-${i}`}
             style={{ left: `${(i + 1) * 100 / ((data.routes?.length || 1) + 1)}%`, background: '#27ae60' }} />
@@ -442,12 +459,14 @@ interface WorkflowDesignerProps {
   readOnly?: boolean
   inspectorData?: InspectorData
   focusStepId?: number
+  dateTargets?: DateTargetInfo[]
 }
 
 export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   readOnly = false,
   inspectorData,
   focusStepId,
+  dateTargets,
 }) => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
@@ -632,6 +651,12 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
     // Instance status map: stepId -> {status, route_taken}
     const instMap = opts?.instanceStatusMap || new Map()
 
+    // Phase 4.3: date targets keyed by originating workflow step id
+    const targetByStepId = new Map<number, DateTargetInfo>()
+    ;(dateTargets || []).forEach(t => {
+      if (t.step_id != null) targetByStepId.set(Number(t.step_id), t)
+    })
+
     const startPos = nodePositions.current['start'] || (configDraft?.start_node_pos as { x: number; y: number } | undefined) || { x: 250, y: 0 }
     newNodes.push({
       id: 'start',
@@ -676,6 +701,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
            // Run-state overlay data
            instanceStatus: inst?.status,
            instanceRouteTaken: inst?.route_taken || [],
+           dateTarget: targetByStepId.get(graphStepId),
            // Embed full instance for click handler (readOnly inspector mode)
            _instanceData: inst || null,
          }
@@ -794,7 +820,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
 
     setNodes(newNodes)
     setEdges(newEdges)
-  }, [draftSteps, configDraft, users, groups])
+  }, [draftSteps, configDraft, users, groups, dateTargets])
 
   // Build instance status map from inspector data — kept as ref fallback for handleNodeClick
   const instanceStatusMap = useRef<Map<number, any>>(new Map())
@@ -1039,6 +1065,15 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             {!isNotExecuted && <div><strong>Completed:</strong> {inst.completed_at ? new Date(inst.completed_at).toLocaleString() : '-'}</div>}
             {!isNotExecuted && <div><strong>Retries:</strong> {inst.retry_count} / {inst.max_retries}</div>}
             {!isNotExecuted && <div><strong>Route to:</strong> {inst.route_taken?.length ? inst.route_taken.join(', ') : '-'}</div>}
+            {inst.dateTarget && (
+              <div>
+                <strong>Date Target:</strong>{' '}
+                <DateTargetBadge target={inst.dateTarget} />
+                <span style={{ marginLeft: '0.35rem', fontSize: '0.8rem', opacity: 0.8 }}>
+                  {new Date(inst.dateTarget.target_datetime).toLocaleString()}
+                </span>
+              </div>
+            )}
           </div>
 
           {isNotExecuted && inst.description && (
