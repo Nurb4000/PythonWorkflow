@@ -1,7 +1,7 @@
 """
 CMDB models — Configuration Item Types, Items, and Relationships.
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean, ForeignKey, Index
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, Boolean, ForeignKey, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 
@@ -37,7 +37,7 @@ class ConfigurationItem(Base):
     type_id = Column(Integer, ForeignKey("ci_types.id"), nullable=False, index=True)
     name = Column(String(255), nullable=False, index=True)
     status = Column(String(30), default="active")
-    is_active = Column(Boolean, default=True, server_default=func.true())
+    is_active = Column(Boolean, default=True, server_default=text("true"))
     ci_data = Column(JSON, default=dict)
     custom_data = Column(JSON, default=dict)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
@@ -73,7 +73,7 @@ class CIRelationship(Base):
     target_ci_id = Column(Integer, ForeignKey("configuration_items.id", ondelete="CASCADE"), nullable=False)
     relationship_type = Column(String(50), nullable=False)
     description = Column(Text, default="")
-    is_active = Column(Boolean, default=True, server_default=func.true())
+    is_active = Column(Boolean, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     source_ci = relationship(

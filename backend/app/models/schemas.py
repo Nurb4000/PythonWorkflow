@@ -1,7 +1,7 @@
 """
 Database models for the workflow system
 """
-from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Table, Index, text as sa_text
+from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Table, Index, text as sa_text, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -168,7 +168,7 @@ class Task(Base):
     ola_closure_target_hours = Column(Integer, nullable=True)  # OLA: target for task to be completed/closed
     ola_pickup_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
     ola_closure_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
-    is_active = Column(Boolean, default=True, server_default=func.true())
+    is_active = Column(Boolean, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     completed_at = Column(DateTime(timezone=True))

@@ -1,7 +1,7 @@
 """
 Service Management models — Phase 1 of SERVICE_MANAGEMENT_PLAN
 """
-from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON
+from sqlalchemy import Column, Integer, String, Text, Boolean, DateTime, ForeignKey, JSON, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -16,7 +16,7 @@ class Category(Base):
     icon = Column(String(10), default="", server_default="")
     description = Column(Text, default="")
     sort_order = Column(Integer, default=0, server_default="0")
-    is_active = Column(Boolean, default=True, server_default=func.true())
+    is_active = Column(Boolean, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
@@ -35,7 +35,7 @@ class Service(Base):
     category_id = Column(Integer, ForeignKey("categories.id"), nullable=True)
     owner_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     support_group_id = Column(Integer, ForeignKey("groups.id"), nullable=True)
-    is_active = Column(Boolean, default=True, server_default=func.true())
+    is_active = Column(Boolean, default=True, server_default=text("true"))
     sort_order = Column(Integer, default=0, server_default="0")
     custom_data = Column(JSON, default=dict)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -58,8 +58,8 @@ class KnowledgeBaseArticle(Base):
     slug = Column(String(255), unique=True, nullable=False, index=True)
     content = Column(Text, default="")
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)
-    is_published = Column(Boolean, default=True, server_default=func.true())
-    is_featured = Column(Boolean, default=False, server_default=func.false())
+    is_published = Column(Boolean, default=True, server_default=text("true"))
+    is_featured = Column(Boolean, default=False, server_default=text("false"))
     display_order = Column(Integer, default=0, server_default="0")
     sort_order = Column(Integer, default=0, server_default="0")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
