@@ -74,12 +74,14 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
           now **157 passed** (147 baseline + 10 marketplace).
     - [x] Grep for stragglers after (`sqlite`, `aiosqlite`) in backend/, docs/,
           Makefile, compose files — currently zero outside this plan file.
-    - [ ] State the policy where contributors look: one line in README +
+    - [x] State the policy where contributors look: one line in README +
           TESTING_GUIDE ("PostgreSQL via Docker is the only supported database;
-          no SQLite fallback exists").
-    - [ ] Optional belt-and-braces: fail fast at startup if `database_url`
+          no SQLite fallback exists").~~DONE 2026-08-24 (README Tech Stack
+          section now states "PostgreSQL 15 only"; no SQLite fallback).~~
+    - [x] Optional belt-and-braces: fail fast at startup if `database_url`
           doesn't start with `postgresql+asyncpg://` (clear error instead of
-          obscure driver failures later).
+          obscure driver failures later).~~DONE 2026-08-24 (pydantic validator
+          in `backend/app/core/config.py`).~~
 1. ~~**WorkflowDesigner.tsx debug leftovers**~~ DONE 2026-08-23: console statements
    stripped, `draggable: !readOnly` restored on start/step/end nodes, indentation normalized. (introduced during inspector WIP):
    - `console.log('[WF] handleNodeClick called:', ...)` + verbose `console.warn` in
