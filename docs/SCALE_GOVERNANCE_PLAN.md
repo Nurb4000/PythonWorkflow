@@ -51,12 +51,12 @@ query-layer repairs, not a persistence refactor.**
 - Rationale against runtime DDL: prod schema-alter rights for the app user,
   backups/migrations coupled to app state, DDL lock contention, table sprawl,
   cross-form reporting needs UNION views anyway, constant ORM impedance.
-- Repair work (feeds Phase B): canonical Field Library metadata enables
+- Repair work (feeds Phases C and F): canonical Field Library metadata enables
   promoting hot fields to PostgreSQL generated columns / GIN indexes /
   auto-generated per-form SQL VIEWs (read-only, no write-time DDL).
 - If external BI tooling ever demands physical tables: scheduled
   materialization into a reporting schema is the escape hatch — no change to
-  transactional storage. (Now planned concretely as Phase E3/E4.)
+  transactional storage. (Now planned concretely as Phase F1/F2.)
 - A true dynamic-DDL rebuild would be a total data-layer refactor touching
   every reader/writer plus data migration; rejected unless a hard requirement
   emerges. Revisit only via a written addendum here.
@@ -98,36 +98,75 @@ query-layer repairs, not a persistence refactor.**
       "Custom Data Fields" (custom_fields/FieldManager) from "Form Fields"
       (form schema) and CMDB "Type Fields". Cheap now, expensive later.
 
-### Phase B — Shared Field Library (the core fix)
+### Phase B — Practical data flow & shared stores (STAKEHOLDER PRIORITY)
+
+Driver: in prior systems, inability to share data between processes was a
+huge bottleneck that forced ugly same-system "integration" workarounds. This
+phase makes data sharing practical and boring instead of improvised.
+
+Verified existing primitives (2026-08-24): `$input.*` interpolation in step
+definitions; task `result_data` flowing into subsequent steps (proven by
+entry-form prefill chains); `CmdbLookupExecutor`/`CmdbUpdateExecutor` step
+types (CMDB-as-hub is already first-class); parameterized
+`DatabaseQueryExecutor` (select/insert/update/delete/upsert incl.
+`custom_data` JSONB); APICall/Webhook/CustomCode steps. Missing: validated
+addressing, context visibility, any cross-workflow handoff, conventions.
+
+- [ ] **B1. Addressing that can't silently break** (was E1): document the run
+      data-context rules (entry-form input, result_data merge order);
+      designer-side validation/autocomplete for `$input.*` references against
+      upstream step schemas — warn on references that can't resolve at design
+      time instead of failing mid-run.
+      Files: `workflow_engine.py` input resolution, WorkflowDesigner, docs.
+- [ ] **B2. Run Context inspector** (was E2): RunMonitor panel showing the
+      accumulated run-level data visible at each completed node — what a
+      downstream step will actually receive. Debug sharing visually, not by
+      trial runs.
+- [ ] **B3. Cross-workflow handoff**: pick ONE minimal primitive and ship it —
+      candidates: sub-workflow invocation step; fire-workflow API step with
+      typed payload; shared run-context store keyed by correlation id.
+      Decide via Open Decision #8. Nothing here until B1/B2 land.
+- [ ] **B4. Shared-store playbook**: documented, sanctioned patterns for using
+      CMDB lookup/update + DB query steps as integration hubs between
+      processes (what people hack together today unofficially): which tables
+      are fair game, write etiquette, idempotency, audit expectations.
+      Include worked example pairs (workflow writes → workflow consumes).
+- [ ] **B5. Asset management landing zone**: when asset management is added,
+      model it as CMDB CI types + templates + lifecycle statuses FIRST (the
+      machinery exists: templates, soft-deactivate, field schemas); build a
+      dedicated subsystem only if CI types demonstrably fall short. Gate:
+      see Open Decision #7.
+
+### Phase C — Shared Field Library (the core fix)
 
 Goal: canonical, reusable field definitions referenced by forms AND CI types.
 
-- [ ] **B1. `FieldDefinition` model + API**: key (unique, slug), label, type
+- [ ] **C1. `FieldDefinition` model + API**: key (unique, slug), label, type
       (reuse FIELD_TYPES enum), options/validation/help_text/description,
       owner, tags, is_active/deprecated, timestamps. CRUD endpoints +
       permissions (admin/developer manage; others read).
-- [ ] **B2. Mixed-mode references**: `schema_json` entries gain an optional
+- [ ] **C2. Mixed-mode references**: `schema_json` entries gain an optional
       `field_def_id` (or `$ref: field:<key>`); resolution happens at render +
       submission-validation time. Inline definitions remain valid forever.
       Versioned snapshot strategy decision needed (see Open Decisions).
-- [ ] **B3. Designer/builder UX**: "Add from library" picker with search;
+- [ ] **C3. Designer/builder UX**: "Add from library" picker with search;
       "Promote to library" on an inline field; library fields render
       non-editable identity attrs (label/type) but allow per-form tweaks
       (required override, help override) if decided.
-- [ ] **B4. Adoption tooling**: one-off scan script producing a dedupe report
+- [ ] **C4. Adoption tooling**: one-off scan script producing a dedupe report
       over existing `forms.schema_json` + `ci_types.field_schema` (exact key
       matches, label collisions, same-key-different-type); interactive merge
       into library definitions. Track adoption % (share of field instances
       resolved to library).
-- [ ] **B5. Where-used / impact analysis**: given a field def (or inline
+- [ ] **C5. Where-used / impact analysis**: given a field def (or inline
       field), list forms using it and workflows reachable through those forms
       (entry_form_id + human_task steps' form_id parsed from step definitions),
       with run counts. Surface in field detail + before form/type edits.
-- [ ] **B6. Apply the same library to CMDB**: `ci_types.field_schema`
+- [ ] **C6. Apply the same library to CMDB**: `ci_types.field_schema`
       entries become references too (same mixed-mode mechanics). This is why
       the library beats a forms-only fix.
 
-### Phase C — Organization & discovery
+### Phase D — Organization & discovery
 
 - [ ] **C1. Organize workflows + forms**: decide tags-first vs folders
       (see Open Decisions). Minimum: category/grouping column + filtered
@@ -143,7 +182,7 @@ Goal: canonical, reusable field definitions referenced by forms AND CI types.
       unreferenced forms/workflows (no runs in N days, not published),
       published-but-broken references (missing entry_form, missing form_id).
 
-### Phase D — Governance operations (after A–C prove out)
+### Phase E — Governance operations (after A–C prove out)
 
 - [ ] **D1. Deprecation flow**: deprecated state for forms/workflows/fields:
       hidden from new use (pickers), existing runs unaffected, banner +
@@ -156,29 +195,19 @@ Goal: canonical, reusable field definitions referenced by forms AND CI types.
 - [ ] **D4. Stewardship reporting**: stale drafts, orphaned content, owners
       who left (inactive users owning active content), churn hot spots.
 
-### Phase E — Runtime data sharing & true reporting (depends on B)
+### Phase F — Relational facade & true reporting (depends on C)
 
-Motivation recorded from stakeholder: (1) a structured/understandable/
-accessible database, (2) easier data sharing between workflows and nodes,
-(3) eventual real reporting tools. Items E1–E2 cover (2); E3–E4 cover (1)+(3).
+Covers stakeholder motivations (1) structured/understandable/accessible DB
+and (3) true reporting tools. Runtime data sharing (motivation 2) is now
+Phase B.
 
-- [ ] **E1. Formalize run data context**: document + standardize how data
-      flows within a run today (entry-form input, task result_data merging
-      into subsequent steps' inputs, calculation outputs). Define addressing
-      conventions (e.g. reference prior step results by step key/name,
-      `$input` for entry data) and enforce/validate them in the designer.
-      Files: `workflow_engine.py`, executor input resolution, docs.
-- [ ] **E2. Run Context inspector**: RunMonitor panel showing the accumulated
-      run-level data visible at each completed node (what a downstream step
-      will receive), so developers debug data-sharing visually instead of by
-      trial runs. Builds on existing per-instance Result Data display.
-- [ ] **E3. Auto-generated per-form SQL VIEWs**: read-only views materializing
+- [ ] **F1. Auto-generated per-form SQL VIEWs**: read-only views materializing
       each active form's submissions (and CI type's items) as flat typed
       tables, generated from Field Library definitions (`jsonb_to_record` /
       generated columns). Regenerated on publish; gives humans and BI tools a
       conventional relational facade without write-time DDL. Naming:
       `v_form_<key>`, `v_ci_<key>`.
-- [ ] **E4. Reporting tools**: report/report-definition objects built on E3
+- [ ] **F2. Reporting tools**: report/report-definition objects built on F1
       views + Field Library semantics (dimensions/measures): tabular report
       builder for admins, saved reports, scheduled CSV/email export,
       optional dashboard cards. Start with read-only SQL-view-backed listing;
@@ -201,9 +230,18 @@ accessible database, (2) easier data sharing between workflows and nodes,
    Leaning: hard block on exact (case-insensitive) dupes; warnings for fuzzy.
 5. **Permissions**: who may create/edit library fields (admin+developer?)
    and whether cmdb_manager gets CMDB-scoped field rights.
-6. **Hot-field promotion (Phase B follow-on)**: which fields justify
+6. **Hot-field promotion (post–Field Library)**: which fields justify
    generated columns/indexes (usage frequency from where-used stats) and who
-   approves. Depends on B5 existing first.
+   approves. Depends on C5 existing first.
+7. **Asset management modeling (B5 gate)**: CMDB CI types + templates vs a
+   dedicated asset subsystem. Leaning: CI types first — lifecycle statuses,
+   templates, and field schemas already exist there; revisit only if
+   asset-specific needs (warranty/lease dates, maintenance schedules,
+   depreciation) can't be expressed as type fields + date targets.
+8. **Cross-workflow handoff primitive (B3)**: sub-workflow invocation step vs
+   fire-and-continue API step vs shared correlation-keyed context store.
+   Leaning: sub-workflow step (synchronous, inherits run context, result
+   merges back like any other step); async variants later if needed.
 
 ## Success metrics
 
@@ -211,6 +249,9 @@ accessible database, (2) easier data sharing between workflows and nodes,
 - Duplication rate: share of field instances resolved to library defs
   trending up; exact-dupe name count zero.
 - Safety: zero "surprise breakage" incidents (edits without where-used info).
+- Data sharing: new processes need zero same-system integration workarounds —
+  in-run references resolve at design time; cross-process flows use
+  documented shared-store patterns or the B3 handoff primitive.
 - List pages stay responsive (>200 workflows/forms) thanks to pagination.
 
 ## Explicitly out of scope (for now)
@@ -247,3 +288,17 @@ accessible database, (2) easier data sharing between workflows and nodes,
 - Sequencing note: E depends on B (field defs drive view generation and
   report semantics); E1/E2 only depend on engine docs work and can start
   anytime after Phase A.
+
+### 2026-08-24 — PRIORITIES REORDERED: data sharing promoted to Phase B
+- Stakeholder: cross-process data sharing was a huge bottleneck in prior
+  systems; making it practical is the top priority (asset management also on
+  the horizon). Old Phase E split: runtime items became the NEW Phase B
+  ("Practical data flow & shared stores", right after Foundations), with new
+  B3 (cross-workflow handoff), B4 (shared-store playbook), B5 (asset mgmt
+  landing zone = CMDB CI types first).
+- Renumbered: Field Library B→C, Organization C→D, Governance D→E, views/
+  reporting E→F. Verified existing primitives to ground B: `$input.*`,
+  result_data chains, CmdbLookup/CmdbUpdate steps, parameterized
+  DatabaseQueryExecutor, APICall/Webhook/CustomCode. No sub-workflow or
+  cross-run mechanism exists today.
+- New Open Decisions #7 (asset modeling) and #8 (handoff primitive).
