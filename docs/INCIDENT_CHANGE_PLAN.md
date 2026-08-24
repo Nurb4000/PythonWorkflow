@@ -8,7 +8,7 @@
 | **Phase 1 — Demo Data Setup** | ✅ COMPLETE | 1.1 Services & Categories, 1.2 Groups with OLA, 1.3 Seeding script |
 | **Phase 2 — Incident Demo Workflow** | ✅ COMPLETE | 2.1 XML workflow package, 2.2 Marketplace registration, 2.3 Verification |
 | **Phase 3 — Change Demo Workflow** | ✅ COMPLETE | 3.1 XML workflow package, 3.2 DateTarget integration, 3.3 Marketplace registration, 3.4 Verification |
-| **Phase 4 — Frontend Enhancements** | ⏳ IN PROGRESS | 4.1 DateTarget admin widget ✅, 4.2 Task date badge ✅, 4.3 Run inspector date display |
+| **Phase 4 — Frontend Enhancements** | ✅ COMPLETE | 4.1 DateTarget admin widget, 4.2 Task date badge, 4.3 Run inspector date display |
 
 ### Session Log
 
@@ -20,6 +20,7 @@
 - **2026-08-23**: Phase 4.1 complete. `DateTargetWidget.tsx` added — collapsible admin dashboard card with stats chips (pending / breached last 30 days / compliance %) and a breached-targets table linking into the run inspector. `dateTargetsApi` added to `frontend/src/services/api.ts` (list + stats endpoints). Mounted on AdminDashboard alongside SLA/OLA widgets.
 - **2026-08-24**: Housekeeping note — commit d952ad9 accidentally overwrote this file with a copy of the cleanup plan; original plan restored from history (95200d0) before starting 4.2. Active backlog tracking now lives in `docs/CLEANUP_PLAN.md`.
 - **2026-08-24**: Phase 4.2 complete. New `frontend/src/components/DateTargetBadge.tsx`: badge states per plan — green "On track" (>24h away), yellow "Due soon" (<24h), red "Breached"; status "met" renders green "Met". Targets resolve at the RUN level (calc steps create DateTarget rows without task_id), so each task maps via its `workflow_run_id`; when a run has several targets, `pickRunTarget` surfaces breached first, then earliest pending, met last. Backend: `GET /date-targets` gained a comma-separated `run_ids` batch filter so dashboards decorate all runs in one request (plus list now excludes soft-deleted targets). Wired into AdminTaskDashboard + RoleTaskDashboard as a hideable "Date Target" column (CSV-aware) and TaskDetail details grid. Verified: tsc clean; suite 145 passing (141 baseline + 4 new date-target tests). Remaining in Phase 4: 4.3 run-inspector date display.
+- **2026-08-24**: Phase 4.3 complete — Phase 4 (and the whole plan) DONE. Engine now injects `_workflow_step_id` alongside `_workflow_run_id`, and CalculationExecutor stamps it into `DateTarget.step_id` so targets map to graph nodes (older rows stay run-level; both paths tested). Run inspector shows: a "Date Targets" card above the graph (badge + key + due + "Go to step" deep-link via `?focus={step_id}`), per-node chips on the designer canvas (`DateTargetChip` reads node data attached during buildGraph), a Date Target row in the instance detail panel, and a column in the raw Step Instances table. Verified: tsc clean; suite 147 passing (145 + 2 executor-stamping tests).
 
 ---
 
