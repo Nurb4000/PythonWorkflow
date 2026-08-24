@@ -289,8 +289,17 @@ export const priorityApi = {
 // Date Targets API (INCIDENT_CHANGE_PLAN Phase 0/4)
 export const dateTargetsApi = {
   getStats: (days?: number) => api.get('/date-targets/stats', { params: { days } }),
-  list: (params?: { run_id?: number; status?: string; target_key?: string }) =>
-    api.get('/date-targets', { params }),
+  list: (params?: { run_id?: number; run_ids?: number[]; status?: string; target_key?: string }) =>
+    api.get('/date-targets', {
+      params: params
+        ? {
+            run_id: params.run_id,
+            run_ids: params.run_ids && params.run_ids.length > 0 ? params.run_ids.join(',') : undefined,
+            status: params.status,
+            target_key: params.target_key
+          }
+        : undefined
+    })
 }
 
 // Knowledge Base Articles API (SERVICE_MANAGEMENT_PLAN Phase 6)

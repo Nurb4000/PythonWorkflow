@@ -1,9 +1,10 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useParams, Link } from 'react-router-dom'
-import { taskApi } from '../services/api'
+import { taskApi, dateTargetsApi } from '../services/api'
 import { useAuth } from '../components/Auth'
 import { FormRenderer } from '../components/FormRenderer'
+import { DateTargetBadge, DateTargetInfo, pickRunTarget } from '../components/DateTargetBadge'
 
 interface Task {
   id: number
@@ -43,6 +44,17 @@ export const TaskDetail: React.FC = () => {
     },
     enabled: !!id
   })
+
+  const { data: runDateTargets } = useQuery({
+    queryKey: ['date-targets', 'run', task?.workflow_run_id],
+    queryFn: async () => {
+      const response = await dateTargetsApi.list({ run_id: task!.workflow_run_id! })
+      return (response.data || []) as DateTargetInfo[]
+    },
+    enabled: !!task?.workflow_run_id
+  })
+
+  const runTarget = useMemo(() => pickRunTarget(runDateTargets), [runDateTargets])
 
   const takeMutation = useMutation({
     mutationFn: () => taskApi.takeTask(taskId),
@@ -119,6 +131,11 @@ export const TaskDetail: React.FC = () => {
           <div>
             <strong>Workflow Run:</strong> {task.workflow_run_id ? <Link to={`/runs/${task.workflow_run_id}`}>#{task.workflow_run_id}</Link> : '-'}
           </div>
+          {runTarget && (
+            <div>
+              <strong>Date Target:</strong> <DateTargetBadge target={runTarget} />
+            </div>
+          )}
           <div>
             <strong>Created:</strong> {new Date(task.created_at).toLocaleString()}
           </div>

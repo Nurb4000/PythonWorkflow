@@ -1,8 +1,9 @@
 import React, { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { taskApi } from '../services/api'
+import { taskApi, dateTargetsApi } from '../services/api'
 import { TaskDashboard, TaskColumnDef } from '../components/TaskDashboard'
+import { DateTargetBadge, DateTargetInfo, describeTarget, pickRunTarget } from '../components/DateTargetBadge'
 import { useAuth } from '../components/Auth'
 
 interface Task {
@@ -60,6 +61,30 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
       return ((response.data as any).tasks || []) as Task[]
     }
   })
+
+  const runIds = useMemo(
+    () => Array.from(new Set((tasks || []).map(t => t.workflow_run_id).filter((x): x is number => x != null))),
+    [tasks]
+  )
+
+  const { data: dateTargets } = useQuery({
+    queryKey: ['date-targets', 'role-task-runs', runIds],
+    queryFn: async () => {
+      const response = await dateTargetsApi.list({ run_ids: runIds })
+      return (response.data || []) as DateTargetInfo[]
+    },
+    enabled: runIds.length > 0
+  })
+
+  const targetsByRun = useMemo(() => {
+    const map = new Map<number, DateTargetInfo[]>()
+    for (const t of dateTargets || []) {
+      const list = map.get(t.workflow_run_id)
+      if (list) list.push(t)
+      else map.set(t.workflow_run_id, [t])
+    }
+    return map
+  }, [dateTargets])
 
   const takeMutation = useMutation({
     mutationFn: (taskId: number) => taskApi.takeTask(taskId),
@@ -140,6 +165,12 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
       csv: r => r.workflow_run_id ? `#${r.workflow_run_id}` : ''
     },
     {
+      key: 'date_target',
+      label: 'Date Target',
+      render: r => <DateTargetBadge target={pickRunTarget(targetsByRun.get(r.workflow_run_id))} />,
+      csv: r => describeTarget(pickRunTarget(targetsByRun.get(r.workflow_run_id)))
+    },
+    {
       key: 'created_at',
       label: 'Created',
       render: r => new Date(r.created_at).toLocaleString(),
@@ -199,7 +230,7 @@ export const RoleTaskDashboard: React.FC<RoleTaskDashboardProps> = ({ role, titl
       },
       csv: r => r.sla_resolution_met === null ? 'Pending' : r.sla_resolution_met ? 'Met' : 'Breached'
     }
-  ], [])
+  ], [targetsByRun])
 
   const actions = (task: Task) => (
     <div style={{ display: 'flex', gap: '0.35rem' }}>
