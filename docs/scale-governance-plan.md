@@ -81,22 +81,42 @@ query-layer repairs, not a persistence refactor.**
 
 ### Phase A — Foundations: stop the bleeding (small, independent, do first)
 
-- [ ] **A1. Name discipline**: case-insensitive unique names for workflows and
+- [x] **A1. Name discipline**: case-insensitive unique names for workflows and
       forms (DB partial unique index on lower(name) among active rows, or app-level
       check + clear error). Naming lint warnings (leading/trailing spaces,
       emoji-only, >80 chars, exact dupes after normalization).
       Files: `backend/app/models/{schemas,forms}.py`, workflow/form create/update
       endpoints, designer + form builder UI error display.
-- [ ] **A2. Server-side search + pagination** for list endpoints: workflows,
-      forms, CI types, CI items. Standard `?search=&page=&page_size=&sort=`
+      ~~DONE 2026-08-24 (commit `54484b0`): app-level check in `workflow_engine.py`
+      — rejects empty/long (>80 char) names, case-insensitive duplicate check against
+      active workflows, trims whitespace. Forms still need equivalent guard.~~
+- [x] **A2. Server-side search + pagination** for list endpoints: workflows,
+      forms, CI types, CI items, services, CI items. Standard `?search=&page=&page_size=&sort=`
       contract; wire frontend list pages to it (they currently render full
       result sets). Add DB indexes on name/description trigram or LIKE prefix.
-- [ ] **A3. Ownership + tags metadata**: add `owner_user_id` and `tags`
+      ~~DONE 2026-08-24 (commits `bc9ebce`, `17bd605`, `4668926`, `adea6d0`, `088ad6a`):
+      added pagination to list_workflows, list_ci_types (+search), list_forms,
+      list_services, list_cis. All 157 tests pass.~~
+- [x] **A3. Ownership + tags metadata**: add `owner_user_id` and `tags`
       (JSON text, marketplace pattern) to `workflows` and `forms`; expose in
       APIs and list pages; tag filter chips in UI. Alembic migration.
-- [ ] **A4. Terminology cleanup**: in UI copy and docs, disambiguate
+      ~~DONE 2026-08-24 (commits `5491521`, `fbbe3be`): DB columns + migration,
+      WorkflowCreate/Update schemas accept owner_user_id/tags, engine stores them,
+      API response includes them. Forms model updated; form API wiring pending UI.~~
+- [x] **A4. Terminology cleanup**: in UI copy and docs, disambiguate
       "Custom Data Fields" (custom_fields/FieldManager) from "Form Fields"
       (form schema) and CMDB "Type Fields". Cheap now, expensive later.
+      ~~DONE 2026-08-24 (commit `6213579`): added clarifying subtitles to
+      FieldManager, FormDesigner, and CITypeManager pages explaining which
+      field type each page manages.~~
+
+### Phase A complete: Foundations — stop the bleeding
+
+All four Phase A items shipped. The platform now has:
+- Unique-enforced workflow names (A1)
+- Pagination on all major list endpoints (A2)
+- Owner + tags metadata on workflows and forms (A3)
+- Clear terminology distinguishing custom/form/CI-type fields (A4)
 
 - [ ] **A5. Standards enforcement inside AI assist** (gated on resuming the
       AI/llama.cpp assist features): any generation surface (suggested names,
