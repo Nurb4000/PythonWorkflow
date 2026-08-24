@@ -114,12 +114,16 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
    (`config.py`, `main.py`, `system_settings.py DEFAULT_SYSTEM_NAME`, README).
 
 ### P2 — documentation
-4. **README feature coverage** for subsystems shipped but undocumented: CMDB,
+4. ~~**README feature coverage** for subsystems shipped but undocumented: CMDB,
    Service Catalog/SLA, Incident & Change demos, OLA tracking, KB articles,
    date targets, IMAP email ingestion, demo-data seeding. Add feature bullets +
-   endpoint sections (endpoints exist in OpenAPI at `/docs`).
-5. **Docs naming consistency**: lowercase reference docs (`scheduling.md`,
-   `docker-deployment.md`) vs SCREAMING_CASE — standardize one style.
+   endpoint sections (endpoints exist in OpenAPI at `/docs`).~~ DONE 2026-08-24
+   (commit `98dc50b`): added CMDB, Service Catalog/SLA, Incident & Change, KB,
+   Email Integration, Demo Data sections to README Features.
+5. ~~**Docs naming consistency**: lowercase reference docs (`scheduling.md`,
+   `docker-deployment.md`) vs SCREAMING_CASE — standardize one style.~~ DONE
+   2026-08-24 (commit `ea4ccc7`): renamed all plan files to
+   `lowercase-with-dashes.md` for consistency.
 6. ~~**CHANGELOG maintenance entry**~~ DONE 2026-08-23 (also merged the duplicate
    `[Unreleased]` sections).
 
