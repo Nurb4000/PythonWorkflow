@@ -121,6 +121,20 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
 6. ~~**CHANGELOG maintenance entry**~~ DONE 2026-08-23 (also merged the duplicate
    `[Unreleased]` sections).
 
+## Architecture decisions log (do not relitigate without new information)
+
+- **2026-08-24 — Incoming email stays IMAP, no POP3 port.** Rationale:
+  crash-safety (fetch → start workflow → move only after success; POP3's
+  download-and-delete loses triggers on any mid-flight failure), UID-based
+  dedupe across restarts, IDLE near-real-time triggering, existing working
+  monitor. POP3 only becomes relevant if an upstream server offers nothing
+  else — handle via small adapter IF that materializes.
+- **2026-08-24 — Storage stays JSONB, no dynamic-DDL tables.** See
+  SCALE_GOVERNANCE_PLAN.md "Data storage architecture".
+- **2026-08-24 — Cross-workflow handoff: synchronous sub-workflow step
+  first, async fire-and-forget second.** See SCALE_GOVERNANCE_PLAN.md
+  Open Decision #8.
+
 ### P3 — infrastructure / hygiene
 7. **Python version strategy**: stay on 3.11 (current pin) or modernize. If moving to
    3.13: bump pins first (`pydantic≥2.9`, `bcrypt≥4.2` — current pins have no cp313
