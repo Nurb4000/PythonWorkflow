@@ -4,6 +4,7 @@ Application settings and configuration
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
+from pydantic import field_validator
 
 
 class Settings(BaseSettings):
@@ -13,6 +14,13 @@ class Settings(BaseSettings):
     
     # Database (PostgreSQL only)
     database_url: str = "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db"
+    
+    @field_validator('database_url')
+    @classmethod
+    def check_database_url(cls, v):
+        if not v.startswith('postgresql+asyncpg://'):
+            raise ValueError('database_url must start with postgresql+asyncpg:// (SQLite not supported)')
+        return v
     
     # CORS
     cors_origins: List[str] = ["http://localhost:3000", "http://localhost:8000"]
