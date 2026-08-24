@@ -323,7 +323,7 @@ PythonWorkflow/
 - **P8**: Advanced features (sub-workflows, parallel branches with synchronization, error handling patterns)
 - **P9**: Performance optimization (connection pooling, query optimization, caching)
 
-See `docs/` for per-feature plans and detailed session logs (latest: `SERVICE_MANAGEMENT_PLAN.md`, `INCIDENT_CHANGE_PLAN.md`).
+See `docs/` for reference documentation (`docker-deployment.md`, `scheduling.md`, `ENTRY_FORMS_AND_TASKS.md`) and the active plan (`INCIDENT_CHANGE_PLAN.md`). Completed feature plans are removed once shipped; notable history lives in `CHANGELOG.md`.
 
 ## Task System
 
