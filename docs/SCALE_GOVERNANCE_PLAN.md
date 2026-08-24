@@ -56,7 +56,7 @@ query-layer repairs, not a persistence refactor.**
   auto-generated per-form SQL VIEWs (read-only, no write-time DDL).
 - If external BI tooling ever demands physical tables: scheduled
   materialization into a reporting schema is the escape hatch — no change to
-  transactional storage.
+  transactional storage. (Now planned concretely as Phase E3/E4.)
 - A true dynamic-DDL rebuild would be a total data-layer refactor touching
   every reader/writer plus data migration; rejected unless a hard requirement
   emerges. Revisit only via a written addendum here.
@@ -156,6 +156,34 @@ Goal: canonical, reusable field definitions referenced by forms AND CI types.
 - [ ] **D4. Stewardship reporting**: stale drafts, orphaned content, owners
       who left (inactive users owning active content), churn hot spots.
 
+### Phase E — Runtime data sharing & true reporting (depends on B)
+
+Motivation recorded from stakeholder: (1) a structured/understandable/
+accessible database, (2) easier data sharing between workflows and nodes,
+(3) eventual real reporting tools. Items E1–E2 cover (2); E3–E4 cover (1)+(3).
+
+- [ ] **E1. Formalize run data context**: document + standardize how data
+      flows within a run today (entry-form input, task result_data merging
+      into subsequent steps' inputs, calculation outputs). Define addressing
+      conventions (e.g. reference prior step results by step key/name,
+      `$input` for entry data) and enforce/validate them in the designer.
+      Files: `workflow_engine.py`, executor input resolution, docs.
+- [ ] **E2. Run Context inspector**: RunMonitor panel showing the accumulated
+      run-level data visible at each completed node (what a downstream step
+      will receive), so developers debug data-sharing visually instead of by
+      trial runs. Builds on existing per-instance Result Data display.
+- [ ] **E3. Auto-generated per-form SQL VIEWs**: read-only views materializing
+      each active form's submissions (and CI type's items) as flat typed
+      tables, generated from Field Library definitions (`jsonb_to_record` /
+      generated columns). Regenerated on publish; gives humans and BI tools a
+      conventional relational facade without write-time DDL. Naming:
+      `v_form_<key>`, `v_ci_<key>`.
+- [ ] **E4. Reporting tools**: report/report-definition objects built on E3
+      views + Field Library semantics (dimensions/measures): tabular report
+      builder for admins, saved reports, scheduled CSV/email export,
+      optional dashboard cards. Start with read-only SQL-view-backed listing;
+      grow into a visual builder only if demand holds.
+
 ## Open design decisions (settle before coding the phase)
 
 1. **Reference mechanism (B2)**: integer FK `field_def_id` vs string key
@@ -207,3 +235,15 @@ Goal: canonical, reusable field definitions referenced by forms AND CI types.
   implementation. Added "Data storage architecture" section: keep JSONB,
   repairs-not-refactor, generated columns/views as Phase B follow-on.
 - No code changes.
+
+### 2026-08-24 — Stakeholder motivations mapped; Phase E added
+- User clarified dynamic-tables motivation: (1) structured/accessible DB,
+  (2) workflow/node data sharing, (3) true reporting tools.
+- Assessment: (1) covered differently — promoted per-form SQL VIEWs from
+  footnote to explicit deliverable (E3); (2) genuine gap, and not a storage
+  problem — added E1 (formal run data context + addressing conventions) and
+  E2 (Run Context inspector); (3) prerequisites existed in B/C but tools
+  didn't — added E4 (report definitions on top of E3 views).
+- Sequencing note: E depends on B (field defs drive view generation and
+  report semantics); E1/E2 only depend on engine docs work and can start
+  anytime after Phase A.
