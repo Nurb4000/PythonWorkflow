@@ -59,6 +59,12 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
 ## Backlog (prioritized)
 
 ### P1 — correctness / quick wins
+0. ~~**test_marketplace.py breaks whole suite**~~ FOUND 2026-08-24: 45 errors +
+   3 failures all from this one file — it hardcodes
+   `sqlite+aiosqlite:///:memory:` (line 20) but `aiosqlite` isn't installed in
+   the image, so collection errors cascade. Fix: port file to the Postgres
+   `db_engine` fixture convention or add aiosqlite to deps. Suite otherwise
+   healthy (102 passing on master, 112 with email-settings work).
 1. ~~**WorkflowDesigner.tsx debug leftovers**~~ DONE 2026-08-23: console statements
    stripped, `draggable: !readOnly` restored on start/step/end nodes, indentation normalized. (introduced during inspector WIP):
    - `console.log('[WF] handleNodeClick called:', ...)` + verbose `console.warn` in

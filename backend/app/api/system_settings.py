@@ -12,6 +12,10 @@ from app.core.database import get_db
 from app.models.auth import User
 from app.models.system_settings import SystemSetting
 from app.api.auth import get_current_user
+# NOTE: use the real application config singleton. This module previously
+# defined its own in-memory Settings class whose values nothing ever read —
+# saving email/LLM settings appeared to work but silently went nowhere.
+from app.core.config import settings
 
 router = APIRouter()
 
@@ -42,20 +46,6 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
 
 
 DEFAULT_SYSTEM_NAME = "Instant Workflow"
-
-
-class Settings:
-    """System settings stored in memory (could be DB later)"""
-    llama_cpp_url: str = "http://localhost:8081"
-    llama_cpp_model: str = "default"
-    email_smtp_host: str = ""
-    email_smtp_port: int = 587
-    email_username: str = ""
-    email_password: str = ""
-    email_from: str = ""
-
-
-settings = Settings()
 
 
 @router.get("/branding")
@@ -168,13 +158,15 @@ async def get_settings(
     """Get system settings (admin only)"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     return {
         "llama_cpp_url": settings.llama_cpp_url,
         "llama_cpp_model": settings.llama_cpp_model,
-        "email_smtp_host": settings.email_smtp_host,
-        "email_smtp_port": settings.email_smtp_port,
-        "email_from": settings.email_from
+        "smtp_host": settings.smtp_host,
+        "smtp_port": settings.smtp_port,
+        "smtp_username": settings.smtp_username,
+        "smtp_tls": bool(settings.smtp_tls),
+        "smtp_from": settings.smtp_from
     }
 
 
@@ -187,14 +179,17 @@ async def update_llm_settings(
     """Update LLM settings (admin only)"""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
+
     settings.llama_cpp_url = llama_cpp_url
     settings.llama_cpp_model = llama_cpp_model
-    
+
     return {"message": "LLM settings updated", "settings": {
         "llama_cpp_url": settings.llama_cpp_url,
         "llama_cpp_model": settings.llama_cpp_model
     }}
+
+
+SMTP_PERSIST_KEYS = ("smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "smtp_tls")
 
 
 @router.put("/settings/email")
@@ -204,41 +199,76 @@ async def update_email_settings(
     username: str = "",
     password: str = "",
     from_address: str = "",
-    current_user: User = Depends(get_current_user)
+    smtp_tls: bool = True,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
 ):
-    """Update email settings (admin only)"""
+    """Update email settings (admin only).
+
+    Applies to the runtime settings object immediately AND persists to the
+    system_settings table so overrides survive restarts (re-applied at
+    startup by email_service.load_smtp_overrides).
+    """
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
-    
-    settings.email_smtp_host = smtp_host
-    settings.email_smtp_port = smtp_port
-    settings.email_username = username
-    settings.email_password = password
-    settings.email_from = from_address
-    
-    return {"message": "Email settings updated"}
+
+    if not (1 <= int(smtp_port) <= 65535):
+        raise HTTPException(status_code=400, detail="SMTP port must be between 1 and 65535")
+
+    settings.smtp_host = smtp_host.strip()
+    settings.smtp_port = int(smtp_port)
+    settings.smtp_username = username.strip()
+    if password != "":
+        settings.smtp_password = password
+    settings.smtp_from = from_address.strip()
+    settings.smtp_tls = bool(smtp_tls)
+
+    persisted = {
+        "smtp_host": settings.smtp_host,
+        "smtp_port": str(settings.smtp_port),
+        "smtp_username": settings.smtp_username,
+        "smtp_password": password if password != "" else None,  # None = keep existing
+        "smtp_from": settings.smtp_from,
+        "smtp_tls": "true" if settings.smtp_tls else "false",
+    }
+    for key, value in persisted.items():
+        if value is None:
+            continue
+        await set_setting(db, key, value)
+    await db.commit()
+
+    return {"message": "Email settings updated", **{
+        k: v for k, v in {
+            "smtp_host": settings.smtp_host,
+            "smtp_port": settings.smtp_port,
+            "smtp_username": settings.smtp_username,
+            "smtp_tls": settings.smtp_tls,
+            "smtp_from": settings.smtp_from,
+        }.items()
+    }}
 
 
 @router.post("/settings/test-email")
 async def test_email(
     to_email: str,
-    subject: str = "Test Email",
-    body: str = "This is a test email from the workflow system.",
+    subject: str = "Instant Workflow — test email",
     current_user: User = Depends(get_current_user)
 ):
-    """Send test email (admin only)"""
+    """Attempt a real SMTP send and return stage-level diagnostics.
+
+    Always responds 200 with {ok, stage, error, ...config summary} so the UI
+    can show exactly where delivery failed. (Previously this endpoint was a
+    stub that sent nothing.)
+    """
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    if not settings.email_smtp_host:
-        raise HTTPException(status_code=400, detail="Email SMTP host not configured")
+    to_email = (to_email or "").strip()
+    if not to_email:
+        raise HTTPException(status_code=400, detail="to_email is required")
 
-    # TODO: Implement actual email sending
-    return {
-        "message": f"Test email would be sent to {to_email}",
-        "smtp_host": settings.email_smtp_host,
-        "from": settings.email_from
-    }
+    from app.services.email_service import send_test_email
+    return send_test_email(to_email, subject)
 
 
 # ------------------------------------------------------------------

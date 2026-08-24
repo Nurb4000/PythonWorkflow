@@ -335,6 +335,8 @@ async def startup_event():
     """Initialize database and scheduler on startup"""
     await init_db()
     await create_default_admin()
+    from app.services.email_service import load_smtp_overrides
+    await load_smtp_overrides()
     await scheduler_service.initialize(async_session_factory)
     from app.services.sql_view_service import sql_view_service
     async with async_session_factory() as db:

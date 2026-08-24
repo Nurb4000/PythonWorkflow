@@ -7,9 +7,11 @@ const API_URL = '/api'
 interface Settings {
   llama_cpp_url: string
   llama_cpp_model: string
-  email_smtp_host: string
-  email_smtp_port: number
-  email_from: string
+  smtp_host: string
+  smtp_port: number
+  smtp_username: string
+  smtp_tls: boolean
+  smtp_from: string
 }
 
 interface ImapSettings {
@@ -27,11 +29,19 @@ export const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<Settings>({
     llama_cpp_url: '',
     llama_cpp_model: 'default',
-    email_smtp_host: '',
-    email_smtp_port: 587,
-    email_from: ''
+    smtp_host: '',
+    smtp_port: 587,
+    smtp_username: '',
+    smtp_tls: true,
+    smtp_from: ''
   })
   const [emailPassword, setEmailPassword] = useState('')
+  const [testEmailTo, setTestEmailTo] = useState('')
+  const [testEmail, setTestEmail] = useState<{
+    loading: boolean
+    result: any
+    error: string
+  }>({ loading: false, result: null, error: '' })
   const [imapSettings, setImapSettings] = useState<ImapSettings>({
     imap_monitor_enabled: false,
     imap_host: '',
@@ -301,11 +311,12 @@ export const SettingsPage: React.FC = () => {
         null,
         {
           params: {
-            smtp_host: settings.email_smtp_host,
-            smtp_port: settings.email_smtp_port,
-            username: '',
+            smtp_host: settings.smtp_host,
+            smtp_port: settings.smtp_port,
+            username: settings.smtp_username,
             password: emailPassword,
-            from_address: settings.email_from
+            from_address: settings.smtp_from,
+            smtp_tls: settings.smtp_tls
           },
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -316,6 +327,21 @@ export const SettingsPage: React.FC = () => {
     } catch (error: any) {
       setMessage(error.response?.data?.detail || 'Failed to update email settings')
       setMessageType('error')
+    }
+  }
+
+  const handleTestEmail = async () => {
+    setTestEmail({ loading: true, result: null, error: '' })
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.post(
+        `${API_URL}/settings/test-email`,
+        null,
+        { params: { to_email: testEmailTo }, headers: { Authorization: `Bearer ${token}` } }
+      )
+      setTestEmail({ loading: false, result: response.data, error: '' })
+    } catch (error: any) {
+      setTestEmail({ loading: false, result: null, error: error.response?.data?.detail || 'Test failed' })
     }
   }
 
@@ -495,8 +521,8 @@ export const SettingsPage: React.FC = () => {
               <input
                 type="text"
                 className="form-input"
-                value={settings.email_smtp_host}
-                onChange={(e) => setSettings({...settings, email_smtp_host: e.target.value})}
+                value={settings.smtp_host}
+                onChange={(e) => setSettings({...settings, smtp_host: e.target.value})}
                 placeholder="smtp.example.com"
               />
             </div>
@@ -505,33 +531,109 @@ export const SettingsPage: React.FC = () => {
               <input
                 type="number"
                 className="form-input"
-                value={settings.email_smtp_port}
-                onChange={(e) => setSettings({...settings, email_smtp_port: parseInt(e.target.value)})}
+                value={settings.smtp_port}
+                onChange={(e) => setSettings({...settings, smtp_port: parseInt(e.target.value) || 587})}
               />
             </div>
           </div>
-          <div className="form-group">
-            <label className="form-label">From Address</label>
-            <input
-              type="email"
-              className="form-input"
-              value={settings.email_from}
-              onChange={(e) => setSettings({...settings, email_from: e.target.value})}
-              placeholder="noreply@example.com"
-            />
+          <div className="grid grid-2">
+            <div className="form-group">
+              <label className="form-label">Username</label>
+              <input
+                type="text"
+                className="form-input"
+                value={settings.smtp_username}
+                onChange={(e) => setSettings({...settings, smtp_username: e.target.value})}
+                placeholder="(leave empty for no auth)"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Password {settings.smtp_username ? '' : '(unused without username)'}</label>
+              <input
+                type="password"
+                className="form-input"
+                value={emailPassword}
+                onChange={(e) => setEmailPassword(e.target.value)}
+                placeholder={settings.smtp_username ? 'Enter new password' : ''}
+              />
+            </div>
           </div>
-          <div className="form-group">
-            <label className="form-label">Password</label>
-            <input
-              type="password"
-              className="form-input"
-              value={emailPassword}
-              onChange={(e) => setEmailPassword(e.target.value)}
-              placeholder="SMTP password"
-            />
+          <div className="grid grid-2">
+            <div className="form-group">
+              <label className="form-label">From Address</label>
+              <input
+                type="email"
+                className="form-input"
+                value={settings.smtp_from}
+                onChange={(e) => setSettings({...settings, smtp_from: e.target.value})}
+                placeholder="noreply@example.com"
+              />
+            </div>
+            <div className="form-group" style={{ display: 'flex', alignItems: 'end' }}>
+              <label style={{ display: 'flex', alignItems: 'center', gap: '6px', paddingBottom: '8px' }}>
+                <input
+                  type="checkbox"
+                  checked={settings.smtp_tls}
+                  onChange={(e) => setSettings({...settings, smtp_tls: e.target.checked})}
+                />
+                Use STARTTLS
+              </label>
+            </div>
           </div>
           <button type="submit" className="btn btn-success">Save Email Settings</button>
         </form>
+
+        <div style={{ marginTop: '1.25rem', borderTop: '1px solid #dee2e6', paddingTop: '1rem' }}>
+          <h4 style={{ margin: '0 0 0.5rem 0' }}>Send Test Email</h4>
+          <p style={{ color: '#6c757d', fontSize: '0.85rem', margin: '0 0 0.75rem 0' }}>
+            Attempts a real send with the saved settings and reports exactly where it failed
+            (connect / STARTTLS / login / send). Save settings first.
+          </p>
+          <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center' }}>
+            <input
+              type="email"
+              className="form-input"
+              value={testEmailTo}
+              onChange={(e) => setTestEmailTo(e.target.value)}
+              placeholder="you@example.com"
+              style={{ maxWidth: '300px' }}
+            />
+            <button
+              className="btn btn-primary"
+              onClick={handleTestEmail}
+              disabled={testEmail.loading || !testEmailTo.trim()}
+            >
+              {testEmail.loading ? 'Sending...' : 'Send Test'}
+            </button>
+          </div>
+          {testEmail.error && (
+            <div className="error" style={{ marginTop: '0.5rem' }}>{testEmail.error}</div>
+          )}
+          {testEmail.result && (
+            <div style={{
+              marginTop: '0.75rem', padding: '0.75rem', borderRadius: '4px',
+              backgroundColor: testEmail.result.ok ? '#d4edda' : '#f8d7da',
+              color: testEmail.result.ok ? '#155724' : '#721c24',
+              fontSize: '0.9rem'
+            }}>
+              {testEmail.result.ok ? (
+                <strong>Delivered to {testEmail.result.to} via {testEmail.result.host}:{testEmail.result.port}{testEmail.result.tls ? ' (STARTTLS)' : ''}</strong>
+              ) : (
+                <>
+                  <strong>Failed at stage: {testEmail.result.stage}</strong>
+                  <div style={{ marginTop: '0.25rem', fontFamily: 'monospace', wordBreak: 'break-word' }}>
+                    {testEmail.result.error}
+                  </div>
+                </>
+              )}
+              <div style={{ marginTop: '0.5rem', fontSize: '0.8rem', opacity: 0.8 }}>
+                Config in use — host: {testEmail.result.host || '(none)'} · port: {testEmail.result.port} ·
+                {' '}STARTTLS: {testEmail.result.tls ? 'on' : 'off'} · from: {testEmail.result.from_addr || '(none)'} ·
+                {' '}auth: {testEmail.result.username_configured ? 'yes' : 'no'}
+              </div>
+            </div>
+          )}
+        </div>
       </div>
 
       <div className="card" style={{ marginTop: '1rem' }}>
