@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
-import { adminApi, cmdbApi, servicesApi } from '../services/api'
+import { adminApi, cmdbApi, dateTargetsApi, servicesApi } from '../services/api'
 import { ScheduleManager } from '../components/ScheduleManager'
 
 interface Stats {
@@ -233,6 +233,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* OLA Monitoring Dashboard (Task-level) */}
       <OLADashboardWidget daysProp={days} />
+
+      {/* Date Target Monitoring (INCIDENT_CHANGE_PLAN Phase 4.1) */}
+      <DateTargetWidget daysProp={days} />
     </div>
   )
 }
@@ -780,6 +783,139 @@ const OLADashboardWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
                             <tr key={g.group_id}>
                               <td>{g.group_name}</td>
                               <td style={{ textAlign: 'right', fontWeight: 'bold', color: '#dc3545' }}>{g.breach_count}</td>
+                            </tr>
+                          ))}
+                        </tbody>
+                      </table>
+                    </div>
+                  )}
+                </>
+              )}
+            </>
+          ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+// Date Target Monitoring Widget (INCIDENT_CHANGE_PLAN Phase 4.1)
+interface DateTargetStats {
+  total: number
+  met: number
+  breached: number
+  pending: number
+  compliance_pct: number | null
+  period_days: number
+}
+
+interface DateTarget {
+  id: number
+  workflow_run_id: number
+  target_key: string
+  target_datetime: string | null
+  status: string
+}
+
+const DateTargetWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
+  const [showTargets, setShowTargets] = useState(false)
+
+  const complianceColor = (pct: number) => {
+    if (pct >= 90) return '#28a745'
+    if (pct >= 70) return '#ffc107'
+    return '#dc3545'
+  }
+
+  const { data: stats, isLoading } = useQuery({
+    queryKey: ['date-target-stats', daysProp],
+    queryFn: async () => {
+      const res = await dateTargetsApi.getStats(daysProp)
+      return res.data as DateTargetStats
+    },
+    enabled: showTargets,
+  })
+
+  const { data: breached } = useQuery({
+    queryKey: ['date-targets-breached'],
+    queryFn: async () => {
+      const res = await dateTargetsApi.list({ status: 'breached' })
+      return res.data as DateTarget[]
+    },
+    enabled: showTargets,
+  })
+
+  return (
+    <div className="card" style={{ marginTop: '2rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">Date Targets</h3>
+        <button
+          className={`btn btn-sm ${showTargets ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => setShowTargets(!showTargets)}
+        >
+          {showTargets ? 'Hide' : 'View'}
+        </button>
+      </div>
+
+      {showTargets && (
+        <>
+          {isLoading ? (
+            <div className="loading">Loading date target stats...</div>
+          ) : stats ? (
+            <>
+              {stats.total === 0 ? (
+                <div style={{ textAlign: 'center', padding: '2rem', opacity: 0.7 }}>
+                  No date targets in the selected period. Targets are created by workflow steps
+                  configured with a <code>date_target_key</code> (e.g. the change-management demo).
+                </div>
+              ) : (
+                <>
+                  <div className="stats-grid">
+                    <div className="stat-card">
+                      <div className="stat-value">{stats.total}</div>
+                      <div className="stat-label">Total ({stats.period_days}d)</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{ color: '#28a745' }}>{stats.met}</div>
+                      <div className="stat-label">Met</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{ color: '#dc3545' }}>{stats.breached}</div>
+                      <div className="stat-label">Breached</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value">{stats.pending}</div>
+                      <div className="stat-label">Pending</div>
+                    </div>
+                    <div className="stat-card">
+                      <div className="stat-value" style={{
+                        color: stats.compliance_pct == null ? undefined : complianceColor(stats.compliance_pct),
+                        fontSize: '1.8rem'
+                      }}>
+                        {stats.compliance_pct == null ? '—' : `${stats.compliance_pct}%`}
+                      </div>
+                      <div className="stat-label">Compliance</div>
+                    </div>
+                  </div>
+
+                  {breached && breached.length > 0 && (
+                    <div className="card" style={{ marginTop: '1rem', padding: '1rem' }}>
+                      <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Breached Targets (all time)</h4>
+                      <table className="table" style={{ fontSize: '0.85rem', marginBottom: 0 }}>
+                        <thead>
+                          <tr>
+                            <th>Target Key</th>
+                            <th>Due</th>
+                            <th style={{ textAlign: 'right' }}>Run</th>
+                          </tr>
+                        </thead>
+                        <tbody>
+                          {breached.map((t) => (
+                            <tr key={t.id}>
+                              <td>{t.target_key}</td>
+                              <td>{t.target_datetime ? new Date(t.target_datetime).toLocaleString() : '—'}</td>
+                              <td style={{ textAlign: 'right' }}>
+                                <Link to={`/runs/${t.workflow_run_id}`}>View run #{t.workflow_run_id}</Link>
+                              </td>
                             </tr>
                           ))}
                         </tbody>

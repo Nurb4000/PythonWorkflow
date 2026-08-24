@@ -286,6 +286,13 @@ export const priorityApi = {
   getPortalMatrix: () => api.get('/portal/priority-matrix'),
 }
 
+// Date Targets API (INCIDENT_CHANGE_PLAN Phase 0/4)
+export const dateTargetsApi = {
+  getStats: (days?: number) => api.get('/date-targets/stats', { params: { days } }),
+  list: (params?: { run_id?: number; status?: string; target_key?: string }) =>
+    api.get('/date-targets', { params }),
+}
+
 // Knowledge Base Articles API (SERVICE_MANAGEMENT_PLAN Phase 6)
 export const kbApi = {
   listArticles: (params?: any) => api.get('/kb-articles', { params }),
