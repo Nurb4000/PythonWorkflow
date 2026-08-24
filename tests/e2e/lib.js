@@ -80,6 +80,16 @@ function request(method, path, opts = {}) {
   });
 }
 
+// Fixture credentials (README): username===password per role by default.
+// Override in environments where dev-DB passwords drifted, e.g. E2E_ADMIN_PASS.
+function creds(name) {
+  const key = String(name).toUpperCase();
+  return [
+    process.env['E2E_' + key + '_USER'] || name,
+    process.env['E2E_' + key + '_PASS'] || name,
+  ];
+}
+
 async function apiLogin(username, password) {
   const res = await request('POST', '/api/auth/login', {
     form: 'username=' + encodeURIComponent(username) + '&password=' + encodeURIComponent(password),
@@ -90,4 +100,4 @@ async function apiLogin(username, password) {
   return res.body.access_token;
 }
 
-module.exports = { BASE, getWsEndpoint, connect, newPage, login, sleep, request, apiLogin };
+module.exports = { BASE, getWsEndpoint, connect, newPage, login, sleep, request, apiLogin, creds };

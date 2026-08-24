@@ -1,6 +1,6 @@
 'use strict';
 /* Entry form save persistence (P3.3) + form-on-task UI (P3.3). Creates disposable data. */
-const { BASE, connect, newPage, login, sleep, request, apiLogin } = require('./lib');
+const { BASE, connect, newPage, login, sleep, request, apiLogin, creds } = require('./lib');
 
 const passed = [];
 const failed = [];
@@ -19,7 +19,7 @@ function step(name, fn) {
 }
 
 async function getToken(user) {
-  return apiLogin(user, user);
+  return apiLogin(...creds(user));
 }
 
 async function api(method, path, token, body, query) {
@@ -85,9 +85,9 @@ const FORM_SCHEMA = {
   // ---------- Part A: entry form save persistence ----------
   await step('A1: select entry form + save persists selection', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'admin', 'admin');
+    await login(page, ...creds('admin'));
     await page.goto(BASE + '/workflows/' + wf.id, { waitUntil: 'networkidle0' });
-    await waitForText(page, 'Portal Settings');
+    await waitForText(page, 'Offerings Settings');
 
     const before = await findEntryFormSelect(page);
     if (!before) throw new Error('entry form select not found');
@@ -104,11 +104,11 @@ const FORM_SCHEMA = {
 
     // Save via the portal settings button
     await page.evaluate(() => {
-      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save Portal Settings');
+      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save Offerings Settings');
       btn.click();
     });
     await waitForNoText(page, 'Saving...');
-    await waitForText(page, 'Save Portal Settings');
+    await waitForText(page, 'Save Offerings Settings');
     await sleep(1200); // allow refetch after save
 
     const afterSave = await findEntryFormSelect(page);
@@ -120,9 +120,9 @@ const FORM_SCHEMA = {
 
   await step('A2: entry form survives page reload', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'admin', 'admin');
+    await login(page, ...creds('admin'));
     await page.goto(BASE + '/workflows/' + wf.id, { waitUntil: 'networkidle0' });
-    await waitForText(page, 'Portal Settings');
+    await waitForText(page, 'Offerings Settings');
     await sleep(800);
     const sel = await findEntryFormSelect(page);
     if (!sel || sel.value !== String(form.id)) {
@@ -133,9 +133,9 @@ const FORM_SCHEMA = {
 
   await step('A3: clear entry form (None) saves + persists', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'admin', 'admin');
+    await login(page, ...creds('admin'));
     await page.goto(BASE + '/workflows/' + wf.id, { waitUntil: 'networkidle0' });
-    await waitForText(page, 'Portal Settings');
+    await waitForText(page, 'Offerings Settings');
 
     await page.evaluate(() => {
       const labels = [...document.querySelectorAll('.form-label')];
@@ -148,14 +148,14 @@ const FORM_SCHEMA = {
     await sleep(300);
 
     await page.evaluate(() => {
-      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save Portal Settings');
+      const btn = [...document.querySelectorAll('button')].find((b) => b.textContent.trim() === 'Save Offerings Settings');
       btn.click();
     });
     await waitForNoText(page, 'Saving...');
     await sleep(1200);
 
     await page.reload({ waitUntil: 'networkidle0' });
-    await waitForText(page, 'Portal Settings');
+    await waitForText(page, 'Offerings Settings');
     await sleep(800);
     const sel = await findEntryFormSelect(page);
     if (!sel || sel.value !== '') {
@@ -199,7 +199,7 @@ const FORM_SCHEMA = {
   await step('B1: task page renders form read-only with fields', async () => {
     const task = await makeTask();
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/tasks/' + task.id, { waitUntil: 'networkidle0' });
     await waitForText(page, 'Approved');
     await waitForText(page, 'Notes');
@@ -219,7 +219,7 @@ const FORM_SCHEMA = {
   await step('B2: take task unlocks form editing', async () => {
     const task = await makeTask();
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/tasks/' + task.id, { waitUntil: 'networkidle0' });
     await waitForText(page, 'Take Task');
     await page.evaluate(() => {
@@ -240,7 +240,7 @@ const FORM_SCHEMA = {
   await step('B3: fill + submit form completes task with data', async () => {
     const task = await makeTask();
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/tasks/' + task.id, { waitUntil: 'networkidle0' });
     await waitForText(page, 'Take Task');
     await page.evaluate(() => {
@@ -278,6 +278,13 @@ const FORM_SCHEMA = {
 
     // After submit the task refetches -> status badge 'completed' and result data shown
     await page.waitForFunction(() => document.body.innerText.includes('completed'), { timeout: 10000 });
+    // Task/Result JSON now lives behind a collapsible toggle — open it if present
+    const openedRaw = await page.evaluate(() => {
+      const b = [...document.querySelectorAll('button')].find((x) => x.textContent.includes('Show Raw Data'));
+      if (b) { b.click(); return true; }
+      return false;
+    });
+    if (openedRaw) await sleep(400);
     const body = await page.evaluate(() => document.body.innerText);
     if (!body.includes('Result Data:')) throw new Error('Result Data section not shown');
     if (!body.includes('Browser E2E notes ' + unique)) throw new Error('saved notes not displayed');
@@ -309,7 +316,7 @@ const FORM_SCHEMA = {
 
   await step('C1: portal entry form modal renders fields instead of hanging', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
     await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf.name);
 
@@ -330,7 +337,7 @@ const FORM_SCHEMA = {
 
   await step('C2: submit portal entry form starts the workflow', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
     await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf.name);
 
@@ -394,7 +401,7 @@ const FORM_SCHEMA = {
 
   await step('C3: entry form honors 2-column builder layout', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
     await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf3.name);
 
@@ -460,7 +467,7 @@ const FORM_SCHEMA = {
 
   async function takeAndCompleteTask(taskId, notesText) {
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/tasks/' + taskId, { waitUntil: 'networkidle0' });
     await waitForText(page, 'Take Task');
     await page.evaluate(() => {
@@ -501,7 +508,7 @@ const FORM_SCHEMA = {
 
   await step('D1: first staff task is prefilled from the portal entry', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/portal', { waitUntil: 'networkidle0' });
     await page.waitForFunction((name) => document.body.innerText.includes(name), { timeout: 10000 }, wf4.name);
     await page.evaluate((name) => {
@@ -538,7 +545,7 @@ const FORM_SCHEMA = {
     if (!chainRunId) throw new Error('no run found for chain workflow');
     const t1 = await waitForOpenTask(chainRunId);
     const { page: p2 } = await newPage(browser);
-    await login(p2, 'user', 'user');
+    await login(p2, ...creds('user'));
     await p2.goto(BASE + '/tasks/' + t1.id, { waitUntil: 'networkidle0' });
     await waitForText(p2, 'Take Task');
     const pre = await readFormValues(p2);
@@ -552,7 +559,7 @@ const FORM_SCHEMA = {
   await step('D2: second staff task prefilled from first task result', async () => {
     const t2 = await waitForOpenTask(chainRunId);
     const { page } = await newPage(browser);
-    await login(page, 'user', 'user');
+    await login(page, ...creds('user'));
     await page.goto(BASE + '/tasks/' + t2.id, { waitUntil: 'networkidle0' });
     await waitForText(page, 'Take Task');
     const pre = await readFormValues(page);

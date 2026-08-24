@@ -1,6 +1,6 @@
 'use strict';
 /* Designer save/cancel test against a DISPOSABLE workflow, deleted at the end. */
-const { BASE, connect, newPage, login, sleep, apiLogin, request } = require('./lib');
+const { BASE, connect, newPage, login, sleep, apiLogin, request, creds } = require('./lib');
 
 function step(name, fn) {
   return Promise.resolve()
@@ -13,7 +13,7 @@ function step(name, fn) {
 }
 
 (async () => {
-  const token = await apiLogin('dev', 'dev');
+  const token = await apiLogin(...creds('dev'));
   let wfId = null;
   let stepA = null;
   let stepB = null;
@@ -51,7 +51,7 @@ function step(name, fn) {
       await d.accept();
     });
 
-    await login(page, 'dev', 'dev');
+    await login(page, ...creds('dev'));
     await page.goto(BASE + '/workflows/' + wfId + '/design', { waitUntil: 'networkidle0' });
     await page.waitForSelector('.react-flow__node', { timeout: 10000 });
     await sleep(1200);
@@ -98,7 +98,19 @@ function step(name, fn) {
       await page.waitForSelector('.react-flow__node', { timeout: 10000 });
       await sleep(1200);
       const after = await edgeCount();
-      if (after < edgesInitial + 1) throw new Error('expected >= ' + (edgesInitial + 1) + ' edges after reload, got ' + after);
+      // Wiring A->B replaces A's auto-connect to End, so the raw count does not
+      // grow; assert the persisted graph instead (API ground truth) plus a
+      // rendered A->B edge in the DOM.
+      const detailAfter = await request('GET', '/api/workflows/' + wfId, { token });
+      const defA = (detailAfter.body.steps || []).find((s) => s.id === stepA);
+      const nexts = (defA?.definition?.next_step_ids) || (defA?.definition?.next_step_id ? [defA.definition.next_step_id] : []);
+      if (!nexts.map(Number).includes(Number(stepB))) {
+        throw new Error('A->B not persisted after reload; definition.next_step_ids=' + JSON.stringify(nexts));
+      }
+      const hasABEdge = await page.evaluate((a) =>
+        [...document.querySelectorAll('.react-flow__edge')].some((e) => (e.getAttribute('data-id') || '').startsWith('e-' + a + '-')), stepA);
+      if (!hasABEdge) throw new Error('no rendered edge out of step A after reload');
+      if (after < 3) throw new Error('edges lost after reload: ' + after);
     });
 
     // CANCEL FLOW: make a staged change, Cancel -> confirm -> leaves designer, DB unchanged

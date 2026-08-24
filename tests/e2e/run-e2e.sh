@@ -17,6 +17,13 @@ if [ ${#TESTS[@]} -eq 0 ]; then
   TESTS=(smoke.js designer-save.js entry-form-task.js)
 fi
 
+# Forward every E2E_* env var (creds overrides, E2E_WF_ID, ...) into the container
+ENV_ARGS=()
+while IFS='=' read -r k _; do
+  [[ "$k" == "E2E_BASE" || "$k" == "E2E_CDP" ]] && continue  # handled explicitly below
+  ENV_ARGS+=("-e" "$k")
+done < <(compgen -A variable | grep '^E2E_' || true)
+
 status=0
 for t in "${TESTS[@]}"; do
   echo "=====> $t"
@@ -25,6 +32,7 @@ for t in "${TESTS[@]}"; do
     -e NODE_PATH=/work/node_modules \
     -e E2E_BASE="${E2E_BASE:-http://localhost:3000}" \
     -e E2E_CDP="${E2E_CDP:-http://127.0.0.1:9222/json/version}" \
+    "${ENV_ARGS[@]}" \
     "$IMAGE" node "/e2e/$t"; then
     echo "=====> $t FAILED"
     status=1

@@ -1,12 +1,16 @@
 'use strict';
 /* Read-only UI regression smoke test (never mutates the database). */
-const { BASE, connect, newPage, login, sleep } = require('./lib');
+const { BASE, connect, newPage, login, sleep, creds } = require('./lib');
+
+// Fixture workflow used by designer checks (README prerequisites). Override
+// when the dev DB's fixture was recreated with a different autoincrement id.
+const WF_ID = parseInt(process.env.E2E_WF_ID || '22', 10);
 
 const ROLE_TARGETS = [
   ['admin', '/admin'],
   ['dev', '/workflows'],
   ['staff', '/tasks'],
-  ['user', '/portal'],
+  ['user', '/offerings'],
 ];
 
 const passed = [];
@@ -31,7 +35,7 @@ function step(name, fn) {
   for (const [user, target] of ROLE_TARGETS) {
     await step('login ' + user + ' -> ' + target, async () => {
       const { page } = await newPage(browser);
-      await login(page, user, user);
+      await login(page, ...creds(user));
       const url = page.url().replace(/\/$/, '');
       if (!url.endsWith(target)) throw new Error('landed on ' + url + ', expected ' + target);
       await page.close();
@@ -40,7 +44,7 @@ function step(name, fn) {
 
   await step('branding shown in app shell', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'admin', 'admin');
+    await login(page, ...creds('admin'));
     const brand = await page.evaluate(() => fetch('/api/branding').then((r) => r.json()));
     const body = await page.evaluate(() => document.body.innerText);
     if (!body.includes(brand.system_name) && !body.includes(brand.portal_name)) {
@@ -49,18 +53,18 @@ function step(name, fn) {
     await page.close();
   });
 
-  await step('workflows list shows workflow 22', async () => {
+  await step('workflows list shows Test WF (wf ' + WF_ID + ')', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'dev', 'dev');
+    await login(page, ...creds('dev'));
     await page.goto(BASE + '/workflows', { waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.body.innerText.includes('Test WF'), { timeout: 8000 });
     await page.close();
   });
 
-  await step('designer 22: edges render, end node stable during drag', async () => {
+  await step('designer ' + WF_ID + ': edges render, end node stable during drag', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'dev', 'dev');
-    await page.goto(BASE + '/workflows/22/design', { waitUntil: 'networkidle0' });
+    await login(page, ...creds('dev'));
+    await page.goto(BASE + '/workflows/' + WF_ID + '/design', { waitUntil: 'networkidle0' });
     await page.waitForSelector('.react-flow__node', { timeout: 10000 });
     await sleep(1500);
 
@@ -100,7 +104,7 @@ function step(name, fn) {
 
   await step('settings: clearing System Name keeps page visible', async () => {
     const { page } = await newPage(browser);
-    await login(page, 'admin', 'admin');
+    await login(page, ...creds('admin'));
     await page.goto(BASE + '/settings', { waitUntil: 'networkidle0' });
     await page.waitForFunction(() => document.querySelector('h2')?.textContent.includes('System Settings'), { timeout: 8000 });
     await sleep(800);
