@@ -124,7 +124,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Reset**: Re-run to refresh demo data without affecting production
 
 ### Testing
-- **Backend**: 141 tests (pytest + asyncio) run against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, and run-inspector suites
+- **Backend**: 157 tests (pytest + asyncio) run against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, and run-inspector suites
 - **E2E**: 10 tests (Puppeteer + Chromium headless)
 - **Regression Net**: Pins current behavior before refactors
 
@@ -158,7 +158,7 @@ docker compose up -d
 docker compose exec backend alembic upgrade head
 
 # Run tests
-make test-backend    # 141/141 passing
+make test-backend    # 157/157 passing
 make test-e2e        # 10/10 passing
 ```
 
