@@ -5,8 +5,7 @@ import json
 import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
 from datetime import datetime
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
-from sqlalchemy.orm import sessionmaker
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from app.core.database import Base
 from app.models.marketplace import MarketplaceItem, SavedNodeTemplate
@@ -15,18 +14,21 @@ from app.services.marketplace_service import marketplace_service
 
 
 @pytest.fixture
-async def db_session():
-    """In-memory SQLite session with all tables created."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+async def db_session(db_engine):
+    """Fresh-schema PostgreSQL session."""
+    async with async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)() as s:
+        yield s
+        await s.rollback()
 
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
-    async with async_session() as session:
-        yield session
-        await session.rollback()
 
-    await engine.dispose()
+@pytest.fixture(autouse=True)
+async def user(db_session):
+    """Real User record for FK constraints."""
+    from app.models.auth import User
+    u = User(id=1, username="tester", email="tester@example.com", role="admin", password_hash="x")
+    db_session.add(u)
+    await db_session.flush()
+    return u
 
 
 @pytest.fixture
