@@ -332,6 +332,8 @@ async def list_cis(
     status: Optional[str] = None,
     search: Optional[str] = None,
     include_inactive: bool = Query(False),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
@@ -356,9 +358,23 @@ async def list_cis(
         stmt = stmt.where(and_(*conditions))
     stmt = stmt.order_by(ConfigurationItem.name)
 
+    # A2: pagination
+    offset = (page - 1) * page_size
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    
+    stmt = stmt.offset(offset).limit(page_size)
     result = await db.execute(stmt)
     items = result.scalars().all()
-    return [_ci_detail_to_dict(i) for i in items]
+    
+    return {
+        "items": [_ci_detail_to_dict(i) for i in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size if total else 0
+    }
 
 
 @router.post("/items", status_code=201)
