@@ -90,6 +90,39 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Security Audit**: Review-before-install panel shows step types, external URLs, custom code, SQL queries, email recipients
 - **Downloads Counter**: Tracks install count per item
 
+### CMDB (Configuration Management Database)
+- **CI Types**: Define custom types with field schemas (text, select, number, date, boolean, JSON)
+- **CI Items**: Create instances of types with structured data; search/filter via Data Explorer
+- **Relationships**: Define parent-child and dependency relationships between CIs
+- **Dependency Graph**: Visualize CI relationships and impact analysis
+- **Bulk Import**: CSV/JSON import for bulk CI creation (backend API)
+- **Audit Logging**: Track all CI field changes with before/after values
+
+### Service Catalog & SLA
+- **Offerings**: Publish services with descriptions, categories, and entry forms
+- **SLA Definitions**: Configure service level agreements with response/resolution targets
+- **OLA Tracking**: Internal Operational Level Agreements for backend processes
+- **Priority Matrix**: Define priority levels (P1-P4) with color coding and escalation rules
+
+### Incident & Change Management
+- **Incident Demos**: Sample incidents with severity tracking and resolution workflows
+- **Change Demos**: Sample change requests with approval workflows and risk assessment
+- **Date Targets**: Configurable deadlines for incident/change resolution with breach alerts
+
+### Knowledge Base
+- **Articles**: Store documentation, procedures, and reference material
+- **Categorization**: Tag articles by topic for easy discovery
+- **Search**: Full-text search across all knowledge base content
+
+### Email Integration
+- **IMAP Monitor**: Poll IMAP servers for incoming emails; trigger workflows on match
+- **SMTP Configuration**: Admin-configurable SMTP settings with test-email capability
+- **Email Steps**: Send emails from workflows with `$input.*` interpolation
+
+### Demo Data
+- **Seed Script**: `scripts/demo_seed.py` populates sample workflows, CIs, incidents, and KB articles
+- **Reset**: Re-run to refresh demo data without affecting production
+
 ### Testing
 - **Backend**: 141 tests (pytest + asyncio) run against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, and run-inspector suites
 - **E2E**: 10 tests (Puppeteer + Chromium headless)
@@ -319,6 +352,8 @@ PythonWorkflow/
 
 ## Next Steps
 
+- **SCALE Governance**: Naming conventions, field library, data dictionary, governance ops (see `docs/SCALE_GOVERNANCE_PLAN.md`)
+- **CMDB Gaps**: Relationships UI, dependency graph viewer, bulk import UI (see `docs/CMDB_GAPS.md`)
 - **P7**: Production deployment hardening (secrets management, rate limiting, audit logging)
 - **P8**: Advanced features (sub-workflows, parallel branches with synchronization, error handling patterns)
 - **P9**: Performance optimization (connection pooling, query optimization, caching)
