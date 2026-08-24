@@ -22,6 +22,8 @@ class Workflow(Base):
     version = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # A3: explicit owner
+    tags = Column(JSON, default=list)  # A3: freeform tags for organization
     is_published = Column(Boolean, default=False)
     environment = Column(String(20), default="test")
     config = Column(JSON, default=dict)  # Workflow-level config (e.g. start_step_ids)

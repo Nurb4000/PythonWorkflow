@@ -17,6 +17,8 @@ class Form(Base):
     version = Column(Integer, default=1)
     is_active = Column(Boolean, default=True)
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    owner_user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)  # A3: explicit owner
+    tags = Column(JSON, default=list)  # A3: freeform tags for organization
     environment = Column(String(20), default="test")  # test, production
     is_published = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
