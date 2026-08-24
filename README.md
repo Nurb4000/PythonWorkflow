@@ -91,7 +91,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Downloads Counter**: Tracks install count per item
 
 ### Testing
-- **Backend**: 121 tests (pytest + asyncio + SQLite in-memory) — includes 45 marketplace tests
+- **Backend**: 141 tests (pytest + asyncio) run against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, and run-inspector suites
 - **E2E**: 10 tests (Puppeteer + Chromium headless)
 - **Regression Net**: Pins current behavior before refactors
 
@@ -99,7 +99,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 
 - **Backend**: Python 3.11, FastAPI, SQLAlchemy 2.0 (async), Alembic
 - **Frontend**: React 18, TypeScript, React Flow, TanStack Query
-- **Database**: PostgreSQL 15 (production), SQLite (tests)
+- **Database**: PostgreSQL 15 (production and tests; tests use an auto-created `workflow_db_test`)
 - **AI**: llama.cpp (optional, for step generation)
 - **Email**: SMTP (optional, for admin notices + workflow emails)
 - **Testing**: pytest, pytest-asyncio, Puppeteer, Docker Compose
@@ -125,7 +125,7 @@ docker compose up -d
 docker compose exec backend alembic upgrade head
 
 # Run tests
-make test-backend    # 76/76 passing
+make test-backend    # 141/141 passing
 make test-e2e        # 10/10 passing
 ```
 
@@ -253,8 +253,11 @@ GET    /marketplace/categories       # Category catalog + tag cloud
 
 ### Environment Variables
 ```bash
-# Database
+# Database (PostgreSQL only)
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
+
+# Test database (used by make test-backend; auto-created if missing)
+TEST_DATABASE_URL=postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db_test
 
 # SMTP (optional, for admin notices + email steps)
 SMTP_HOST=smtp.example.com
@@ -272,6 +275,8 @@ LLAMA_CPP_URL=http://localhost:8081
 LLAMA_CPP_MODEL=default
 ```
 
+See `.env.example` for the full list.
+
 ## Project Structure
 
 ```
@@ -282,19 +287,21 @@ PythonWorkflow/
 │   │   ├── core/             # Config, database, security
 │   │   ├── models/           # SQLAlchemy models
 │   │   ├── schemas/          # Pydantic schemas
+│   │   ├── data/             # Demo workflow packages
 │   │   └── services/         # Business logic
 │   ├── alembic/              # Database migrations
-│   ├── tests/                # Backend tests
+│   ├── tests/                # Backend tests (PostgreSQL, see tests/conftest.py)
 │   └── pytest.ini
 ├── frontend/
 │   └── src/
 │       ├── components/       # React components
 │       ├── pages/            # Page components
 │       └── services/         # API client
-├── knowledge-base/           # AI prompts + templates
-├── tests/e2e/                # E2E test scripts
-├── docs/
-│   └── REPAIR_PLAN.md        # Development plan + session log
+├── knowledge-base/           # AI steering prompts + templates (mounted into backend container)
+├── scripts/                  # Admin utilities (setup_admin, demo seeding)
+├── tests/e2e/                # E2E test scripts (Puppeteer)
+├── docs/                     # Per-feature plans + session logs
+├── .env.example              # Environment variable reference
 └── docker-compose.yml
 ```
 
@@ -316,7 +323,7 @@ PythonWorkflow/
 - **P8**: Advanced features (sub-workflows, parallel branches with synchronization, error handling patterns)
 - **P9**: Performance optimization (connection pooling, query optimization, caching)
 
-See `docs/REPAIR_PLAN.md` for detailed session logs and progress tracking.
+See `docs/` for per-feature plans and detailed session logs (latest: `SERVICE_MANAGEMENT_PLAN.md`, `INCIDENT_CHANGE_PLAN.md`).
 
 ## Task System
 

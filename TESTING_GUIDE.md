@@ -4,7 +4,7 @@
 
 The Python Workflow System has three layers of testing:
 
-1. **Backend Unit/Integration Tests** (pytest) — 76 tests, fast, run in seconds
+1. **Backend Unit/Integration Tests** (pytest) — 141 tests, run against PostgreSQL
 2. **E2E Tests** (Puppeteer + Chromium) — 10 tests, verify full stack
 3. **Manual Testing** — API exploration, designer UX, portal flows
 
@@ -97,12 +97,14 @@ E2E_CDP=http://127.0.0.1:9222 make test-e2e
 
 ### Test Database
 
-Tests use **in-memory SQLite** (via `StaticPool`), isolated per test run:
+Tests use a dedicated **PostgreSQL** database (`workflow_db_test`, auto-created on first
+run — override with `TEST_DATABASE_URL`). The `public` schema is dropped/recreated for
+every test, so runs are fully isolated:
 
 ```python
 @pytest_asyncio.fixture
 async def db_engine():
-    engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
+    # backend/tests/conftest.py — see TEST_DATABASE_URL there
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield engine
@@ -111,7 +113,7 @@ async def db_engine():
 
 ### Test Fixtures
 
-- `db_engine` — In-memory SQLite engine
+- `db_engine` — Fresh-schema PostgreSQL engine (from `tests/conftest.py`)
 - `session` — Async session for test database
 - `engine` — WorkflowEngine with patched `async_session_factory`
 - `monkeypatch` — Standard pytest monkeypatch
@@ -171,7 +173,7 @@ docker logs pythonworkflow-e2e
 
 ### Common Issues
 
-1. **Test uses stale data**: Tests use in-memory SQLite, data doesn't persist between runs
+1. **Test uses stale data**: Each test gets a fresh schema; if you see cross-test state, check for module-level caches
 2. **Session conflicts**: Use `await session.refresh(obj)` to reload from DB
 3. **Async timing**: Add `await asyncio.sleep(0.1)` for background tasks
 4. **Port conflicts**: Ensure no other services on ports 5432, 6000, 9000

@@ -57,5 +57,6 @@ frontend/dist/
 # AI
 knowledge-base/models/
 
-# Uploads
+# Uploads / runtime data
 backend/uploads/
+backend/backend_data/
