@@ -132,7 +132,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 
 - **Backend**: Python 3.11, FastAPI, SQLAlchemy 2.0 (async), Alembic
 - **Frontend**: React 18, TypeScript, React Flow, TanStack Query
-- **Database**: PostgreSQL 15 (production and tests; tests use an auto-created `workflow_db_test`)
+- **Database**: PostgreSQL 15 only (production and tests; tests use an auto-created `workflow_db_test`). No SQLite fallback exists.
 - **AI**: llama.cpp (optional, for step generation)
 - **Email**: SMTP (optional, for admin notices + workflow emails)
 - **Testing**: pytest, pytest-asyncio, Puppeteer, Docker Compose
