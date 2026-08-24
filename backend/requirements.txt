@@ -23,8 +23,6 @@ python-jose[cryptography]==3.3.0
 passlib[bcrypt]==1.7.4
 bcrypt==4.1.2
 
-# Testing
+# Testing (runs against PostgreSQL — see backend/tests/conftest.py)
 pytest==7.4.3
 pytest-asyncio==0.23.2
-aiosqlite==0.19.0  # In-memory SQLite for tests
-httpx==0.25.2

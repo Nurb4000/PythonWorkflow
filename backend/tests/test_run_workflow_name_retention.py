@@ -1,9 +1,8 @@
 """Tests for snapshotting the workflow name on runs and retaining runs
 when a workflow is deleted, so history stays identifiable."""
 import pytest
-from sqlalchemy import event, select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy import select
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base
@@ -13,25 +12,10 @@ from app.schemas.workflow import WorkflowCreate, WorkflowRunCreate
 
 
 @pytest.fixture
-async def db_session():
-    engine = create_async_engine(
-        "sqlite+aiosqlite:///:memory:",
-        poolclass=StaticPool,
-        connect_args={"check_same_thread": False},
-    )
-
-    @event.listens_for(engine.sync_engine, "connect")
-    def _enable_fk(dbapi_conn, record):
-        cursor = dbapi_conn.cursor()
-        cursor.execute("PRAGMA foreign_keys=ON")
-        cursor.close()
-
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async def db_session(db_engine):
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
-    await engine.dispose()
 
 
 @pytest.mark.asyncio

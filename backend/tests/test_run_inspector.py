@@ -12,10 +12,8 @@ import time
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.database import Base
 from app.models.schemas import Workflow, WorkflowRun, StepInstance
 from app.schemas.workflow import StepInstanceResponse, WorkflowCreate, WorkflowRunCreate
 from app.services import workflow_engine as we_module
@@ -23,16 +21,10 @@ from app.services.workflow_engine import WorkflowEngine
 
 
 # ---------------------------------------------------------------------------
-# Fixtures: shared in-memory SQLite (StaticPool) so background engine sessions
-# created via the patched async_session_factory see the same database.
+# Fixtures: db_engine (fresh-schema PostgreSQL) comes from tests/conftest.py so
+# background engine sessions created via the patched async_session_factory see
+# the same database.
 # ---------------------------------------------------------------------------
-@pytest_asyncio.fixture
-async def db_engine():
-    engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture

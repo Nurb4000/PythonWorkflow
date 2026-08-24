@@ -4,7 +4,7 @@ Tests for the workflow engine and AI service
 import pytest
 import asyncio
 from unittest.mock import AsyncMock, MagicMock
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 
 from app.core.database import Base, async_session_factory
@@ -14,18 +14,12 @@ from app.schemas.workflow import WorkflowCreate, WorkflowRunCreate
 
 
 @pytest.fixture
-async def db_session():
-    """Create a test database session"""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async def db_session(db_engine):
+    """Create a test database session on the shared PostgreSQL test DB"""
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
         await session.rollback()
-    
-    await engine.dispose()
 
 
 @pytest.fixture

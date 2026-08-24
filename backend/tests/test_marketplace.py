@@ -386,9 +386,13 @@ class TestMarketplaceService:
         deleted = await marketplace_service.delete_item(
             db_session, item_id=item.id, author_id=1, is_admin=False
         )
+        # Deletes are soft archives: the row stays for provenance/download history
         assert deleted is not None
+        assert deleted.status == "archived"
+        assert deleted.is_active is False
         remaining = await marketplace_service.get_item(db_session, item.id)
-        assert remaining is None
+        assert remaining is not None
+        assert remaining.status == "archived"
 
     @pytest.mark.asyncio
     async def test_delete_item_archived_by_admin(self, db_session):

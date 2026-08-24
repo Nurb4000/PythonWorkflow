@@ -1,6 +1,6 @@
 """Reproduction test for entry_form_id persistence across updates."""
 import pytest
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy import select
 
@@ -10,14 +10,10 @@ from app.schemas.workflow import WorkflowCreate, WorkflowUpdate
 
 
 @pytest.fixture
-async def db_session():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    async_session = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+async def db_session(db_engine):
+    async_session = sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     async with async_session() as session:
         yield session
-    await engine.dispose()
 
 
 @pytest.mark.asyncio

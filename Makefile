@@ -1,10 +1,15 @@
 .PHONY: test-backend test-e2e build-backend db-upgrade db-revision
 
 # Run backend tests inside the app container (Python 3.11, pinned deps).
-# Note: aiosqlite (added for tests) requires a backend image rebuild:
-#   make build-backend
+# Tests run against PostgreSQL (workflow_db_test, auto-created); the
+# postgres service must be up: docker compose up -d postgres
 test-backend:
 	docker compose exec backend python -m pytest -v
+
+# Run backend tests locally with the repo venv (Postgres on localhost):
+#   docker compose up -d postgres
+#   TEST_DATABASE_URL=postgresql+asyncpg://workflow_user:workflow_password@localhost:5432/workflow_db_test \
+#     venv/bin/python -m pytest -q   (run from backend/)
 
 # Run frontend E2E regression (needs Chromium on 127.0.0.1:9222, see tests/e2e/README.md)
 test-e2e:

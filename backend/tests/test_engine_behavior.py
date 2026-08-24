@@ -18,10 +18,9 @@ from types import SimpleNamespace
 import pytest
 import pytest_asyncio
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sessionmaker
-from sqlalchemy.pool import StaticPool
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
-from app.core.database import Base
+from app.models.auth import User
 from app.models.schemas import Task, Workflow, WorkflowRun, StepInstance
 from app.schemas.workflow import WorkflowCreate, WorkflowRunCreate
 from app.services import workflow_engine as we_module
@@ -39,16 +38,10 @@ from app.services.workflow_engine import WorkflowEngine
 
 
 # ---------------------------------------------------------------------------
-# Fixtures: shared in-memory SQLite (StaticPool) so background engine sessions
-# created via the patched async_session_factory see the same database.
+# Fixtures: db_engine (fresh-schema PostgreSQL) comes from tests/conftest.py so
+# background engine sessions created via the patched async_session_factory see
+# the same database.
 # ---------------------------------------------------------------------------
-@pytest_asyncio.fixture
-async def db_engine():
-    engine = create_async_engine("sqlite+aiosqlite://", poolclass=StaticPool)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    yield engine
-    await engine.dispose()
 
 
 @pytest_asyncio.fixture
@@ -63,6 +56,15 @@ def engine(db_engine, monkeypatch):
     factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
     monkeypatch.setattr(we_module, "async_session_factory", factory)
     return WorkflowEngine()
+
+
+async def seed_user(session, uid=1):
+    """PG enforces tasks.assigned_to_user_id FK — tests must create the user."""
+    u = User(id=uid, username=f"user{uid}", email=f"user{uid}@test.local",
+             password_hash="x", role="user")
+    session.add(u)
+    await session.flush()
+    return u
 
 
 async def create_workflow(engine, session, steps, config=None):
@@ -830,6 +832,7 @@ class TestHumanStep:
         await session.refresh(wf, attribute_names=["steps"])
         a, h, b = sorted(wf.steps, key=lambda s: s.position)
 
+        await seed_user(session)
         run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
         run = await wait_run(session, run.id)
 
@@ -866,6 +869,7 @@ class TestHumanStep:
         await session.refresh(wf, attribute_names=["steps"])
         a, h, b = sorted(wf.steps, key=lambda s: s.position)
 
+        await seed_user(session)
         run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
         run = await wait_run(session, run.id)
         assert run.status == "waiting"
