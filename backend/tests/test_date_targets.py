@@ -132,3 +132,54 @@ class TestListDateTargets:
             await session.execute(DateTarget.__table__.select().where(DateTarget.id == created["id"]))
         ).mappings().one()
         assert stored["workflow_run_id"] == run.id
+
+
+class TestCalculationStepStamping:
+    @pytest.mark.asyncio
+    async def test_executor_stamps_step_id(self, session):
+        """Phase 4.3: calc-step targets carry the originating workflow_steps.id."""
+        from app.models.schemas import Workflow, WorkflowStep
+        from app.services.step_executors import CalculationExecutor
+
+        wf = Workflow(name="Target WF")
+        session.add(wf)
+        await session.flush()
+        step = WorkflowStep(workflow_id=wf.id, step_type="calculation", definition={}, position=0)
+        session.add(step)
+        run = WorkflowRun(status="running", triggered_by="manual")
+        session.add(run)
+        await session.flush()
+
+        due = datetime.now(timezone.utc) + timedelta(days=3)
+        output = await CalculationExecutor().execute(
+            {
+                "target_end_date": due.isoformat(),
+                "_workflow_run_id": run.id,
+                "_workflow_step_id": step.id,
+            },
+            {"expression": "data['target_end_date']", "date_target_key": "change_target_completion"},
+            db=session,
+        )
+
+        assert output["date_target_created"] > 0
+        target = await session.get(DateTarget, output["date_target_created"])
+        assert target is not None
+        assert target.workflow_run_id == run.id
+        assert target.step_id == step.id
+
+    @pytest.mark.asyncio
+    async def test_executor_without_step_ref_stays_run_level(self, session):
+        from app.services.step_executors import CalculationExecutor
+
+        run = await _add_run(session)
+        await session.commit()
+
+        due = datetime.now(timezone.utc) + timedelta(days=1)
+        output = await CalculationExecutor().execute(
+            {"target_end_date": due.isoformat(), "_workflow_run_id": run.id},
+            {"expression": "data['target_end_date']", "date_target_key": "k"},
+            db=session,
+        )
+
+        target = await session.get(DateTarget, output["date_target_created"])
+        assert target.step_id is None

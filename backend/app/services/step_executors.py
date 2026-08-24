@@ -614,6 +614,13 @@ class CalculationExecutor(BaseExecutor):
             logger.warning(f"date_target_key '{target_key}' — no workflow_run_id in input_data, skipping creation")
             return -1
 
+        # Phase 4.3: stamp the originating step so the run inspector can annotate its node
+        step_ref = input_data.get("_workflow_step_id")
+        try:
+            step_id = int(step_ref) if step_ref is not None else None
+        except (TypeError, ValueError):
+            step_id = None
+
         # Parse the result as an ISO datetime
         try:
             if isinstance(result, str):
@@ -629,6 +636,7 @@ class CalculationExecutor(BaseExecutor):
 
         target = DateTarget(
             workflow_run_id=int(run_id),
+            step_id=step_id,
             target_key=target_key,
             target_datetime=target_dt,
             status="pending",

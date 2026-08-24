@@ -422,6 +422,7 @@ class WorkflowEngine:
                 # Inject run ID so executors (e.g. CalculationExecutor date_target) can reference it
                 step_input = dict(instance.input_data or {})
                 step_input.setdefault("_workflow_run_id", run.id)
+                step_input.setdefault("_workflow_step_id", step.id)
 
                 output_data = await executor.execute(step_input, step.definition, db=db)
                 
