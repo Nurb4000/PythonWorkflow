@@ -11,7 +11,8 @@ then work the backlog top-down. Keep the tree green per commit.
 
 - Branch `master`, working tree clean. All former WIP committed as grouped feature
   commits (`652a2aa`..`f123a4c`), then maintenance commits (`4e2605f`..`1d12db8`).
-- Backend test suite: **141/141 passing against PostgreSQL** (no SQLite anywhere),
+- Backend test suite: **145/145 passing against PostgreSQL** (no SQLite anywhere;
+  141 baseline + 4 date-target tests added with Phase 4.2),
   verified both inside the backend container and via asyncpg locally before the venv
   was removed.
 - The 5 previously-untracked Alembic migrations are committed and were applied to the
@@ -49,9 +50,9 @@ then work the backlog top-down. Keep the tree green per commit.
 ### 1. INCIDENT_CHANGE_PLAN — Phase 4 (frontend, deferred)
 See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget model,
 `/date-targets` API, scheduler breach checks, calc-step `date_target_key` creation.
-Remaining:
-- 4.1 DateTarget admin widget
-- 4.2 Task date badge
+- ~~4.1 DateTarget admin widget~~ DONE 2026-08-23 (commit d952ad9)
+- ~~4.2 Task date badge~~ DONE 2026-08-24 (DateTargetBadge on task dashboards +
+  TaskDetail; batch `run_ids` filter on `/date-targets`; suite now 145 passing)
 - 4.3 Run-inspector date display
 
 ## Backlog (prioritized)
@@ -127,7 +128,7 @@ make db-revision MSG='...'              # autogenerate migration (throwaway DB h
 
 ## Definition of done for any change here
 
-1. `make test-backend` green (expect 141 passing; investigate count drift)
+1. `make test-backend` green (expect 145 passing since 4.2 date-target tests; investigate count drift)
 2. `npx tsc --noEmit` clean (if frontend touched)
 3. Single Alembic head (`alembic heads` shows one revision)
 4. Working tree committed with a descriptive message; no stray debug logs left in
