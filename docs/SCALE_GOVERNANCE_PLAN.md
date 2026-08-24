@@ -122,10 +122,9 @@ addressing, context visibility, any cross-workflow handoff, conventions.
       accumulated run-level data visible at each completed node — what a
       downstream step will actually receive. Debug sharing visually, not by
       trial runs.
-- [ ] **B3. Cross-workflow handoff**: pick ONE minimal primitive and ship it —
-      candidates: sub-workflow invocation step; fire-workflow API step with
-      typed payload; shared run-context store keyed by correlation id.
-      Decide via Open Decision #8. Nothing here until B1/B2 land.
+- [ ] **B3. Cross-workflow handoff**: DECIDED (see #8): synchronous
+      sub-workflow invocation step first, async fire-and-forget trigger
+      second. Nothing here until B1/B2 land.
 - [ ] **B4. Shared-store playbook**: documented, sanctioned patterns for using
       CMDB lookup/update + DB query steps as integration hubs between
       processes (what people hack together today unofficially): which tables
@@ -135,7 +134,9 @@ addressing, context visibility, any cross-workflow handoff, conventions.
       model it as CMDB CI types + templates + lifecycle statuses FIRST (the
       machinery exists: templates, soft-deactivate, field schemas); build a
       dedicated subsystem only if CI types demonstrably fall short. Gate:
-      see Open Decision #7.
+      see Open Decision #7. Related: `docs/CMDB_GAPS.md` tracks CMDB-specific
+      work (relationship UI, dependency graph, bulk import are built
+      backend-side but have no UI yet).
 
 ### Phase C — Shared Field Library (the core fix)
 
@@ -238,10 +239,11 @@ Phase B.
    templates, and field schemas already exist there; revisit only if
    asset-specific needs (warranty/lease dates, maintenance schedules,
    depreciation) can't be expressed as type fields + date targets.
-8. **Cross-workflow handoff primitive (B3)**: sub-workflow invocation step vs
-   fire-and-continue API step vs shared correlation-keyed context store.
-   Leaning: sub-workflow step (synchronous, inherits run context, result
-   merges back like any other step); async variants later if needed.
+8. **Cross-workflow handoff primitive (B3)**: DECIDED 2026-08-24 — build
+   BOTH, synchronous sub-workflow step first (call, wait, result merges back
+   like any other step; covers the majority case), then a fire-and-forget
+   async trigger variant for fan-out cases (e.g. approval workflow spawning
+   asset-management / software-install workflows without waiting).
 
 ## Success metrics
 
@@ -302,3 +304,12 @@ Phase B.
   DatabaseQueryExecutor, APICall/Webhook/CustomCode. No sub-workflow or
   cross-run mechanism exists today.
 - New Open Decisions #7 (asset modeling) and #8 (handoff primitive).
+
+### 2026-08-24 — Decision #8 settled; CMDB gaps inventoried
+- Stakeholder: both handoff patterns needed — synchronous sub-workflow first
+  (majority case), async fire-and-forget second (fan-out like asset-mgmt /
+  software-install workflows). B3 + #8 updated.
+- Created `docs/CMDB_GAPS.md`: verified that relationships UI, CI dependency
+  graph, and bulk import are fully built backend-side with API bindings but
+  zero UI; type webhooks are backend-only. Previous session's CMDB task list
+  was never written down — now it exists.
