@@ -630,6 +630,10 @@ export const FormDesigner: React.FC = () => {
 
       <div className="card-header">
         <h2>Form Designer</h2>
+        <p style={{ color: '#7f8c8d', fontSize: '0.9rem', margin: '0.25rem 0 1rem' }}>
+          Define input fields for portal entry forms. These are distinct from Custom Fields
+          (admin/fields) and CMDB Type Fields (cmdb/types).
+        </p>
         {canDevelop && (
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-secondary" onClick={() => { setShowAiDialog(true) }}>

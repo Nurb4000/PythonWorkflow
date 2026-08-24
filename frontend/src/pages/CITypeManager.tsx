@@ -282,7 +282,13 @@ export const CITypeManager: React.FC = () => {
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
-        <h2>CMDB — CI Types</h2>
+        <div>
+          <h2>CMDB — CI Types</h2>
+          <p style={{ color: '#7f8c8d', fontSize: '0.9rem', margin: '0.25rem 0 0' }}>
+            Define data schemas for configuration items. These fields are distinct from
+            Form Designer fields and Custom Fields (admin/fields).
+          </p>
+        </div>
         {isAdmin && !showForm && !viewingId && (
           <button className="btn btn-primary" onClick={handleCreate}>
             + New CI Type

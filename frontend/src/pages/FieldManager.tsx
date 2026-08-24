@@ -263,6 +263,10 @@ export const FieldManager: React.FC = () => {
     <div>
       <div className="card-header">
         <h2>Custom Field Manager</h2>
+        <p style={{ color: '#7f8c8d', fontSize: '0.9rem', margin: '0.25rem 0 1rem' }}>
+          Add key-value fields to tables (CI items, form submissions, workflow runs).
+          These are separate from Form schema fields and CMDB type field definitions.
+        </p>
         <button className="btn btn-primary" onClick={() => { resetForm(); setShowForm(true); }}>
           + New Field
         </button>
