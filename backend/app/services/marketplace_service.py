@@ -274,12 +274,10 @@ class MarketplaceService:
         if not is_admin and item.author_id != author_id:
             raise ValueError("Only the author or an admin can delete this item")
 
-        if archive_only or (is_admin and not item.author_id == author_id):
-            item.status = "archived"
-            item.is_active = False
-        else:
-            item.status = "archived"
-            item.is_active = False
+        # Deletion is always a soft archive so installed copies keep their
+        # provenance and download history stays meaningful.
+        item.status = "archived"
+        item.is_active = False
 
         await db.commit()
         return item
