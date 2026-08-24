@@ -35,6 +35,32 @@ As we move to production:
 | Terminology | "Field" already ambiguous: `custom_fields.py` (record-level custom data fields, admin FieldManager page) vs form-schema fields vs CMDB `CIType.field_schema`. | Confusion compounds as all three grow. |
 | Lifecycle | Forms/workflows: `is_active`/`is_published`/`environment`. CMDB has the best pattern: soft-deactivate + reactivate + referential messaging. | No deprecation semantics, no stale-content reporting. |
 
+## Data storage architecture (settled direction, recorded 2026-08-24)
+
+Original project intent was reportedly "fields stored in dynamically created
+DB tables". Verified reality: that was never built. Storage is JSONB columns
+(`forms` submissions `data`, tasks' results, CMDB `ci_data`, tables'
+`custom_data`) with `CustomFieldDefinition.target_table` as a metadata
+registry, and `data_query_service.py` already provides typed JSONB querying
+(as_boolean/as_float/as_string paths), FK-chained cross-table queries, saved
+SQL views, and CSV export.
+
+**Decision: keep JSONB as the source of truth; treat "structured access" as
+query-layer repairs, not a persistence refactor.**
+
+- Rationale against runtime DDL: prod schema-alter rights for the app user,
+  backups/migrations coupled to app state, DDL lock contention, table sprawl,
+  cross-form reporting needs UNION views anyway, constant ORM impedance.
+- Repair work (feeds Phase B): canonical Field Library metadata enables
+  promoting hot fields to PostgreSQL generated columns / GIN indexes /
+  auto-generated per-form SQL VIEWs (read-only, no write-time DDL).
+- If external BI tooling ever demands physical tables: scheduled
+  materialization into a reporting schema is the escape hatch — no change to
+  transactional storage.
+- A true dynamic-DDL rebuild would be a total data-layer refactor touching
+  every reader/writer plus data migration; rejected unless a hard requirement
+  emerges. Revisit only via a written addendum here.
+
 ## Guiding principles
 
 1. **One concept, one definition** — a data concept (field) is defined once and
@@ -147,6 +173,9 @@ Goal: canonical, reusable field definitions referenced by forms AND CI types.
    Leaning: hard block on exact (case-insensitive) dupes; warnings for fuzzy.
 5. **Permissions**: who may create/edit library fields (admin+developer?)
    and whether cmdb_manager gets CMDB-scoped field rights.
+6. **Hot-field promotion (Phase B follow-on)**: which fields justify
+   generated columns/indexes (usage frequency from where-used stats) and who
+   approves. Depends on B5 existing first.
 
 ## Success metrics
 
@@ -171,3 +200,10 @@ Goal: canonical, reusable field definitions referenced by forms AND CI types.
 - Recon verified current state (see assessment table). No code changes yet.
 - Next session: start Phase A (A1+A2 are independent; A2 has the biggest UX
   payoff at current size). Settle Open Decision #4 before A1.
+
+### 2026-08-24 — Storage direction settled
+- User raised the original "dynamically created DB tables" intent. Verified no
+  runtime DDL exists anywhere; JSONB + typed query layer is the actual
+  implementation. Added "Data storage architecture" section: keep JSONB,
+  repairs-not-refactor, generated columns/views as Phase B follow-on.
+- No code changes.
