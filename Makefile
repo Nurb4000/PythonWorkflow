@@ -6,10 +6,9 @@
 test-backend:
 	docker compose exec backend python -m pytest -v
 
-# Run backend tests locally with the repo venv (Postgres on localhost):
-#   docker compose up -d postgres
-#   TEST_DATABASE_URL=postgresql+asyncpg://workflow_user:workflow_password@localhost:5432/workflow_db_test \
-#     venv/bin/python -m pytest -q   (run from backend/)
+# Note: there is no supported host-venv workflow. The project targets
+# Python 3.11 via Docker (this machine only has 3.13); always use the
+# container command above for backend tests.
 
 # Run frontend E2E regression (needs Chromium on 127.0.0.1:9222, see tests/e2e/README.md)
 test-e2e:
