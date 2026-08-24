@@ -190,6 +190,8 @@ async def list_services(
     search: Optional[str] = Query(None),
     category_id: Optional[int] = Query(None),
     include_inactive: bool = Query(False),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
@@ -209,6 +211,14 @@ async def list_services(
         stmt = stmt.where(Service.category_id == category_id)
 
     stmt = stmt.order_by(Service.sort_order.asc(), Service.name.asc())
+    
+    # A2: pagination
+    offset = (page - 1) * page_size
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+    
+    stmt = stmt.offset(offset).limit(page_size)
     stmt = stmt.options(selectinload(Service.owner), selectinload(Service.support_group), selectinload(Service.category))
     result = await db.execute(stmt)
     services = result.scalars().all()
@@ -216,15 +226,21 @@ async def list_services(
     # Count workflows per service
     svc_ids = [s.id for s in services]
     if svc_ids:
-        count_stmt = select(Workflow.service_id, func.count(Workflow.id)).where(
+        count_wf_stmt = select(Workflow.service_id, func.count(Workflow.id)).where(
             Workflow.service_id.in_(svc_ids), Workflow.is_published == True, Workflow.is_active == True
         ).group_by(Workflow.service_id)
-        count_result = await db.execute(count_stmt)
-        counts = {row[0]: row[1] for row in count_result.all()}
+        count_wf_result = await db.execute(count_wf_stmt)
+        counts = {row[0]: row[1] for row in count_wf_result.all()}
     else:
         counts = {}
 
-    return [_service_to_dict(s, counts.get(s.id, 0)) for s in services]
+    return {
+        "items": [_service_to_dict(s, counts.get(s.id, 0)) for s in services],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size if total else 0
+    }
 
 
 @router.get("/services/{service_id}")
