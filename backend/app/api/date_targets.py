@@ -9,7 +9,7 @@ from datetime import datetime
 from typing import Optional, List
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, func
+from sqlalchemy import select, func, true
 
 from app.core.database import get_db
 from app.models.auth import User
@@ -37,16 +37,24 @@ def _target_to_dict(t: DateTarget) -> dict:
 @router.get("")
 async def list_date_targets(
     run_id: Optional[int] = Query(None, description="Filter by workflow run ID"),
+    run_ids: Optional[str] = Query(None, description="Comma-separated workflow run IDs (batch fetch, Phase 4.2)"),
     status: Optional[str] = Query(None, description="Filter by status (pending/met/breached)"),
     target_key: Optional[str] = Query(None, description="Filter by target key"),
     db: AsyncSession = Depends(get_db),
     current_user: User = Depends(get_current_user),
 ):
     """List date targets with optional filters."""
-    stmt = select(DateTarget)
+    stmt = select(DateTarget).where(DateTarget.is_active == true())
 
     if run_id is not None:
         stmt = stmt.where(DateTarget.workflow_run_id == run_id)
+    if run_ids:
+        try:
+            id_list = [int(x) for x in run_ids.split(",") if x.strip()]
+        except ValueError:
+            raise HTTPException(status_code=400, detail="run_ids must be a comma-separated list of integers")
+        if id_list:
+            stmt = stmt.where(DateTarget.workflow_run_id.in_(id_list))
     if status:
         stmt = stmt.where(DateTarget.status == status)
     if target_key:
