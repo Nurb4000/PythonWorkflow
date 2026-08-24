@@ -20,6 +20,21 @@ docker compose logs -f
 docker compose down
 ```
 
+### Production overrides
+`docker-compose.prod.yml` is an **override file** layered on the base compose — it
+tightens settings (`DEBUG=False`, env-driven secrets) and adds named volumes for
+backend runtime data (`uploads/`, `backend_data/`) that would otherwise live only
+in the container layer:
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d --build
+
+# Secrets come from the environment (.env or shell):
+#   POSTGRES_PASSWORD / POSTGRES_USER / POSTGRES_DB / SECRET_KEY
+```
+
+Do not run it standalone — it has no build contexts; it only overrides the base file.
+
 ## Services
 
 ### Backend (`http://localhost:6000`)

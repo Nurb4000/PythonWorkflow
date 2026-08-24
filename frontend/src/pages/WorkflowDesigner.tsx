@@ -637,6 +637,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       id: 'start',
       type: 'start',
       position: startPos,
+      draggable: !readOnly,
       data: { label: 'Start', startStepIds: isInspectorMode ? (opts.graphData!.start_step_ids || []) : (configDraft?.start_step_ids || []) }
     })
 
@@ -645,23 +646,23 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       const savedPos = step.definition?.pos_x != null ? { x: step.definition.pos_x, y: step.definition.pos_y } : null
       const movedPos = nodePositions.current[`step-${step.id}`]
       const def = step.definition || {}
-       // Resolve user/group names for display on nodes
-       const assignedUserName = def.assigned_to_user_id ? (userLookup.get(def.assigned_to_user_id) || `User #${def.assigned_to_user_id}`) : null
-       const assignedGroupName = def.assigned_group_id ? (groupLookup.get(def.assigned_group_id) || `Group #${def.assigned_group_id}`) : null
-       // Lookup instance: normalize step.id to number for map key match
-       const graphStepId = Number(step.id)
-       let inst = instMap.get(graphStepId)
-        // Fallback: linear scan matching step_id field
-        if (!inst && opts?.instanceStatusMap) {
-          const allInsts = Array.from(opts.instanceStatusMap.values())
-          inst = allInsts.find((i: any) => Number(i.step_id || i.id) === graphStepId) || null
-        }
-       newNodes.push({
-         id: `step-${step.id}`,
-         type: stepTypeToNodeType(step.step_type),
-         position: savedPos || movedPos || { x: 250, y: 100 + (index * 140) },
-         draggable: true,
-         selectable: true,
+      // Resolve user/group names for display on nodes
+      const assignedUserName = def.assigned_to_user_id ? (userLookup.get(def.assigned_to_user_id) || `User #${def.assigned_to_user_id}`) : null
+      const assignedGroupName = def.assigned_group_id ? (groupLookup.get(def.assigned_group_id) || `Group #${def.assigned_group_id}`) : null
+      // Lookup instance: normalize step.id to number for map key match
+      const graphStepId = Number(step.id)
+      let inst = instMap.get(graphStepId)
+      // Fallback: linear scan matching step_id field
+      if (!inst && opts?.instanceStatusMap) {
+        const allInsts = Array.from(opts.instanceStatusMap.values())
+        inst = allInsts.find((i: any) => Number(i.step_id || i.id) === graphStepId) || null
+      }
+      newNodes.push({
+        id: `step-${step.id}`,
+        type: stepTypeToNodeType(step.step_type),
+        position: savedPos || movedPos || { x: 250, y: 100 + (index * 140) },
+        draggable: !readOnly,
+        selectable: true,
          data: {
            stepId: step.id,
            label: step.step_type,
@@ -787,6 +788,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       id: 'end',
       type: 'end',
       position: endPos,
+      draggable: !readOnly,
       data: { label: 'End' }
     })
 
@@ -865,7 +867,6 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   }, [])
 
   const handleNodeClick = (nodeId: string, nodeData?: any) => {
-    console.log('[WF] handleNodeClick called:', nodeId, 'readOnly=', readOnly, 'hasInspector=', !!inspectorData)
     if (readOnly && inspectorData) {
       // Run inspector mode: show instance detail panel
       if (!nodeId.startsWith('step-')) return
@@ -889,9 +890,6 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
         setAiDiagnoseError('')
       } else {
         // Step was not executed in this run — show definition info from nodeData
-        console.warn('[WorkflowDesigner] No instance found for node', nodeId, 'stepId=', stepId,
-          'map keys:', Array.from(instanceStatusMap.current.keys()),
-          'inspector step_ids:', inspectorData?.steps?.map((s: any) => s.step_id))
         setSelectedInstance({
           _notExecuted: true,
           title: nodeData?.title || '',

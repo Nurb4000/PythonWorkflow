@@ -1,4 +1,4 @@
-version: '3.8'
+
 
 services:
   # Use PostgreSQL in production
@@ -25,6 +25,13 @@ services:
       - DEBUG=False
     ports:
       - "8000:8000"
+    volumes:
+      # Persist runtime data across container replacement (prod has no code
+      # bind mount — these would otherwise be lost on rebuild/recreate)
+      - uploads_data:/app/uploads
+      - backend_data:/app/backend_data
 
 volumes:
   postgres_data:
+  uploads_data:
+  backend_data:

@@ -57,7 +57,8 @@ Remaining:
 ## Backlog (prioritized)
 
 ### P1 — correctness / quick wins
-1. **WorkflowDesigner.tsx debug leftovers** (introduced during inspector WIP):
+1. ~~**WorkflowDesigner.tsx debug leftovers**~~ DONE 2026-08-23: console statements
+   stripped, `draggable: !readOnly` restored on start/step/end nodes, indentation normalized. (introduced during inspector WIP):
    - `console.log('[WF] handleNodeClick called:', ...)` + verbose `console.warn` in
      `handleNodeClick` — strip.
    - `buildGraph` forces `draggable: true` even in read-only run-inspector mode
@@ -68,7 +69,7 @@ Remaining:
    `bash tests/e2e/run-e2e.sh` (needs Chromium on 127.0.0.1:9222, see
    `tests/e2e/README.md`). Pay attention to admin Users/Groups flows that replaced
    `UserManagement.tsx`.
-3. **Decide branding once**: FastAPI title/config say "Instant Workflow"; README
+3. **(open) Decide branding once**: FastAPI title/config say "Instant Workflow"; README
    header still says "Python Workflow System". Pick one, sweep occurrences
    (`config.py`, `main.py`, `system_settings.py DEFAULT_SYSTEM_NAME`, README).
 
@@ -79,7 +80,8 @@ Remaining:
    endpoint sections (endpoints exist in OpenAPI at `/docs`).
 5. **Docs naming consistency**: lowercase reference docs (`scheduling.md`,
    `docker-deployment.md`) vs SCREAMING_CASE — standardize one style.
-6. **CHANGELOG**: fold the 2026-08 cleanup into `[Unreleased]` as a Maintenance entry.
+6. ~~**CHANGELOG maintenance entry**~~ DONE 2026-08-23 (also merged the duplicate
+   `[Unreleased]` sections).
 
 ### P3 — infrastructure / hygiene
 7. **Python version strategy**: stay on 3.11 (current pin) or modernize. If moving to
@@ -89,10 +91,9 @@ Remaining:
 8. **CI**: no workflows exist. A minimal GitHub Action = postgres service container +
    `docker compose`-style backend pytest + `tsc --noEmit` would lock in today's green
    baseline.
-9. **Prod compose data check**: `docker-compose.prod.yml` — confirm
-   `backend/uploads/` and `backend/backend_data/` survive image rebuilds in prod
-   (dev relies on the `./backend:/app` bind mount; prod copies code in). Add volumes
-   if missing — silent loss of branding logos/form uploads otherwise.
+9. ~~**Prod compose data check**~~ DONE 2026-08-23: prod override now mounts named
+   volumes for `/app/uploads` + `/app/backend_data`; usage documented in
+   `docs/docker-deployment.md` (override file — never run standalone).
 10. **Data-dir consolidation (optional)**: three runtime dirs under `backend/`
     (`uploads/form_uploads`, `uploads/branding`, `backend_data/email_attachments`),
     all `__file__`-anchored. Could unify behind one `settings.data_dir` eventually.

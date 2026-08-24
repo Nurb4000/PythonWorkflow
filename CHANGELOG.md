@@ -6,6 +6,27 @@ All notable changes to the Python Workflow System.
 
 ## [Unreleased] — 2026-08-09
 
+### Maintenance — 2026-08 cleanup sessions
+Project housekeeping; no user-facing behavior changes.
+- **Tests moved to PostgreSQL only** — SQLite dropped entirely. New shared `backend/tests/conftest.py`
+  auto-creates `workflow_db_test`, rebuilds the schema per test, and honors `TEST_DATABASE_URL`.
+  141 tests green in-container and via asyncpg. Caught real bugs SQLite had masked:
+  PG-invalid `func.true()/false()` server defaults in four models, missing unknown-delay-type
+  error (P5.5), dangling FK in human-task test fixtures.
+- **All prior uncommitted work committed** as grouped feature commits (date targets,
+  soft-delete, KB articles v2, users/groups split, incident/change demos, SLA defaults, UI polish).
+- **Dead weight removed**: no-op switch-db scripts, tracked `.backup` file, one-off repair scripts,
+  stale `frontend/dist`, off-spec host venv (py3.13/unpinned — container is the supported workflow).
+- **Root-owned Docker artifacts deleted** (`backend_data/` at repo root, empty
+  `backend/knowledge-base/` that hijacked knowledge-base resolution outside Docker, empty `backend/data/`).
+- **Completed feature plans removed from docs/**; active `INCIDENT_CHANGE_PLAN.md` tracked;
+  `CLEANUP_PLAN.md` added as maintenance backlog/handoff doc.
+- **Dependency/config hygiene**: unused `react-flow-renderer` removed (@xyflow/react only),
+  `.env.example` added, `.gitignore` covers backend runtime data, prod compose gains named
+  volumes for `uploads/` + `backend_data/`, README/TESTING_GUIDE counts and DB wording corrected,
+  WorkflowDesigner debug logging stripped and read-only drag protection restored,
+  duplicate changelog Unreleased sections merged.
+
 ### New Features
 
 #### Run Inspector — complete (plan S1–S16)
@@ -46,12 +67,6 @@ Foundation for the graph-based run viewer (see `docs/RUN_INSPECTOR_PLAN.md`).
 | `frontend/src/pages/AdminDashboard.tsx` | Recent runs: link to graph view + Graph button |
 | `frontend/src/pages/Portal.tsx` | My-runs: workflow_name, error_message, Graph button |
 | `frontend/src/pages/WorkflowRunsAdmin.tsx` | "Graph" button (primary) in actions column |
-
----
-
-## [Unreleased] — 2026-08-09
-
-### New Features
 
 #### Workflow History Retention, Uploads Audit & Demo Seeding
 - **Retain runs after workflow deletion** — `WorkflowRun.workflow_name` snapshots the workflow name at run creation; `workflow_runs.workflow_id` and `step_instances.step_id` are now nullable with `ON DELETE SET NULL`, so deleting a workflow keeps run history identifiable. Admin runs list joins the (now optional) workflow and falls back to the snapshot name.
