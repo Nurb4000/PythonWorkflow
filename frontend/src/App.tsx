@@ -274,7 +274,7 @@ const Navbar: React.FC = () => {
           {branding.logo_url && (
             <img src={branding.logo_url} alt="logo" className="brand-logo" style={{ height: '32px' }} />
           )}
-          <h1>{branding.system_name || 'Workflow System'}</h1>
+          <h1>{branding.system_name || 'Instant Workflow'}</h1>
         </Link>
       </div>
       <div className="nav-links">

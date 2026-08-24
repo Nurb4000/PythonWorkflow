@@ -1,4 +1,4 @@
-# Python Workflow System
+# Instant Workflow
 
 A production-ready workflow automation platform with visual designer, AI-assisted step generation, human-in-the-loop execution, and comprehensive task management.
 

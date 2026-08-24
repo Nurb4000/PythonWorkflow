@@ -9,7 +9,7 @@ export interface Branding {
 }
 
 const DEFAULT_BRANDING: Branding = {
-  system_name: 'Workflow System',
+  system_name: 'Instant Workflow',
   logo_url: null
 }
 

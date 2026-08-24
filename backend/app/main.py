@@ -1,5 +1,5 @@
 """
-Python Workflow System - Main Application
+Instant Workflow - Main Application
 """
 import asyncio
 import json

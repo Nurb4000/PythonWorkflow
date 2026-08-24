@@ -544,7 +544,7 @@ export const SettingsPage: React.FC = () => {
               className="form-input"
               value={brandingForm.system_name}
               onChange={(e) => setBrandingForm({...brandingForm, system_name: e.target.value})}
-              placeholder="Workflow System"
+              placeholder="Instant Workflow"
             />
           </div>
           <button type="submit" className="btn btn-success">Save Branding</button>

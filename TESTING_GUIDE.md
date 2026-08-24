@@ -2,7 +2,7 @@
 
 ## Test Overview
 
-The Python Workflow System has three layers of testing:
+Instant Workflow has three layers of testing:
 
 1. **Backend Unit/Integration Tests** (pytest) — 141 tests, run against PostgreSQL
 2. **E2E Tests** (Puppeteer + Chromium) — 10 tests, verify full stack

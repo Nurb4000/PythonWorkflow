@@ -1,4 +1,4 @@
-# Python Workflow System - Design Document
+# Instant Workflow - Design Document
 
 ## Overview
 A web-based workflow management system with AI-generated steps, scheduling, and form design capabilities. Built with Python backend and modern web frontend.

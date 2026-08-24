@@ -69,7 +69,11 @@ Remaining:
    `bash tests/e2e/run-e2e.sh` (needs Chromium on 127.0.0.1:9222, see
    `tests/e2e/README.md`). Pay attention to admin Users/Groups flows that replaced
    `UserManagement.tsx`.
-3. **(open) Decide branding once**: FastAPI title/config say "Instant Workflow"; README
+3. ~~**Decide branding once**~~ DONE 2026-08-23: "Instant Workflow" is the brand.
+   Swept README/DESIGN/TESTING_GUIDE titles, frontend `<title>`, header fallback,
+   Branding default, Settings placeholder, main.py docstring. Infrastructure
+   identifiers (folder `PythonWorkflow`, docker image names, package.json names,
+   `workflow_db`) intentionally unchanged. FastAPI title/config say "Instant Workflow"; README
    header still says "Python Workflow System". Pick one, sweep occurrences
    (`config.py`, `main.py`, `system_settings.py DEFAULT_SYSTEM_NAME`, README).
 
