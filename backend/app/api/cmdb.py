@@ -141,6 +141,9 @@ async def _record_full_history(db: AsyncSession, ci_id: int, changed_by: Optiona
 @router.get("/types")
 async def list_ci_types(
     include_inactive: bool = Query(False),
+    search: Optional[str] = Query(None, description="Search by name or key"),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
@@ -148,8 +151,18 @@ async def list_ci_types(
     stmt = select(CIType)
     if not include_inactive:
         stmt = stmt.where(CIType.is_active == True)
+    if search:
+        pattern = f"%{search}%"
+        stmt = stmt.where(or_(CIType.name.ilike(pattern), CIType.key.ilike(pattern)))
     stmt = stmt.order_by(CIType.name)
 
+    # A2: pagination
+    offset = (page - 1) * page_size
+    count_stmt = select(func.count()).select_from(stmt.subquery())
+    total_result = await db.execute(count_stmt)
+    total = total_result.scalar() or 0
+
+    stmt = stmt.offset(offset).limit(page_size)
     result = await db.execute(stmt)
     types = result.scalars().all()
 
@@ -160,7 +173,13 @@ async def list_ci_types(
     counts_result = await db.execute(counts_stmt)
     counts = dict(counts_result.all())
 
-    return [_type_to_dict(t, counts.get(t.id, 0)) for t in types]
+    return {
+        "items": [_type_to_dict(t, counts.get(t.id, 0)) for t in types],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "pages": (total + page_size - 1) // page_size if total else 0
+    }
 
 
 @router.post("/types", status_code=201)
