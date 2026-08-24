@@ -174,26 +174,34 @@ async def create_form(
 async def list_forms(
     environment: Optional[str] = None,
     include_inactive: bool = Query(False),
+    page: int = Query(1, ge=1, description="Page number (1-indexed)"),
+    page_size: int = Query(50, ge=1, le=200, description="Items per page"),
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
     """List forms accessible to user. By default excludes deactivated forms."""
     try:
-        forms = await form_service.list_forms(db, current_user, environment, include_inactive)
+        result = await form_service.list_forms(db, current_user, environment, include_inactive, page, page_size)
         
-        return [
-            {
-                "id": f.id,
-                "name": f.name,
-                "description": f.description,
-                "version": f.version,
-                "environment": f.environment,
-                "is_published": f.is_published,
-                "is_active": f.is_active,
-                "created_at": f.created_at
-            }
-            for f in forms
-        ]
+        return {
+            "items": [
+                {
+                    "id": f.id,
+                    "name": f.name,
+                    "description": f.description,
+                    "version": f.version,
+                    "environment": f.environment,
+                    "is_published": f.is_published,
+                    "is_active": f.is_active,
+                    "created_at": f.created_at
+                }
+                for f in result["items"]
+            ],
+            "total": result["total"],
+            "page": result["page"],
+            "page_size": result["page_size"],
+            "pages": result["pages"]
+        }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

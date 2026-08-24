@@ -5,7 +5,7 @@ import json
 import logging
 from typing import Dict, Any, List, Optional
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, or_
+from sqlalchemy import select, or_, func
 from sqlalchemy.orm import selectinload
 
 from app.models.forms import Form, FormSubmission, FormTemplate
@@ -89,8 +89,8 @@ class FormService:
         result = await db.execute(stmt)
         return result.scalar_one_or_none()
     
-    async def list_forms(self, db: AsyncSession, user: User, environment: Optional[str] = None, include_inactive: bool = False) -> List[Form]:
-        """List forms accessible to user"""
+    async def list_forms(self, db: AsyncSession, user: User, environment: Optional[str] = None, include_inactive: bool = False, page: int = 1, page_size: int = 50) -> dict:
+        """List forms accessible to user with pagination"""
 
         if user.role in ("admin", "developer"):
             stmt = select(Form)
@@ -106,8 +106,23 @@ class FormService:
                 Form.is_active == True
             )
         
+        # A2: pagination
+        offset = (page - 1) * page_size
+        count_stmt = select(func.count()).select_from(stmt.subquery())
+        total_result = await db.execute(count_stmt)
+        total = total_result.scalar() or 0
+        
+        stmt = stmt.offset(offset).limit(page_size)
         result = await db.execute(stmt)
-        return result.scalars().all()
+        forms = result.scalars().all()
+        
+        return {
+            "items": forms,
+            "total": total,
+            "page": page,
+            "page_size": page_size,
+            "pages": (total + page_size - 1) // page_size if total else 0
+        }
     
     async def submit_form(self, db: AsyncSession, form_id: int, data: Dict[str, Any],
                          user_id: Optional[int] = None) -> FormSubmission:
