@@ -89,7 +89,9 @@ class WorkflowEngine:
             portal_order=workflow_data.portal_order,
             portal_visible=workflow_data.portal_visible,
             entry_form_id=workflow_data.entry_form_id,
-            created_by=created_by
+            created_by=created_by,
+            owner_user_id=workflow_data.owner_user_id or created_by,
+            tags=workflow_data.tags or []
         )
         db.add(workflow)
         await db.flush()
@@ -184,6 +186,12 @@ class WorkflowEngine:
         # P7: Manual version increment
         if workflow_data.manual_version_increment:
             workflow.version += 1
+        
+        # A3: owner and tags
+        if workflow_data.owner_user_id is not None:
+            workflow.owner_user_id = workflow_data.owner_user_id
+        if workflow_data.tags is not None:
+            workflow.tags = workflow_data.tags
         
         # Update steps if provided
         if workflow_data.steps is not None:

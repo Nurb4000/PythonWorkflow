@@ -54,6 +54,8 @@ def _workflow_to_response(workflow: Workflow) -> dict:
         "portal_visible": workflow.portal_visible,
         "entry_form_id": workflow.entry_form_id,
         "service_id": workflow.service_id,
+        "owner_user_id": workflow.owner_user_id,
+        "tags": workflow.tags or [],
         "created_at": workflow.created_at,
         "updated_at": workflow.updated_at,
         "steps": [_step_to_dict(s) for s in workflow.steps],

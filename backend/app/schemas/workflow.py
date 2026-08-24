@@ -41,6 +41,8 @@ class WorkflowCreate(BaseModel):
     portal_visible: bool = True
     show_in_portal: bool = True
     entry_form_id: Optional[int] = None  # P3.3: form to show before triggering
+    owner_user_id: Optional[int] = None  # A3: explicit owner
+    tags: List[str] = []  # A3: freeform tags
 
 
 class WorkflowUpdate(BaseModel):
@@ -59,6 +61,8 @@ class WorkflowUpdate(BaseModel):
     entry_form_id: Optional[int] = None  # P3.3
     service_id: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 1.4
     manual_version_increment: bool = False  # P7: Manual version bump
+    owner_user_id: Optional[int] = None  # A3: explicit owner
+    tags: Optional[List[str]] = None  # A3: freeform tags
 
 
 class WorkflowResponse(BaseModel):
