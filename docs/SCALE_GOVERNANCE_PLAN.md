@@ -98,6 +98,20 @@ query-layer repairs, not a persistence refactor.**
       "Custom Data Fields" (custom_fields/FieldManager) from "Form Fields"
       (form schema) and CMDB "Type Fields". Cheap now, expensive later.
 
+- [ ] **A5. Standards enforcement inside AI assist** (gated on resuming the
+      AI/llama.cpp assist features): any generation surface (suggested names,
+      generated forms/steps/workflows) must emit standards-compliant output by
+      construction — reuse library fields via picker context instead of
+      inventing variants, apply naming lint rules to suggestions, refuse/
+      auto-correct duplicate names before save rather than after. The AI layer
+      is the cheapest place to make conventions unavoidable; treat it as an
+      enforcement point of this plan, not a separate feature.
+
+## Architecture decisions log pointer
+
+Settled decisions live in `docs/CLEANUP_PLAN.md` ("Architecture decisions
+log") — JSONB storage, IMAP stays, sync-first handoff.
+
 ### Phase B — Practical data flow & shared stores (STAKEHOLDER PRIORITY)
 
 Driver: in prior systems, inability to share data between processes was a
