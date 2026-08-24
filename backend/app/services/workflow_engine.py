@@ -7,7 +7,7 @@ from typing import Dict, Any, List, Optional
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
-from sqlalchemy import select
+from sqlalchemy import select, func
 
 from app.core.database import async_session_factory
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task
@@ -66,8 +66,22 @@ class WorkflowEngine:
                               created_by: Optional[int] = None,
                               allowed_group_ids: Optional[List[int]] = None) -> Workflow:
         """Create a new workflow"""
+        # A1: naming discipline — reject exact case-insensitive duplicates
+        norm_name = workflow_data.name.strip()
+        if not norm_name:
+            raise ValueError("Workflow name cannot be empty")
+        if len(norm_name) > 80:
+            raise ValueError("Workflow name must be 80 characters or fewer")
+        stmt = select(Workflow.id).where(
+            func.lower(Workflow.name) == func.lower(norm_name),
+            Workflow.is_active == True
+        )
+        result = await db.execute(stmt)
+        if result.scalar() is not None:
+            raise ValueError(f"Workflow with name '{norm_name}' already exists (case-insensitive)")
+        
         workflow = Workflow(
-            name=workflow_data.name,
+            name=norm_name,
             description=workflow_data.description,
             version=1,
             config=workflow_data.config or {},
@@ -120,7 +134,21 @@ class WorkflowEngine:
             return None
         
         if workflow_data.name is not None:
-            workflow.name = workflow_data.name
+            norm_name = workflow_data.name.strip()
+            if not norm_name:
+                raise ValueError("Workflow name cannot be empty")
+            if len(norm_name) > 80:
+                raise ValueError("Workflow name must be 80 characters or fewer")
+            # Check for duplicates excluding this workflow
+            stmt_dup = select(Workflow.id).where(
+                func.lower(Workflow.name) == func.lower(norm_name),
+                Workflow.id != workflow_id,
+                Workflow.is_active == True
+            )
+            result_dup = await db.execute(stmt_dup)
+            if result_dup.scalar() is not None:
+                raise ValueError(f"Workflow with name '{norm_name}' already exists (case-insensitive)")
+            workflow.name = norm_name
         if workflow_data.description is not None:
             workflow.description = workflow_data.description
         if workflow_data.is_active is not None:
