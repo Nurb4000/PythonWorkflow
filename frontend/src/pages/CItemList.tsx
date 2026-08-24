@@ -515,8 +515,8 @@ export const CItemList: React.FC = () => {
         </div>
       )}
 
-      {/* Items list */}
-      {loading ? (
+      {/* Items list — hidden while viewing/editing an item */}
+      {!editingItem && (loading ? (
         <div className="loading">Loading items...</div>
       ) : (
         <div style={{ display: 'grid', gap: '0.75rem' }}>
@@ -549,9 +549,9 @@ export const CItemList: React.FC = () => {
             </div>
           ))}
         </div>
-      )}
+      ))}
 
-      {!loading && items && items.length === 0 && (
+      {!loading && !editingItem && items && items.length === 0 && (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#6c757d' }}>
           <p>No configuration items found.</p>
           {selectedTypeId && <p>Select a type and click "+ New Item" to create one.</p>}

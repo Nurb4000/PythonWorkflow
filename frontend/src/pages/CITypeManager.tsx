@@ -52,6 +52,7 @@ export const CITypeManager: React.FC = () => {
   const isAdmin = user?.role === 'admin'
   const [showForm, setShowForm] = useState(false)
   const [editingId, setEditingId] = useState<number | null>(null)
+  const [viewingId, setViewingId] = useState<number | null>(null)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -102,9 +103,10 @@ export const CITypeManager: React.FC = () => {
 
   const deleteMutation = useMutation({
     mutationFn: (id: number) => cmdbApi.deleteType(id),
-    onSuccess: (data: any) => {
+    onSuccess: (data: any, id: number) => {
       queryClient.invalidateQueries({ queryKey: ['cmdb-types'] })
       queryClient.invalidateQueries({ queryKey: ['cmdb-items'] })
+      setViewingId(v => (v === id ? null : v))
       const msg = data?.items_deactivated > 0
         ? `CI type deactivated. ${data.items_deactivated} item(s) set to retired.`
         : 'CI type deactivated'
@@ -158,6 +160,7 @@ export const CITypeManager: React.FC = () => {
     if (!isAdmin) return
     resetForm()
     setEditingId(null)
+    setViewingId(null)
     setShowForm(true)
     setError('')
   }
@@ -171,7 +174,16 @@ export const CITypeManager: React.FC = () => {
       field_schema: type.field_schema ? [...type.field_schema] : [],
     })
     setEditingId(type.id)
+    setViewingId(null)
     setShowForm(true)
+    setError('')
+  }
+
+  const handleView = (type: CIType) => {
+    setShowForm(false)
+    resetForm()
+    setEditingId(null)
+    setViewingId(type.id)
     setError('')
   }
 
@@ -256,8 +268,6 @@ export const CITypeManager: React.FC = () => {
     })
   }
 
-  if (isLoading) return <div className="loading">Loading CI types...</div>
-
   const filteredTypes = useMemo(() => {
     if (!types) return []
     if (activeFilter === 'active') return types.filter(t => t.is_active !== false)
@@ -265,11 +275,15 @@ export const CITypeManager: React.FC = () => {
     return types
   }, [types, activeFilter])
 
+  const viewType = useMemo(() => types?.find(t => t.id === viewingId) || null, [types, viewingId])
+
+  if (isLoading) return <div className="loading">Loading CI types...</div>
+
   return (
     <div>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2>CMDB — CI Types</h2>
-        {isAdmin && (
+        {isAdmin && !showForm && !viewingId && (
           <button className="btn btn-primary" onClick={handleCreate}>
             + New CI Type
           </button>
@@ -465,8 +479,55 @@ export const CITypeManager: React.FC = () => {
         </div>
       )}
 
+      {/* Read-only view */}
+      {!showForm && viewType && (
+        <div className="card" style={{ marginBottom: '1.5rem' }}>
+          <h3 className="card-title">View CI Type</h3>
+          <div style={{ display: 'flex', alignItems: 'baseline', gap: '0.5rem', flexWrap: 'wrap' }}>
+            {viewType.icon && <span style={{ fontSize: '1.4rem' }}>{viewType.icon}</span>}
+            <h4 style={{ margin: 0 }}>{viewType.name}</h4>
+            {!viewType.is_active && <span style={{ fontSize: '0.8rem', color: '#dc3545' }}>(inactive)</span>}
+          </div>
+          <p style={{ color: '#6c757d', fontSize: '0.9rem', margin: '0.25rem 0 0.75rem 0' }}>
+            key: <code>{viewType.key}</code> · {viewType.item_count} item(s)
+            {' '}· created {new Date(viewType.created_at).toLocaleDateString()}
+            {' '}· updated {new Date(viewType.updated_at).toLocaleDateString()}
+          </p>
+          {viewType.description && <p style={{ marginTop: 0 }}>{viewType.description}</p>}
+
+          <h4 style={{ marginBottom: '0.5rem' }}>Field Schema ({viewType.field_schema?.length || 0})</h4>
+          {(viewType.field_schema?.length || 0) > 0 ? (
+            <table className="table" style={{ fontSize: '0.85rem' }}>
+              <thead>
+                <tr><th>Label</th><th>Key</th><th>Type</th><th>Required</th><th>Options</th><th>Validation</th><th>Help Text</th></tr>
+              </thead>
+              <tbody>
+                {viewType.field_schema.map((f, i) => (
+                  <tr key={i}>
+                    <td>{f.label}</td>
+                    <td><code>{f.key}</code></td>
+                    <td>{FIELD_TYPES.find(ft => ft.value === f.type)?.label || f.type}</td>
+                    <td>{f.required ? 'Yes' : ''}</td>
+                    <td>{(f.options || []).join(', ') || '—'}</td>
+                    <td>{f.validation || '—'}</td>
+                    <td>{f.help_text || '—'}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          ) : (
+            <p style={{ color: '#6c757d', fontSize: '0.9rem' }}>No fields defined.</p>
+          )}
+
+          <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
+            {isAdmin && <button className="btn btn-primary" onClick={() => handleEdit(viewType)}>Edit</button>}
+            <button className="btn btn-secondary" onClick={() => setViewingId(null)}>Close</button>
+          </div>
+        </div>
+      )}
+
       {/* Templates section — hidden when form is open */}
-      {!showForm && (
+      {!showForm && !viewingId && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
         <div className="card-header">
           <h3 className="card-title">Pre-built Templates</h3>
@@ -515,7 +576,8 @@ export const CITypeManager: React.FC = () => {
       </div>
         )}
 
-      <div style={{ display: 'grid', gap: '1rem' }}>
+      {!showForm && !viewingId && (
+        <div style={{ display: 'grid', gap: '1rem' }}>
         {filteredTypes.map(type => (
           <div key={type.id} className="card" style={{ position: 'relative', opacity: type.is_active === false ? 0.65 : 1 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
@@ -543,7 +605,7 @@ export const CITypeManager: React.FC = () => {
                   </div>
                 )}
               </div>
-              {isAdmin && (
+              {isAdmin ? (
                 <div style={{ display: 'flex', gap: '0.5rem' }}>
                   {type.is_active === false ? (
                     <button
@@ -559,18 +621,24 @@ export const CITypeManager: React.FC = () => {
                     </button>
                   ) : (
                     <>
+                      <button className="btn btn-sm btn-secondary" onClick={() => handleView(type)}>View</button>
                       <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(type)}>Edit</button>
                       <button className="btn btn-sm" style={{ color: '#dc3545' }} onClick={() => handleDelete(type)}>Deactivate</button>
                     </>
                   )}
                 </div>
+              ) : (
+                <div style={{ display: 'flex', gap: '0.5rem' }}>
+                  <button className="btn btn-sm btn-secondary" onClick={() => handleView(type)}>View</button>
+                </div>
               )}
             </div>
           </div>
         ))}
-      </div>
+        </div>
+      )}
 
-      {filteredTypes.length === 0 && !showForm && (
+      {filteredTypes.length === 0 && !showForm && !viewingId && (
         <div style={{ textAlign: 'center', padding: '3rem', color: '#6c757d' }}>
           {activeFilter === 'active' && types && types.length > 0
             ? <p>No active CI types. Switch to "All" or "Inactive" to see them.</p>
