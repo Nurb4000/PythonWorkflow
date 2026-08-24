@@ -65,7 +65,8 @@ export const WorkflowList: React.FC = () => {
       if (sortBy) params.sort_by = sortBy
       if (sortOrder) params.sort_order = sortOrder
       const response = await workflowApi.list(params)
-      return response.data
+      const d = response.data as any
+      return d.items || d
     },
     placeholderData: (previousData) => previousData,
     refetchOnWindowFocus: false,

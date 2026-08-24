@@ -94,10 +94,13 @@ export const ServiceManager: React.FC = () => {
   })
 
   // --- Services queries/mutations ---
-  const { data: services, isLoading: svcLoading } = useQuery({
+  const { data: services, isLoading: svcLoading } = useQuery<ServiceItem[]>({
     queryKey: ['services', svcStatusFilter],
     queryFn: () =>
-      servicesApi.listServices({ include_inactive: !svcStatusFilter || svcStatusFilter === 'inactive' }).then(r => r.data as ServiceItem[]),
+      servicesApi.listServices({ include_inactive: !svcStatusFilter || svcStatusFilter === 'inactive' }).then(r => {
+        const d = r.data as any
+        return (d.items || d) as ServiceItem[]
+      }),
     enabled: activeTab === 'services' || activeTab === 'kb-articles',
   })
 

@@ -547,11 +547,12 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
   })
 
   // CMDB types for cmdb_lookup and cmdb_update steps
-  const { data: cmdbTypes } = useQuery({
+  const { data: cmdbTypes } = useQuery<Array<{ id: number; name: string; key: string; icon: string; field_schema: any[] }>>({
     queryKey: ['cmdb-types'],
     queryFn: async () => {
       const res = await cmdbApi.listTypes()
-      return res.data as Array<{ id: number; name: string; key: string; icon: string; field_schema: any[] }>
+      const d = res.data as any
+      return (d.items || d) as Array<{ id: number; name: string; key: string; icon: string; field_schema: any[] }>
     },
   })
 

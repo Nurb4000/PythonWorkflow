@@ -62,12 +62,15 @@ export const CItemList: React.FC = () => {
   const [formData, setFormData] = useState<Record<string, any>>({})
   const [showHistory, setShowHistory] = useState(false)
 
-  const { data: types, isLoading: typesLoading } = useQuery({
+  const { data: types, isLoading: typesLoading } = useQuery<CIType[]>({
     queryKey: ['cmdb-types'],
-    queryFn: () => cmdbApi.listTypes().then(r => r.data as CIType[]),
+    queryFn: () => cmdbApi.listTypes().then(r => {
+      const d = r.data as any
+      return (d.items || d) as CIType[]
+    }),
   })
 
-  const { data: items, isLoading: itemsLoading } = useQuery({
+  const { data: items, isLoading: itemsLoading } = useQuery<CIItem[]>({
     queryKey: ['cmdb-items', selectedTypeId, statusFilter, searchQuery],
     queryFn: async () => {
       const params: any = {}
@@ -76,7 +79,8 @@ export const CItemList: React.FC = () => {
       if (!statusFilter) params.include_inactive = true
       if (searchQuery) params.search = searchQuery
       const res = await cmdbApi.listItems(params)
-      return res.data as CIItem[]
+      const d = res.data as any
+      return (d.items || d) as CIItem[]
     },
   })
 

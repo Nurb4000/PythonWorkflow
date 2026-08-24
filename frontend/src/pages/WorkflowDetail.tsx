@@ -82,11 +82,12 @@ export const WorkflowDetail: React.FC = () => {
     enabled: canDevelop
   })
 
-  const { data: forms } = useQuery({
+  const { data: forms } = useQuery<Array<{id: number, name: string, description: string}>>({
     queryKey: ['forms-list'],
     queryFn: async () => {
       const response = await formsApi.list()
-      return response.data as Array<{id: number, name: string, description: string}>
+      const d = response.data as any
+      return (d.items || d) as Array<{id: number, name: string, description: string}>
     },
     enabled: canDevelop
   })
@@ -94,11 +95,12 @@ export const WorkflowDetail: React.FC = () => {
   const [entryFormId, setEntryFormId] = useState<number | null>(null)
   const [selectedServiceId, setSelectedServiceId] = useState<number | null>(null)
 
-  const { data: services } = useQuery({
+  const { data: services } = useQuery<Array<{id: number, name: string, key: string, icon: string, is_active: boolean}>>({
     queryKey: ['services-catalog'],
     queryFn: async () => {
       const response = await servicesApi.listServices()
-      return response.data as Array<{id: number, name: string, key: string, icon: string, is_active: boolean}>
+      const d = response.data as any
+      return (d.items || d) as Array<{id: number, name: string, key: string, icon: string, is_active: boolean}>
     },
     enabled: canDevelop,
   })

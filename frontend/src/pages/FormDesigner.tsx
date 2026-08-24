@@ -115,7 +115,8 @@ export const FormDesigner: React.FC = () => {
         params,
         headers: { Authorization: `Bearer ${token}` }
       })
-      return response.data as Form[]
+      const d = response.data as any
+      return (d.items || d) as Form[]
     }
   })
 

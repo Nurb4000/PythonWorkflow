@@ -81,7 +81,8 @@ export const ServiceCatalog: React.FC = () => {
   const loadServices = useCallback(async () => {
     try {
       const res = await servicesApi.listServices()
-      setServices(res.data as CatalogService[])
+      const d = res.data as any
+      setServices((d.items || d) as CatalogService[])
     } catch (error) {
       console.error('Failed to load services:', error)
     } finally {

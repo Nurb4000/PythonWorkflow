@@ -65,9 +65,12 @@ export const CITypeManager: React.FC = () => {
   const [showTemplates, setShowTemplates] = useState(false)
   const [activeFilter, setActiveFilter] = useState<'active' | 'inactive' | 'all'>('active')
 
-  const { data: types, isLoading } = useQuery({
+  const { data: types, isLoading } = useQuery<CIType[]>({
     queryKey: ['cmdb-types'],
-    queryFn: () => cmdbApi.listTypes().then(r => r.data as CIType[]),
+    queryFn: () => cmdbApi.listTypes().then(r => {
+      const d = r.data as any
+      return (d.items || d) as CIType[]
+    }),
   })
 
   const createMutation = useMutation({
@@ -134,7 +137,10 @@ export const CITypeManager: React.FC = () => {
 
   const { data: templates, isLoading: templatesLoading } = useQuery({
     queryKey: ['cmdb-templates'],
-    queryFn: () => cmdbApi.listTemplates().then(r => r.data as any[]),
+    queryFn: () => cmdbApi.listTemplates().then(r => {
+      const d = r.data as any
+      return d.items || d
+    }),
     enabled: showTemplates,
   })
 
