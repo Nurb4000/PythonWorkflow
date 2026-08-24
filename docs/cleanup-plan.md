@@ -170,12 +170,18 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
 9. ~~**Prod compose data check**~~ DONE 2026-08-23: prod override now mounts named
    volumes for `/app/uploads` + `/app/backend_data`; usage documented in
    `docs/docker-deployment.md` (override file — never run standalone).
-10. **Data-dir consolidation (optional)**: three runtime dirs under `backend/`
+10. ~~**Data-dir consolidation (optional)**: three runtime dirs under `backend/`
     (`uploads/form_uploads`, `uploads/branding`, `backend_data/email_attachments`),
     all `__file__`-anchored. Could unify behind one `settings.data_dir` eventually.
-    Cosmetic unless item 9 reveals a real problem.
-11. **npm audit** report flagged advisories during uninstall — triage someday;
-    not urgent for an internal tool.
+    Cosmetic unless item 9 reveals a real problem.~~ DECIDED 2026-08-24: leave as-is.
+    Current layout works; consolidation would touch `forms.py`, `system_settings.py`,
+    `email_monitor.py` for marginal gain. Revisit if prod compose mount (item 9)
+    reveals a real problem.
+11. ~~**npm audit** report flagged advisories during uninstall — triage someday;
+    not urgent for an internal tool.~~ TRIAGED 2026-08-24: `npm audit fix` resolved
+    nanoid (high, auto-fix). Remaining 4 (3 moderate esbuild/vite, 2 moderate react-router)
+    require `--force` which bumps react-router-dom 6→7 (breaking change). Left as-is;
+    internal tool, low risk. Revisit when upgrading to React 19 or next major bump.
 12. ~~**`tests/e2e/demo-shots.js`** is a screenshot demo, not a test — move to
     `scripts/demos/` or delete if nobody uses it.~~ DONE 2026-08-24 (moved to
     `scripts/demos/demo-shots.js`).
