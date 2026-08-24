@@ -59,12 +59,25 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
 ## Backlog (prioritized)
 
 ### P1 — correctness / quick wins
-0. ~~**test_marketplace.py breaks whole suite**~~ FOUND 2026-08-24: 45 errors +
-   3 failures all from this one file — it hardcodes
-   `sqlite+aiosqlite:///:memory:` (line 20) but `aiosqlite` isn't installed in
-   the image, so collection errors cascade. Fix: port file to the Postgres
-   `db_engine` fixture convention or add aiosqlite to deps. Suite otherwise
-   healthy (102 passing on master, 112 with email-settings work).
+0. ~~**test_marketplace.py breaks whole suite**~~ → folded into the SQLite
+   purge below (FOUND 2026-08-24: 45 errors + 3 failures all from this one
+   file — it hardcodes `sqlite+aiosqlite:///:memory:` and `aiosqlite` isn't
+   installed, so collection errors cascade; suite otherwise healthy).
+1. **Purge SQLite support entirely** (decided 2026-08-24): SQLite was the
+   original dev-install path; Docker + PostgreSQL has been the only supported
+   setup for a long time. Recon shows the codebase is already clean except:
+   - [ ] Port `backend/tests/test_marketplace.py` off
+         `sqlite+aiosqlite:///:memory:` (line 20) onto the shared Postgres
+         `db_engine` fixture convention (conftest.py) — fixes the 45 errors +
+         3 failures and restores a fully green suite.
+   - [ ] Grep for stragglers after (`sqlite`, `aiosqlite`) in backend/, docs/,
+         Makefile, compose files — currently zero outside this plan file.
+   - [ ] State the policy where contributors look: one line in README +
+         TESTING_GUIDE ("PostgreSQL via Docker is the only supported database;
+         no SQLite fallback exists").
+   - [ ] Optional belt-and-braces: fail fast at startup if `database_url`
+         doesn't start with `postgresql+asyncpg://` (clear error instead of
+         obscure driver failures later).
 1. ~~**WorkflowDesigner.tsx debug leftovers**~~ DONE 2026-08-23: console statements
    stripped, `draggable: !readOnly` restored on start/step/end nodes, indentation normalized. (introduced during inspector WIP):
    - `console.log('[WF] handleNodeClick called:', ...)` + verbose `console.warn` in
