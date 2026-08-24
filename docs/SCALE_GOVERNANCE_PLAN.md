@@ -214,6 +214,22 @@ Phase B.
       optional dashboard cards. Start with read-only SQL-view-backed listing;
       grow into a visual builder only if demand holds.
 
+- [ ] **E5. Graphical data-maintenance console** (stakeholder request
+      2026-08-24): extend Data Explorer (or sibling menu entry) so admins can
+      load any table/view, edit cells (text, numbers, select dropdowns built
+      from field definitions), and bulk-scrub accidental PII — without hand-
+      writing SQL. Server-side write primitives largely exist:
+      `update_custom_data`, `bulk_update_custom_data`, `log_custom_field_audit`
+      in `data_query_service.py`. Needs: editable-table whitelist (never
+      users/auth/system tables), PK-based UPDATE path, validation against
+      field definitions (select values constrained to options), audit on every
+      change, PII scrub = targeted bulk overwrite with before/after preview.
+      NOTE the nuance in the motivating example ("add an OS to the Server
+      type dropdown"): dropdown option sets live in TYPE definitions
+      (`ci_types.field_schema[].options`), not row data — the console needs a
+      "edit this field's options" affordance tied to C3's library metadata,
+      not just cell editing.
+
 ## Open design decisions (settle before coding the phase)
 
 1. **Reference mechanism (B2)**: integer FK `field_def_id` vs string key

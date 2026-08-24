@@ -135,6 +135,21 @@ See `docs/INCIDENT_CHANGE_PLAN.md`. Backend (Phases 0–3) shipped: DateTarget m
   first, async fire-and-forget second.** See SCALE_GOVERNANCE_PLAN.md
   Open Decision #8.
 
+## Holes flagged during 2026-08-24 review (untriaged — scope before scheduling)
+
+- **Secrets at rest**: `smtp_password` / `imap_password` stored plaintext in
+  `system_settings` (and CI webhooks may hold credentials). At minimum
+  document the exposure; consider app-level encryption with a key from env.
+- **Executor authorization surface**: `CustomCodeExecutor`,
+  `DatabaseQueryExecutor` (raw SQL), `APICallExecutor`, and the admin-only
+  raw-SQL endpoint deserve an explicit permission matrix review (who can
+  create steps that run code/SQL against the app DB? SSRF posture for
+  admin-set URLs like llama_cpp_url?).
+- **Backup/restore runbook**: named volumes exist (P3 item 9) but there is no
+  documented, tested pg_dump/restore procedure or schedule.
+- **JWT secret management**: verify `SECRET_KEY` isn't a committed default in
+  prod deployments; document rotation.
+
 ### P3 — infrastructure / hygiene
 7. **Python version strategy**: stay on 3.11 (current pin) or modernize. If moving to
    3.13: bump pins first (`pydantic≥2.9`, `bcrypt≥4.2` — current pins have no cp313
