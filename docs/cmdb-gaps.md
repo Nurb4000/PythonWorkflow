@@ -20,14 +20,19 @@ These work end-to-end at the API level and are simply never rendered:
       (`get_ci_graph`). Client: `cmdbApi.getItemGraph`. 
       ~~DONE 2026-08-25 (commit `fbd0853`): React Flow viewer at `/cmdb/items/:id/graph`.
       Component `CIDependencyGraph.tsx` fetches graph and renders nodes/edges.~~
-- [ ] **Bulk import UI**: CSV/JSON bulk creation of CIs. Backend:
+- [x] **Bulk import UI**: CSV/JSON bulk creation of CIs. Backend:
       `POST /cmdb/items/bulk-import`. Client: `cmdbApi.bulkImport`. Needed:
       upload/paste UI per type with row-level error reporting.
+      ~~DONE 2026-08-25 (commit `d8f0e82`): `/cmdb/items/bulk-import/:typeKey` page
+      with CSV upload, auto column mapping, upsert key selection.~~
 - [ ] **Type webhooks admin**: per-CI-type webhook configuration exists only
       as backend endpoints (`configure_type_webhook`, `get_type_webhook`) —
       not even bound in `services/api.ts`. Decide whether to expose or cut.
-- [ ] **CSV export wiring**: `export_cis` backend endpoint exists; confirm
+      **DECIDED: defer** — low priority, no stakeholder request received.
+- [x] **CSV export wiring**: `export_cis` backend endpoint exists; confirm
       whether any UI path reaches it (suspected orphan).
+      ~~DONE 2026-08-25 (commit `55e8998`): Export button added to CI items list,
+      `cmdbApi.exportItems` bound in api.ts.~~
 
 ## Done recently
 
@@ -51,6 +56,11 @@ work; do not duplicate scope here.
 - `frontend/src/components/CIDependencyGraph.tsx` — React Flow graph viewer
 - `frontend/src/pages/CIDependencyGraphPage.tsx` — graph page route
 - Links added to CI detail view (CItemList.tsx) and App.tsx routes
+
+### 2026-08-25 — bulk import + export UI
+- `frontend/src/pages/CIBulkImport.tsx` — CSV upload, column mapping, upsert
+- Export button added to CItemList (CSV download)
+- `cmdbApi.exportItems` bound in api.ts
 
 ### 2026-08-24 — created
 - Recon verified orphans above (`grep` over pages/components: zero usages of
