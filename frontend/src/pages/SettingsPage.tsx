@@ -26,6 +26,10 @@ function CollapsibleCard({ title, defaultOpen = false, children }: {
 interface Settings {
   llama_cpp_url: string
   llama_cpp_model: string
+  openai_api_key: string
+  openai_model: string
+  openai_base_url: string
+  ai_provider: string
   smtp_host: string
   smtp_port: number
   smtp_username: string
@@ -48,6 +52,10 @@ export const SettingsPage: React.FC = () => {
   const [settings, setSettings] = useState<Settings>({
     llama_cpp_url: '',
     llama_cpp_model: 'default',
+    openai_api_key: '',
+    openai_model: 'gpt-3.5-turbo',
+    openai_base_url: 'https://api.openai.com/v1',
+    ai_provider: 'llama_cpp',
     smtp_host: '',
     smtp_port: 587,
     smtp_username: '',
@@ -302,21 +310,41 @@ export const SettingsPage: React.FC = () => {
     e.preventDefault()
     try {
       const token = localStorage.getItem('token')
-      await axios.put(
-        `${API_URL}/settings/llm`,
-        null,
-        {
-          params: {
-            llama_cpp_url: settings.llama_cpp_url,
-            llama_cpp_model: settings.llama_cpp_model
-          },
-          headers: { Authorization: `Bearer ${token}` }
-        }
-      )
-      setMessage('LLM settings updated successfully')
+      
+      if (settings.ai_provider === 'openai') {
+        // Save OpenAI settings
+        await axios.put(
+          `${API_URL}/settings/ai`,
+          null,
+          {
+            params: {
+              ai_provider: 'openai',
+              openai_api_key: settings.openai_api_key,
+              openai_model: settings.openai_model,
+              openai_base_url: settings.openai_base_url
+            },
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        )
+      } else {
+        // Save llama.cpp settings
+        await axios.put(
+          `${API_URL}/settings/llm`,
+          null,
+          {
+            params: {
+              llama_cpp_url: settings.llama_cpp_url,
+              llama_cpp_model: settings.llama_cpp_model
+            },
+            headers: { Authorization: `Bearer ${token}` }
+          }
+        )
+      }
+      
+      setMessage('AI settings updated successfully')
       setMessageType('success')
     } catch (error: any) {
-      setMessage(error.response?.data?.detail || 'Failed to update LLM settings')
+      setMessage(error.response?.data?.detail || 'Failed to update AI settings')
       setMessageType('error')
     }
   }
@@ -504,31 +532,83 @@ export const SettingsPage: React.FC = () => {
 
       {message && <div className={messageType === 'error' ? 'error' : 'success'} style={{ marginBottom: '1rem' }}>{message}</div>}
 
-<CollapsibleCard title="LLM Configuration (llama.cpp)" defaultOpen={false}>
+      <CollapsibleCard title="LLM Configuration" defaultOpen={false}>
         <form onSubmit={handleLLMUpdate}>
           <div className="form-group">
-            <label className="form-label">llama.cpp Server URL</label>
-            <input
-              type="text"
+            <label className="form-label">AI Provider</label>
+            <select
               className="form-input"
-              value={settings.llama_cpp_url}
-              onChange={(e) => setSettings({...settings, llama_cpp_url: e.target.value})}
-              placeholder="http://localhost:8081"
-            />
+              value={settings.ai_provider}
+              onChange={(e) => setSettings({...settings, ai_provider: e.target.value})}
+            >
+              <option value="llama_cpp">llama.cpp (local)</option>
+              <option value="openai">OpenAI (cloud)</option>
+            </select>
           </div>
-          <div className="form-group">
-            <label className="form-label">Model Name</label>
-            <input
-              type="text"
-              className="form-input"
-              value={settings.llama_cpp_model}
-              onChange={(e) => setSettings({...settings, llama_cpp_model: e.target.value})}
-              placeholder="default"
-            />
-          </div>
-          <button type="submit" className="btn btn-success">Save LLM Settings</button>
+
+          {settings.ai_provider === 'llama_cpp' && (
+            <>
+              <div className="form-group">
+                <label className="form-label">llama.cpp Server URL</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.llama_cpp_url}
+                  onChange={(e) => setSettings({...settings, llama_cpp_url: e.target.value})}
+                  placeholder="http://localhost:8081"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Model Name</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.llama_cpp_model}
+                  onChange={(e) => setSettings({...settings, llama_cpp_model: e.target.value})}
+                  placeholder="default"
+                />
+              </div>
+            </>
+          )}
+
+          {settings.ai_provider === 'openai' && (
+            <>
+              <div className="form-group">
+                <label className="form-label">OpenAI API Key</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={settings.openai_api_key}
+                  onChange={(e) => setSettings({...settings, openai_api_key: e.target.value})}
+                  placeholder="sk-..."
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Model</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.openai_model}
+                  onChange={(e) => setSettings({...settings, openai_model: e.target.value})}
+                  placeholder="gpt-3.5-turbo"
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Base URL</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.openai_base_url}
+                  onChange={(e) => setSettings({...settings, openai_base_url: e.target.value})}
+                  placeholder="https://api.openai.com/v1"
+                />
+              </div>
+            </>
+          )}
+
+          <button type="submit" className="btn btn-success">Save AI Settings</button>
         </form>
-</CollapsibleCard>
+      </CollapsibleCard>
 
 <CollapsibleCard title="Email Configuration" defaultOpen={false}>
         <form onSubmit={handleEmailUpdate}>
