@@ -30,6 +30,16 @@ interface Settings {
   openai_model: string
   openai_base_url: string
   ai_provider: string
+  ldap_server_url: string
+  ldap_base_dn: string
+  ldap_bind_dn: string
+  ldap_bind_password: string
+  ldap_user_filter: string
+  ldap_username_attribute: string
+  ldap_email_attribute: string
+  ldap_fullname_attribute: string
+  ldap_sync_enabled: boolean
+  ldap_sync_interval_hours: number
   smtp_host: string
   smtp_port: number
   smtp_username: string
@@ -56,6 +66,16 @@ export const SettingsPage: React.FC = () => {
     openai_model: 'gpt-3.5-turbo',
     openai_base_url: 'https://api.openai.com/v1',
     ai_provider: 'llama_cpp',
+    ldap_server_url: '',
+    ldap_base_dn: '',
+    ldap_bind_dn: '',
+    ldap_bind_password: '',
+    ldap_user_filter: '(objectClass=person)',
+    ldap_username_attribute: 'uid',
+    ldap_email_attribute: 'mail',
+    ldap_fullname_attribute: 'cn',
+    ldap_sync_enabled: false,
+    ldap_sync_interval_hours: 24,
     smtp_host: '',
     smtp_port: 587,
     smtp_username: '',
@@ -69,6 +89,12 @@ export const SettingsPage: React.FC = () => {
     result: any
     error: string
   }>({ loading: false, result: null, error: '' })
+  
+  const [ldapTestResult, setLdapTestResult] = useState<string>('')
+  const [ldapTestSuccess, setLdapTestSuccess] = useState<boolean>(false)
+  const [ldapSyncResult, setLdapSyncResult] = useState<string>('')
+  const [ldapSyncSuccess, setLdapSyncSuccess] = useState<boolean>(false)
+  const [ldapSyncing, setLdapSyncing] = useState<boolean>(false)
   const [imapSettings, setImapSettings] = useState<ImapSettings>({
     imap_monitor_enabled: false,
     imap_host: '',
@@ -349,6 +375,80 @@ export const SettingsPage: React.FC = () => {
     }
   }
 
+  const handleLDAPUpdate = async (e: React.FormEvent) => {
+    e.preventDefault()
+    try {
+      const token = localStorage.getItem('token')
+      await axios.put(
+        `${API_URL}/admin/ldap/config`,
+        null,
+        {
+          params: {
+            ldap_server_url: settings.ldap_server_url,
+            ldap_base_dn: settings.ldap_base_dn,
+            ldap_bind_dn: settings.ldap_bind_dn,
+            ldap_bind_password: settings.ldap_bind_password,
+            ldap_user_filter: settings.ldap_user_filter,
+            ldap_username_attribute: settings.ldap_username_attribute,
+            ldap_email_attribute: settings.ldap_email_attribute,
+            ldap_fullname_attribute: settings.ldap_fullname_attribute,
+            ldap_sync_enabled: settings.ldap_sync_enabled,
+            ldap_sync_interval_hours: settings.ldap_sync_interval_hours
+          },
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+      setMessage('LDAP settings updated successfully')
+      setMessageType('success')
+    } catch (error: any) {
+      setMessage(error.response?.data?.detail || 'Failed to update LDAP settings')
+      setMessageType('error')
+    }
+  }
+
+  const handleTestLDAP = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const res = await axios.post(
+        `${API_URL}/admin/ldap/test-connection`,
+        null,
+        {
+          params: {
+            ldap_server_url: settings.ldap_server_url,
+            ldap_base_dn: settings.ldap_base_dn,
+            ldap_bind_dn: settings.ldap_bind_dn,
+            ldap_bind_password: settings.ldap_bind_password
+          },
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+      setLdapTestSuccess(true)
+      setLdapTestResult(res.data.message || 'Connection successful')
+    } catch (error: any) {
+      setLdapTestSuccess(false)
+      setLdapTestResult(error.response?.data?.detail || 'Connection failed')
+    }
+  }
+
+  const handleSyncLDAP = async () => {
+    setLdapSyncing(true)
+    try {
+      const token = localStorage.getItem('token')
+      const res = await axios.post(
+        `${API_URL}/admin/ldap/sync`,
+        null,
+        { headers: { Authorization: `Bearer ${token}` } }
+      )
+      setLdapSyncSuccess(true)
+      setLdapSyncResult(`Synced: ${res.data.created} created, ${res.data.updated} updated`)
+    } catch (error: any) {
+      setLdapSyncSuccess(false)
+      setLdapSyncResult(error.response?.data?.detail || 'Sync failed')
+    } finally {
+      setLdapSyncing(false)
+    }
+  }
+
   const handleEmailUpdate = async (e: React.FormEvent) => {
     e.preventDefault()
     try {
@@ -607,6 +707,147 @@ export const SettingsPage: React.FC = () => {
           )}
 
           <button type="submit" className="btn btn-success">Save AI Settings</button>
+        </form>
+      </CollapsibleCard>
+
+      <CollapsibleCard title="LDAP Integration" defaultOpen={false}>
+        <form onSubmit={handleLDAPUpdate}>
+          <div className="form-group">
+            <label className="form-label">LDAP Server URL</label>
+            <input
+              type="text"
+              className="form-input"
+              value={settings.ldap_server_url}
+              onChange={(e) => setSettings({...settings, ldap_server_url: e.target.value})}
+              placeholder="ldap://ldap.example.com:389"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label">Base DN</label>
+            <input
+              type="text"
+              className="form-input"
+              value={settings.ldap_base_dn}
+              onChange={(e) => setSettings({...settings, ldap_base_dn: e.target.value})}
+              placeholder="dc=example,dc=com"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label">Bind DN (Service Account)</label>
+            <input
+              type="text"
+              className="form-input"
+              value={settings.ldap_bind_dn}
+              onChange={(e) => setSettings({...settings, ldap_bind_dn: e.target.value})}
+              placeholder="cn=admin,dc=example,dc=com"
+            />
+          </div>
+          
+          <div className="form-group">
+            <label className="form-label">Bind Password</label>
+            <input
+              type="password"
+              className="form-input"
+              value={settings.ldap_bind_password || ''}
+              onChange={(e) => setSettings({...settings, ldap_bind_password: e.target.value})}
+              placeholder="Enter password to update (leave blank to keep current)"
+            />
+          </div>
+          
+          <div className="grid grid-2">
+            <div className="form-group">
+              <label className="form-label">Username Attribute</label>
+              <input
+                type="text"
+                className="form-input"
+                value={settings.ldap_username_attribute}
+                onChange={(e) => setSettings({...settings, ldap_username_attribute: e.target.value})}
+                placeholder="uid"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">Email Attribute</label>
+              <input
+                type="text"
+                className="form-input"
+                value={settings.ldap_email_attribute}
+                onChange={(e) => setSettings({...settings, ldap_email_attribute: e.target.value})}
+                placeholder="mail"
+              />
+            </div>
+          </div>
+          
+          <div className="grid grid-2">
+            <div className="form-group">
+              <label className="form-label">Full Name Attribute</label>
+              <input
+                type="text"
+                className="form-input"
+                value={settings.ldap_fullname_attribute}
+                onChange={(e) => setSettings({...settings, ldap_fullname_attribute: e.target.value})}
+                placeholder="cn"
+              />
+            </div>
+            <div className="form-group">
+              <label className="form-label">User Filter</label>
+              <input
+                type="text"
+                className="form-input"
+                value={settings.ldap_user_filter}
+                onChange={(e) => setSettings({...settings, ldap_user_filter: e.target.value})}
+                placeholder="(objectClass=person)"
+              />
+            </div>
+          </div>
+          
+          <div className="form-group">
+            <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+              <input
+                type="checkbox"
+                checked={settings.ldap_sync_enabled}
+                onChange={(e) => setSettings({...settings, ldap_sync_enabled: e.target.checked})}
+              />
+              Enable automatic sync
+            </label>
+          </div>
+          
+          {settings.ldap_sync_enabled && (
+            <div className="form-group">
+              <label className="form-label">Sync Interval (hours)</label>
+              <input
+                type="number"
+                className="form-input"
+                value={settings.ldap_sync_interval_hours}
+                onChange={(e) => setSettings({...settings, ldap_sync_interval_hours: parseInt(e.target.value) || 24})}
+                min={1}
+                max={168}
+              />
+            </div>
+          )}
+          
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button type="submit" className="btn btn-success">Save LDAP Settings</button>
+            <button type="button" className="btn btn-secondary" onClick={handleTestLDAP}>
+              Test Connection
+            </button>
+            <button type="button" className="btn btn-primary" onClick={handleSyncLDAP} disabled={ldapSyncing}>
+              {ldapSyncing ? 'Syncing...' : 'Sync Users Now'}
+            </button>
+          </div>
+          
+          {ldapTestResult && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '4px', backgroundColor: ldapTestSuccess ? '#d4edda' : '#f8d7da', color: ldapTestSuccess ? '#155724' : '#721c24' }}>
+              {ldapTestResult}
+            </div>
+          )}
+          
+          {ldapSyncResult && (
+            <div style={{ marginTop: '1rem', padding: '0.75rem', borderRadius: '4px', backgroundColor: ldapSyncSuccess ? '#d4edda' : '#f8d7da', color: ldapSyncSuccess ? '#155724' : '#721c24' }}>
+              <strong>Sync Result:</strong> {ldapSyncResult}
+            </div>
+          )}
         </form>
       </CollapsibleCard>
 
