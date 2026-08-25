@@ -62,6 +62,52 @@ class WorkflowEngine:
             "cmdb_update": CmdbUpdateExecutor(),  # CMDB Phase 3
         }
     
+    def validate_input_refs(self, steps: List[Dict[str, Any]], entry_form_schema: Optional[Dict] = None) -> List[str]:
+        """B1: Validate $input.* references in steps against entry form schema.
+        
+        Returns list of warning/error messages. Empty list means valid.
+        """
+        import re
+        warnings = []
+        
+        # Build set of valid input fields from entry form schema
+        valid_fields = set()
+        if entry_form_schema:
+            properties = entry_form_schema.get("properties", {})
+            for field_name in properties:
+                valid_fields.add(field_name)
+        
+        # Extract all $input.* references from steps
+        input_pattern = re.compile(r'\$input\.(\w+)')
+        referenced_fields = set()
+        
+        for i, step in enumerate(steps):
+            step_def = step.get("definition", {})
+            step_json = str(step_def)
+            
+            # Find all $input.* references
+            matches = input_pattern.findall(step_json)
+            for field in matches:
+                referenced_fields.add(field)
+                
+                # Check if field exists in entry form schema
+                if entry_form_schema and field not in valid_fields:
+                    warnings.append(
+                        f"Step {i+1} ({step.get('title', step.get('step_type', '?'))}): "
+                        f"$input.{field} references a field not in the entry form schema"
+                    )
+        
+        # Warn about unreferenced form fields
+        if entry_form_schema and valid_fields:
+            unused = valid_fields - referenced_fields
+            if unused:
+                warnings.append(
+                    f"Entry form has {len(unused)} field(s) not referenced by any step: "
+                    f"{', '.join(sorted(unused)[:5])}{'...' if len(unused) > 5 else ''}"
+                )
+        
+        return warnings
+    
     async def create_workflow(self, db: AsyncSession, workflow_data: WorkflowCreate,
                               created_by: Optional[int] = None,
                               allowed_group_ids: Optional[List[int]] = None) -> Workflow:
@@ -79,6 +125,24 @@ class WorkflowEngine:
         result = await db.execute(stmt)
         if result.scalar() is not None:
             raise ValueError(f"Workflow with name '{norm_name}' already exists (case-insensitive)")
+        
+        # B1: validate input refs
+        entry_form_schema = None
+        if workflow_data.entry_form_id:
+            from app.models.forms import Form
+            form_stmt = select(Form).where(Form.id == workflow_data.entry_form_id)
+            form_result = await db.execute(form_stmt)
+            form = form_result.scalar_one_or_none()
+            if form:
+                import json
+                entry_form_schema = json.loads(form.schema_json) if isinstance(form.schema_json, str) else form.schema_json
+        
+        validation_warnings = self.validate_input_refs(workflow_data.steps or [], entry_form_schema)
+        if validation_warnings:
+            logger.warning(f"Workflow '{norm_name}' has input validation warnings: {validation_warnings}")
+            # Store warnings in config for UI display (non-blocking)
+            workflow.config = workflow_data.config or {}
+            workflow.config["input_validation_warnings"] = validation_warnings
         
         workflow = Workflow(
             name=norm_name,
