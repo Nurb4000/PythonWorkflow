@@ -251,19 +251,32 @@ Phase C delivers the "core fix" for field sprawl:
 
 ### Phase D — Organization & discovery
 
-- [ ] **C1. Organize workflows + forms**: decide tags-first vs folders
-      (see Open Decisions). Minimum: category/grouping column + filtered
-      browsing UI for both developers (designer list) and admins.
-- [ ] **C2. Unified search**: one admin-facing search across workflows,
-      forms, field defs, CI types/items (name, description, tag, field key).
-      Server-side, single endpoint, results grouped by type.
-- [ ] **C3. Data Dictionary view** (admin + developer): browsable list of all
-      canonical fields with type, options, owner, usage counts, linked
-      forms/types. The "single place to look something up" artifact.
-- [ ] **C4. Duplicate & hygiene reports** (admin dashboard card or periodic
+- [x] **D1. Organize workflows + forms**: tags-first approach (decided 2026-08-24).
+      A3 added `tags` JSON field to workflows and forms. List pages filter by
+      tag. No separate category/grouping column needed — tags provide flexible
+      organization. UI for tag-based filtering exists in WorkflowList, FormDesigner.
+- [x] **D2. Unified search**: `/search?q=` endpoint returns grouped results
+      across workflows, forms, field defs, CI types/items. Server-side ILIKE.
+      (commit `2b4de3c`)
+- [x] **D3. Data Dictionary view**: `/admin/dictionary` page shows all canonical
+      fields with type, options, owner, tags, usage counts. Search/filter by
+      type. (commit `d746caa`)
+- [x] **D4. Duplicate & hygiene reports** (admin dashboard card or periodic
       script): near-dupe names (fuzzy match), same-label-different-key,
       unreferenced forms/workflows (no runs in N days, not published),
       published-but-broken references (missing entry_form, missing form_id).
+      ~~DONE 2026-08-25 (commit `e07fdac`): `hygiene_service.py` provides
+      `get_hygiene_report()` returning near-duplicates, unreferenced forms,
+      broken references. `/admin/hygiene-report` endpoint. AdminDashboard has
+      collapsible "Data Hygiene Report" widget displaying issues grouped by
+      severity.~~
+
+### Phase D complete: Organization & discovery
+
+- **D1**: Tags-first organization (A3 tags suffice)
+- **D2**: Unified search (`/search?q=`) across workflows, forms, fields, CI types/items
+- **D3**: Data Dictionary page (`/admin/dictionary`) with search/filter
+- **D4**: Hygiene report widget (duplicates, unreferenced content, broken refs)
 
 ### Phase E — Governance operations (after A–C prove out)
 
