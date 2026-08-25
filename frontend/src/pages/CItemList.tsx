@@ -384,9 +384,14 @@ export const CItemList: React.FC = () => {
                   : `New: ${(currentType!)!.name}`}
             </span>
             {viewMode === 'view' && editingItem && (
-              <Link to={`/cmdb/items/${editingItem.id}/relationships`} className="btn btn-sm btn-secondary">
-                View Relationships
-              </Link>
+              <div style={{ display: 'flex', gap: '0.5rem' }}>
+                <Link to={`/cmdb/items/${editingItem.id}/relationships`} className="btn btn-sm btn-secondary">
+                  Relationships
+                </Link>
+                <Link to={`/cmdb/items/${editingItem.id}/graph`} className="btn btn-sm btn-primary">
+                  Dependency Graph
+                </Link>
+              </div>
             )}
           </h3>
 
