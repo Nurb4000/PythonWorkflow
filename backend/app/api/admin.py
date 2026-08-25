@@ -537,3 +537,13 @@ async def seed_demo_data(
             "demo_form_id": result.get("demo_form_id"),
         },
     }
+
+
+@router.get("/hygiene-report")
+async def get_hygiene_report(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """D4: Get hygiene report (duplicates, unreferenced content, broken refs)."""
+    from app.services.hygiene_service import hygiene_service
+    return await hygiene_service.get_hygiene_report(db)

@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
+import axios from 'axios'
 import { adminApi, cmdbApi, dateTargetsApi, servicesApi } from '../services/api'
 import { ScheduleManager } from '../components/ScheduleManager'
 
@@ -236,6 +237,9 @@ export const AdminDashboard: React.FC = () => {
 
       {/* Date Target Monitoring (INCIDENT_CHANGE_PLAN Phase 4.1) */}
       <DateTargetWidget daysProp={days} />
+
+      {/* D4: Data Hygiene Report */}
+      <HygieneReportWidget />
     </div>
   )
 }
@@ -926,6 +930,96 @@ const DateTargetWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
               )}
             </>
           ) : null}
+        </>
+      )}
+    </div>
+  )
+}
+
+// D4: Hygiene Report Widget
+const HygieneReportWidget: React.FC = () => {
+  const [show, setShow] = useState(false)
+  
+  const { data, isLoading } = useQuery({
+    queryKey: ['hygiene-report'],
+    queryFn: async () => {
+      const token = localStorage.getItem('token')
+      const res = await axios.get('/api/admin/hygiene-report', {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      return res.data as any
+    },
+    enabled: show,
+  })
+
+  if (!data) return null
+  
+  const { near_duplicates = [], unreferenced_forms = [], broken_references = [] } = data
+
+  return (
+    <div className="card" style={{ marginTop: '1rem' }}>
+      <div className="card-header">
+        <h3 className="card-title">Data Hygiene Report</h3>
+        <button
+          className={`btn btn-sm ${show ? 'btn-secondary' : 'btn-primary'}`}
+          onClick={() => setShow(!show)}
+        >
+          {show ? 'Hide' : 'View'}
+        </button>
+      </div>
+
+      {show && (
+        <>
+          {isLoading ? (
+            <div className="loading">Loading hygiene report...</div>
+          ) : (
+            <div style={{ padding: '1rem' }}>
+              {near_duplicates.length > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <h4 style={{ color: '#e74c3c', margin: '0 0 0.5rem' }}>⚠️ Near-Duplicate Names ({near_duplicates.length})</h4>
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                    {near_duplicates.map((dup: any, i: number) => (
+                      <li key={i} style={{ marginBottom: '0.25rem' }}>
+                        "{dup.item1.name}" ↔ "{dup.item2.name}" ({dup.reason})
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {unreferenced_forms.length > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <h4 style={{ color: '#f39c12', margin: '0 0 0.5rem' }}>📋 Unreferenced Forms ({unreferenced_forms.length})</h4>
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                    {unreferenced_forms.map((form: any, i: number) => (
+                      <li key={i} style={{ marginBottom: '0.25rem' }}>
+                        "{form.name}" — {form.reason}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {broken_references.length > 0 && (
+                <div style={{ marginBottom: '1rem' }}>
+                  <h4 style={{ color: '#e74c3c', margin: '0 0 0.5rem' }}>🔗 Broken References ({broken_references.length})</h4>
+                  <ul style={{ margin: 0, paddingLeft: '1.5rem' }}>
+                    {broken_references.map((issue: any, i: number) => (
+                      <li key={i} style={{ marginBottom: '0.25rem' }}>
+                        {issue.type} "{issue.name}": {issue.issue}
+                      </li>
+                    ))}
+                  </ul>
+                </div>
+              )}
+
+              {near_duplicates.length === 0 && unreferenced_forms.length === 0 && broken_references.length === 0 && (
+                <div style={{ padding: '1rem', backgroundColor: '#d4edda', borderRadius: '4px' }}>
+                  ✅ No hygiene issues found.
+                </div>
+              )}
+            </div>
+          )}
         </>
       )}
     </div>
