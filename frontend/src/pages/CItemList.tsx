@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
+import { Link } from 'react-router-dom'
 import { cmdbApi } from '../services/api'
 
 interface CIType {
@@ -374,12 +375,19 @@ export const CItemList: React.FC = () => {
       {/* Create/Edit form */}
       {showForm && (editingItem ? itemType : currentType) && (
         <div className="card" style={{ marginBottom: '1.5rem' }}>
-          <h3 className="card-title">
-            {viewMode === 'view'
-              ? `View: ${(itemType || currentType)!.name}`
-              : editingItem
-                ? `Edit: ${(itemType || currentType)!.name}`
-                : `New: ${(currentType!)!.name}`}
+          <h3 className="card-title" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <span>
+              {viewMode === 'view'
+                ? `View: ${(itemType || currentType)!.name}`
+                : editingItem
+                  ? `Edit: ${(itemType || currentType)!.name}`
+                  : `New: ${(currentType!)!.name}`}
+            </span>
+            {viewMode === 'view' && editingItem && (
+              <Link to={`/cmdb/items/${editingItem.id}/relationships`} className="btn btn-sm btn-secondary">
+                View Relationships
+              </Link>
+            )}
           </h3>
 
           <div className="form-group">

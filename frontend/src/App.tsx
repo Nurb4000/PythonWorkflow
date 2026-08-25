@@ -25,6 +25,7 @@ import { WorkflowImportExport } from './pages/WorkflowImportExport'
 import { SQLViewManager } from './pages/SQLViewManager'
 import { Marketplace } from './pages/Marketplace'
 import { CITypeManager } from './pages/CITypeManager'
+import { CIRelationships } from './pages/CIRelationships'
 import { CItemList } from './pages/CItemList'
 import { MySubmissions } from './pages/MySubmissions'
 import { ServiceManager } from './pages/ServiceManager'
@@ -416,6 +417,7 @@ const AppContent: React.FC = () => {
           <Route path="/cmdb/types" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CITypeManager /></RoleRoute>} />
           <Route path="/cmdb/items" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
           <Route path="/cmdb/items/:id" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
+          <Route path="/cmdb/items/:id/relationships" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CIRelationships /></RoleRoute>} />
           <Route path="/login" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
           <Route path="*" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
         </Routes>
