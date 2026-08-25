@@ -132,3 +132,22 @@ E2E_BASE=http://localhost:9000 E2E_ADMIN_PASS=admin123 bash tests/e2e/run-e2e.sh
 ---
 
 *Generated: 2026-08-25 — SCALE plan complete. Ready for CMDB_GAPS items or new feature work.*
+
+---
+
+## Extended session (2026-08-25 continued)
+
+### CMDB gaps closed
+- **Relationships UI**: `/cmdb/items/:id/relationships` — create/delete typed source/target links
+- **Dependency graph**: `/cmdb/items/:id/graph` — React Flow viewer using `get_ci_graph` backend
+
+### Remaining CMDB gaps
+1. **Bulk import UI** — backend `POST /cmdb/items/bulk-import` exists, needs file upload + mapping UI
+2. **Type webhooks admin** — per-CI-type webhook config endpoints exist but not bound in api.ts; decide expose or cut
+3. **CSV export wiring** — verify if any UI reaches `export_cis` endpoint
+
+### Phase F follow-ups (if time permits)
+- Scheduled report export (cron + CSV/email)
+- Visual report builder (drag-and-drop columns/filters)
+- E1 deprecation UI (banner in pickers, suggested replacement link)
+- C5 where-used scanning (forms.schema_json + ci_types.field_schema for field_def_id refs)
