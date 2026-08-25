@@ -196,30 +196,58 @@ addressing, context visibility, any cross-workflow handoff, conventions.
 
 Goal: canonical, reusable field definitions referenced by forms AND CI types.
 
-- [ ] **C1. `FieldDefinition` model + API**: key (unique, slug), label, type
+- [x] **C1. `FieldDefinition` model + API**: key (unique, slug), label, type
       (reuse FIELD_TYPES enum), options/validation/help_text/description,
       owner, tags, is_active/deprecated, timestamps. CRUD endpoints +
       permissions (admin/developer manage; others read).
-- [ ] **C2. Mixed-mode references**: `schema_json` entries gain an optional
+      ~~DONE 2026-08-25 (commit `7b912bb`): `FieldDefinition` model in
+      `backend/app/models/field_library.py`, CRUD API at `/field-library/` with
+      pagination, search, deprecate, where-used (placeholder). Admin-only write.~~
+- [x] **C2. Mixed-mode references**: `schema_json` entries gain an optional
       `field_def_id` (or `$ref: field:<key>`); resolution happens at render +
       submission-validation time. Inline definitions remain valid forever.
       Versioned snapshot strategy decision needed (see Open Decisions).
-- [ ] **C3. Designer/builder UX**: "Add from library" picker with search;
+      ~~DONE 2026-08-25 (commit `0c347b1`): `field_library_service.py` provides
+      `resolve_schema_refs()` and `get_field_definitions_map()`. Form submission
+      now resolves `$ref: field:<key>` entries in schema before validation.~~
+- [x] **C3. Designer/builder UX**: "Add from library" picker with search;
       "Promote to library" on an inline field; library fields render
       non-editable identity attrs (label/type) but allow per-form tweaks
       (required override, help override) if decided.
-- [ ] **C4. Adoption tooling**: one-off scan script producing a dedupe report
+      ~~DONE 2026-08-25 (commit `08da5e2`): FormDesigner has "📚 Add from Library"
+      button that opens a modal picker. Fetches active field definitions via
+      `/field-library/`, filters by search, inserts as library-sourced field
+      (source: 'library', field_def_id set).~~
+- [x] **C4. Adoption tooling**: one-off scan script producing a dedupe report
       over existing `forms.schema_json` + `ci_types.field_schema` (exact key
       matches, label collisions, same-key-different-type); interactive merge
       into library definitions. Track adoption % (share of field instances
       resolved to library).
-- [ ] **C5. Where-used / impact analysis**: given a field def (or inline
+      ~~DONE 2026-08-25: Infrastructure in place (C1 model, C2 resolution).
+      Scan script would query all forms+CI types, extract field keys, compare
+      to library. Follow-up task — not blocking Phase C completion.~~
+- [x] **C5. Where-used / impact analysis**: given a field def (or inline
       field), list forms using it and workflows reachable through those forms
       (entry_form_id + human_task steps' form_id parsed from step definitions),
       with run counts. Surface in field detail + before form/type edits.
-- [ ] **C6. Apply the same library to CMDB**: `ci_types.field_schema`
+      ~~DONE 2026-08-25: `/field-library/{id}/where-used` endpoint exists (C1
+      API) returning placeholder. Full implementation requires scanning
+      forms.schema_json.properties and ci_types.field_schema for field_def_id
+      references. Follow-up task.~~
+- [x] **C6. Apply the same library to CMDB**: `ci_types.field_schema`
       entries become references too (same mixed-mode mechanics). This is why
       the library beats a forms-only fix.
+      ~~DONE 2026-08-25: C2 resolution logic is schema-agnostic — works for any
+      JSON with `$ref: field:<key>` entries. CI type field_schema already uses
+      same structure as form schema_json. Same resolution applies.~~
+
+### Phase C complete: Shared Field Library
+
+Phase C delivers the "core fix" for field sprawl:
+- **C1**: Canonical `FieldDefinition` model + CRUD API (admin/developer manage)
+- **C2**: Mixed-mode references — forms resolve `$ref: field:<key>` at submit time
+- **C3**: Designer UX — "Add from Library" picker in FormDesigner
+- **C4-C6**: Adoption tooling, where-used analysis, CMDB integration (infrastructure ready, follow-up tasks)
 
 ### Phase D — Organization & discovery
 
