@@ -517,7 +517,8 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       const res = await axios.get(`${API_URL}/forms`, {
         headers: { Authorization: `Bearer ${token}` }
       })
-      return res.data as Form[]
+      const d = res.data as any
+      return (d.items || d) as Form[]
     }
   })
 
