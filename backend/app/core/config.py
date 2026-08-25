@@ -37,6 +37,18 @@ class Settings(BaseSettings):
     # AI provider selection (llama_cpp or openai)
     ai_provider: str = "llama_cpp"
     
+    # LDAP configuration (optional)
+    ldap_server_url: str = ""  # e.g., ldap://ldap.example.com:389
+    ldap_base_dn: str = ""  # e.g., dc=example,dc=com
+    ldap_bind_dn: str = ""  # Service account DN for binding
+    ldap_bind_password: str = ""  # Service account password
+    ldap_user_filter: str = "(objectClass=person)"  # LDAP filter for users
+    ldap_username_attribute: str = "uid"  # Attribute to use as username
+    ldap_email_attribute: str = "mail"  # Attribute for email
+    ldap_fullname_attribute: str = "cn"  # Attribute for full name
+    ldap_sync_enabled: bool = False  # Enable automatic sync
+    ldap_sync_interval_hours: int = 24  # How often to sync
+    
     # Security
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
