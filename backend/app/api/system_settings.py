@@ -162,6 +162,10 @@ async def get_settings(
     return {
         "llama_cpp_url": settings.llama_cpp_url,
         "llama_cpp_model": settings.llama_cpp_model,
+        "openai_api_key": "***" if settings.openai_api_key else "",  # Don't expose actual key
+        "openai_model": settings.openai_model,
+        "openai_base_url": settings.openai_base_url,
+        "ai_provider": settings.ai_provider,
         "smtp_host": settings.smtp_host,
         "smtp_port": settings.smtp_port,
         "smtp_username": settings.smtp_username,
@@ -186,6 +190,34 @@ async def update_llm_settings(
     return {"message": "LLM settings updated", "settings": {
         "llama_cpp_url": settings.llama_cpp_url,
         "llama_cpp_model": settings.llama_cpp_model
+    }}
+
+
+@router.put("/settings/ai")
+async def update_ai_settings(
+    ai_provider: str = "llama_cpp",
+    openai_api_key: str = "",
+    openai_model: str = "gpt-3.5-turbo",
+    openai_base_url: str = "https://api.openai.com/v1",
+    current_user: User = Depends(get_current_user)
+):
+    """Update AI provider settings (admin only)"""
+    if current_user.role != "admin":
+        raise HTTPException(status_code=403, detail="Admin access required")
+
+    if ai_provider not in ["llama_cpp", "openai"]:
+        raise HTTPException(status_code=400, detail="Invalid provider. Must be 'llama_cpp' or 'openai'")
+
+    settings.ai_provider = ai_provider
+    if openai_api_key:
+        settings.openai_api_key = openai_api_key
+    settings.openai_model = openai_model
+    settings.openai_base_url = openai_base_url
+
+    return {"message": "AI settings updated", "settings": {
+        "ai_provider": settings.ai_provider,
+        "openai_model": settings.openai_model,
+        "openai_base_url": settings.openai_base_url
     }}
 
 

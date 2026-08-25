@@ -29,6 +29,14 @@ class Settings(BaseSettings):
     llama_cpp_url: str = "http://localhost:8081"
     llama_cpp_model: str = "default"
     
+    # AI / OpenAI
+    openai_api_key: str = ""
+    openai_model: str = "gpt-3.5-turbo"
+    openai_base_url: str = "https://api.openai.com/v1"
+    
+    # AI provider selection (llama_cpp or openai)
+    ai_provider: str = "llama_cpp"
+    
     # Security
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"

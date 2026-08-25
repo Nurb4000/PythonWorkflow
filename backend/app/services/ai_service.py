@@ -1,5 +1,6 @@
 """
-AI integration service for generating workflow steps, node assistance, and error diagnosis using llama.cpp
+AI integration service for generating workflow steps, node assistance, and error diagnosis.
+Supports llama.cpp (local) and OpenAI (cloud) providers.
 """
 import json
 import logging
@@ -97,7 +98,7 @@ class AIService:
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
 
         try:
-            response = await self._call_llama_cpp(full_prompt)
+            response = await self._call_ai(full_prompt)
             step = self._parse_response(response)
             self._validate_step(step)
             return step
@@ -170,7 +171,7 @@ Rules:
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
 
         try:
-            response = await self._call_llama_cpp(full_prompt)
+            response = await self._call_ai(full_prompt)
             workflow = self._parse_response(response)
             self._validate_workflow(workflow)
             return workflow.get("steps", [])
@@ -211,7 +212,7 @@ Rules:
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
 
         try:
-            response = await self._call_llama_cpp(full_prompt)
+            response = await self._call_ai(full_prompt)
             schema = self._parse_response(response)
             self._validate_form_schema(schema)
             return schema
@@ -264,7 +265,7 @@ Use the knowledge base patterns for guidance. If upstream data shapes are provid
             user_prompt += f"\n\nAvailable upstream data fields: {json.dumps(upstream_data_shapes)}"
 
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "generate", "config": result}
 
@@ -280,7 +281,7 @@ Output must be valid JSON:
 
         user_prompt = f"Explain this {step_type} configuration:\n{json.dumps(current_config, indent=2)}"
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "explain", "result": result}
 
@@ -296,7 +297,7 @@ Output must be valid JSON:
 
         user_prompt = f"Fix this {step_type} configuration:\n{json.dumps(current_config, indent=2)}\n\nError: {error_message}"
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "fix", "result": result}
 
@@ -312,7 +313,7 @@ Output must be valid JSON:
 
         user_prompt = f"Optimize this {step_type} configuration:\n{json.dumps(current_config, indent=2)}"
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "optimize", "result": result}
 
@@ -359,7 +360,7 @@ Rules:
             user_prompt += f"\nAvailable columns: {json.dumps(available_columns)}"
 
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "generate", "result": result}
 
@@ -376,7 +377,7 @@ Output must be valid JSON:
 
         user_prompt = f"Explain this SQL query:\n{sql}"
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "explain", "result": result}
 
@@ -397,7 +398,7 @@ Rules:
 
         user_prompt = f"Fix this SQL query:\n{sql}\n\nError: {error_message}"
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": "fix", "result": result}
 
@@ -441,7 +442,7 @@ Output must be valid JSON:
             raise ValueError(f"Unknown action: {action}")
 
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return {"action": action, "result": result}
 
@@ -475,7 +476,7 @@ Output must be valid JSON:
             user_prompt += f"\nInput data sample: {json.dumps(input_data_sample, indent=2)}"
 
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return result
 
@@ -507,7 +508,7 @@ Rules:
             user_prompt += f"\nAvailable data keys: {sample_keys}"
 
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
-        response = await self._call_llama_cpp(full_prompt)
+        response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
         return result.get("expression", "True")
 
@@ -621,6 +622,48 @@ Rules:
                 raise ValueError("AI service request timed out")
             except httpx.HTTPError as e:
                 raise ValueError(f"AI service error: {str(e)}")
+
+    async def _call_openai(self, prompt: str) -> str:
+        """Call OpenAI API with retry logic"""
+        if not system_settings.openai_api_key:
+            raise ValueError("OpenAI API key not configured")
+
+        headers = {
+            "Authorization": f"Bearer {system_settings.openai_api_key}",
+            "Content-Type": "application/json"
+        }
+
+        payload = {
+            "model": system_settings.openai_model,
+            "messages": [
+                {"role": "system", "content": "You are a helpful assistant that generates JSON responses."},
+                {"role": "user", "content": prompt}
+            ],
+            "max_tokens": 2000,
+            "temperature": 0.2
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{system_settings.openai_base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=60.0
+                )
+                response.raise_for_status()
+                return response.json()["choices"][0]["message"]["content"]
+            except httpx.TimeoutException:
+                raise ValueError("OpenAI request timed out")
+            except httpx.HTTPError as e:
+                raise ValueError(f"OpenAI error: {str(e)}")
+
+    async def _call_ai(self, prompt: str) -> str:
+        """Call AI service based on configured provider"""
+        if system_settings.ai_provider == "openai":
+            return await self._call_openai(prompt)
+        else:
+            return await self._call_ai(prompt)
 
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """Parse AI response into structured data"""
