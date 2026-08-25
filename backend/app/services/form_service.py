@@ -136,8 +136,24 @@ class FormService:
         if not form:
             raise ValueError(f"Form {form_id} not found, inactive, or not published")
 
+        # C2: Resolve field library references in schema
+        schema = form.schema_json
+        properties = schema.get("properties", {})
+        ref_keys = []
+        for field_name, field_def in properties.items():
+            if isinstance(field_def, dict) and "$ref" in field_def:
+                ref = field_def["$ref"]
+                if ref.startswith("field:"):
+                    ref_keys.append(ref[6:])  # Extract key from "field:key"
+        
+        if ref_keys:
+            from app.services.field_library_service import get_field_definitions_map, resolve_schema_refs
+            field_defs = await get_field_definitions_map(db, ref_keys)
+            schema = resolve_schema_refs(schema, field_defs)
+            form.schema_json = schema  # Update for validation
+        
         # Validate submission data
-        self._validate_submission(form.schema_json, data)
+        self._validate_submission(schema, data)
 
         # Handle reference fields - save values back to source table
         properties = form.schema_json.get("properties", {})
