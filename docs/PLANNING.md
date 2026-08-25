@@ -47,11 +47,18 @@
 
 ## Open Items (Low Priority)
 
-### SCALE_GOVERNANCE_PLAN.md
-- [ ] **A5. Standards enforcement inside AI assist** — Gated on resuming AI features
-- [ ] **E5. Graphical data-maintenance console** — Stakeholder request, not yet prioritized
+### AI Assist Coverage
+- [ ] **AI standards enforcement (A5)** — Gated on resuming AI features
+- [ ] **CMDB AI assist** — CI type schema generation, relationship config, bulk import mapping
+- [ ] **Task management AI** — Assignment suggestions, priority calculation
+- [ ] **Scheduler AI** — Cron expression generation, conflict detection
+- [ ] **LDAP AI** — Filter generation, attribute mapping
+- [ ] **Reporting AI** — Report definition generation, view column suggestions
+- [ ] **Marketplace AI** — Description generation, category suggestions
+- [ ] **Email template AI** — Template generation, variable suggestion
 
-### CMDB_GAPS.md
+### Other Open Items
+- [ ] **E5. Graphical data-maintenance console** — Stakeholder request, not yet prioritized
 - [ ] **Type webhooks admin** — Deferred (low priority, no stakeholder request)
 
 ---
