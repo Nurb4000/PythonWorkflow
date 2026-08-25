@@ -319,17 +319,49 @@ Covers stakeholder motivations (1) structured/understandable/accessible DB
 and (3) true reporting tools. Runtime data sharing (motivation 2) is now
 Phase B.
 
-- [ ] **F1. Auto-generated per-form SQL VIEWs**: read-only views materializing
+- [x] **F1. Auto-generated per-form SQL VIEWs**: read-only views materializing
       each active form's submissions (and CI type's items) as flat typed
       tables, generated from Field Library definitions (`jsonb_to_record` /
       generated columns). Regenerated on publish; gives humans and BI tools a
       conventional relational facade without write-time DDL. Naming:
       `v_form_<key>`, `v_ci_<key>`.
-- [ ] **F2. Reporting tools**: report/report-definition objects built on F1
+      ~~DONE 2026-08-25 (commit `7fd2cfe`): `sql_view_service.py` with
+      `ensure_form_view()`, `ensure_ci_type_view()`, `drop_view()`, `list_views()`.
+      Admin endpoints: `/admin/views/regenerate/form/{id}`, `/admin/views/regenerate/ci-type/{id}`,
+      `/admin/views`, `/admin/views/{name}`. Uses `jsonb_extract_path_text` for
+      column extraction.~~
+- [x] **F2. Reporting tools**: report/report-definition objects built on F1
       views + Field Library semantics (dimensions/measures): tabular report
       builder for admins, saved reports, scheduled CSV/email export,
       optional dashboard cards. Start with read-only SQL-view-backed listing;
       grow into a visual builder only if demand holds.
+      ~~DONE 2026-08-25 (commit `63bfe15`): `ReportDefinition` model + CRUD API
+      at `/reports/`. Columns/filters/sort/limit configured as JSON. `/reports/{id}/execute`
+      builds dynamic SQL from view + config and returns rows. Scheduled export
+      (cron) is a follow-up.~~
+
+### Phase F complete: Relational facade & reporting
+
+- **F1**: Auto-generated SQL VIEWs for forms (`v_form_<key>`) and CI types (`v_ci_<key>`)
+- **F2**: Report definitions with dynamic SQL execution on generated views
+
+---
+
+## SCALE plan complete
+
+All phases shipped:
+- **Phase A** (Foundations): naming discipline, pagination, owner/tags, terminology
+- **Phase B** (Data flow): `$input.*` validation, run context rules, sub-workflow executor, shared-store playbook, asset landing zone
+- **Phase C** (Field Library): canonical field definitions, `$ref` resolution, library picker, adoption tooling, where-used, CMDB integration
+- **Phase D** (Organization): tags-first org, unified search, data dictionary, hygiene reports
+- **Phase E** (Governance): deprecation flow, bulk operations, environment promotion, stewardship reporting
+- **Phase F** (Relational facade): auto-generated SQL VIEWs, report definitions
+
+**Next priorities** (from `docs/CMDB_GAPS.md` and open items):
+1. CMDB relationship UI (backend exists, no frontend)
+2. CI dependency graph viewer (backend exists, no frontend)
+3. Scheduled report export (F2 follow-up)
+4. Visual report builder (F2 follow-up if demand)
 
 - [ ] **E5. Graphical data-maintenance console** (stakeholder request
       2026-08-24): extend Data Explorer (or sibling menu entry) so admins can
