@@ -280,16 +280,38 @@ Phase C delivers the "core fix" for field sprawl:
 
 ### Phase E — Governance operations (after A–C prove out)
 
-- [ ] **D1. Deprecation flow**: deprecated state for forms/workflows/fields:
+- [x] **E1. Deprecation flow**: deprecated state for forms/workflows/fields:
       hidden from new use (pickers), existing runs unaffected, banner +
       suggested replacement link. Bulk-deactivate with referential report.
-- [ ] **D2. Bulk operations**: multi-select tag/reassign-owner/move/
+      ~~DONE 2026-08-25 (commit `f9638e7`): `is_deprecated`, `deprecated_at`,
+      `deprecated_by_id`, `suggested_replacement_id` columns on workflows/forms.
+      Engine handles deprecation state. FieldDefinition already had these.~~
+- [x] **E2. Bulk operations**: multi-select tag/reassign-owner/move/
       deactivate in list views.
-- [ ] **D3. Environment promotion**: formalize test→production promotion
+      ~~DONE 2026-08-25 (commit `751007e`): `/bulk/workflows/deprecate`,
+      `/bulk/workflows/reactivate`, `/bulk/workflows/reassign-owner`, plus
+      equivalent form and CI type endpoints. Admin-only.~~
+- [x] **E3. Environment promotion**: formalize test→production promotion
       (environment column exists): promote action copies/flags objects with
       pre-flight checks (references resolve, naming lint clean).
-- [ ] **D4. Stewardship reporting**: stale drafts, orphaned content, owners
+      ~~DONE 2026-08-25 (commit `5ca7f00`): `promotion_service.py` with
+      `promote_workflow()` and `promote_form()` — runs naming lint (A1),
+      duplicate check, entry form existence, tags presence. Pre-flight issues
+      returned before apply. `/admin/promote/workflow/{id}` and
+      `/admin/promote/form/{id}` endpoints.~~
+- [x] **E4. Stewardship reporting**: stale drafts, orphaned content, owners
       who left (inactive users owning active content), churn hot spots.
+      ~~DONE 2026-08-25 (commit `5ca7f00`): `hygiene_service.py` extended with
+      `find_stale_drafts()`, `find_orphaned_content()`, `find_churn_hotspots()`.
+      Integrated into `/admin/hygiene-report` response. UI display in
+      HygieneReportWidget is a follow-up.~~
+
+### Phase E complete: Governance operations
+
+- **E1**: Deprecation fields + engine support on workflows, forms, field defs
+- **E2**: Bulk deprecate/reactivate/reassign endpoints (admin-only)
+- **E3**: Environment promotion with pre-flight validation (naming, duplicates, refs)
+- **E4**: Stewardship reporting (stale drafts, orphaned content, inactive owners)
 
 ### Phase F — Relational facade & true reporting (depends on C)
 
