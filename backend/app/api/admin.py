@@ -547,3 +547,27 @@ async def get_hygiene_report(
     """D4: Get hygiene report (duplicates, unreferenced content, broken refs)."""
     from app.services.hygiene_service import hygiene_service
     return await hygiene_service.get_hygiene_report(db)
+
+
+@router.post("/promote/workflow/{workflow_id}")
+async def promote_workflow(
+    workflow_id: int,
+    target_env: str = Query("production", description="Target environment (test, staging, production)"),
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """E3: Promote a workflow to a target environment."""
+    from app.services.promotion_service import promotion_service
+    return await promotion_service.promote_workflow(db, workflow_id, target_env, current_user.id)
+
+
+@router.post("/promote/form/{form_id}")
+async def promote_form(
+    form_id: int,
+    target_env: str = Query("production", description="Target environment"),
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """E3: Promote a form to a target environment."""
+    from app.services.promotion_service import promotion_service
+    return await promotion_service.promote_form(db, form_id, target_env, current_user.id)

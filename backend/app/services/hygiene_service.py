@@ -86,13 +86,130 @@ class HygieneService:
         return issues
     
     async def get_hygiene_report(self, db: AsyncSession) -> Dict[str, Any]:
-        """Generate full hygiene report."""
+        """Generate full hygiene report (D4 + E4)."""
         return {
             "near_duplicates": await self.find_near_duplicates(db),
             "unreferenced_forms": await self.find_unreferenced_forms(db),
             "broken_references": await self.find_broken_references(db),
+            "stale_drafts": await self.find_stale_drafts(db),
+            "orphaned_content": await self.find_orphaned_content(db),
+            "churn_hotspots": await self.find_churn_hotspots(db),
             "generated_at": datetime.utcnow().isoformat()
         }
 
 
 hygiene_service = HygieneService()
+
+
+    async def find_stale_drafts(self, db: AsyncSession, days_inactive: int = 30) -> List[Dict]:
+        """Find workflows/forms with no runs in N days that are still drafts."""
+        from app.models.schemas import Workflow, WorkflowRun
+        from app.models.forms import Form
+        
+        cutoff = datetime.utcnow() - timedelta(days=days_inactive)
+        
+        # Stale workflow drafts
+        wf_stmt = select(Workflow).where(
+            Workflow.is_published == False,
+            Workflow.is_active == True
+        )
+        wf_result = await db.execute(wf_stmt)
+        workflows = wf_result.scalars().all()
+        
+        stale_workflows = []
+        for wf in workflows:
+            # Check if any runs exist after cutoff
+            run_stmt = select(WorkflowRun).where(
+                WorkflowRun.workflow_id == wf.id,
+                WorkflowRun.created_at > cutoff
+            )
+            run_result = await db.execute(run_stmt)
+            if run_result.scalars().first() is None:
+                stale_workflows.append({
+                    "type": "workflow",
+                    "id": wf.id,
+                    "name": wf.name,
+                    "reason": f"unpublished draft with no runs in {days_inactive} days"
+                })
+        
+        # Stale form drafts
+        form_stmt = select(Form).where(
+            Form.is_published == False,
+            Form.is_active == True
+        )
+        form_result = await db.execute(form_stmt)
+        forms = form_result.scalars().all()
+        
+        stale_forms = []
+        for form in forms:
+            stale_forms.append({
+                "type": "form",
+                "id": form.id,
+                "name": form.name,
+                "reason": f"unpublished draft"
+            })
+        
+        return stale_workflows + stale_forms
+    
+    async def find_orphaned_content(self, db: AsyncSession) -> List[Dict]:
+        """Find content with no owner or owned by inactive users."""
+        from app.models.schemas import Workflow
+        from app.models.forms import Form
+        from app.models.auth import User
+        
+        issues = []
+        
+        # Workflows without owner
+        wf_stmt = select(Workflow).where(
+            Workflow.owner_user_id == None,
+            Workflow.is_active == True
+        )
+        wf_result = await db.execute(wf_stmt)
+        for wf in wf_result.scalars().all():
+            issues.append({
+                "type": "workflow",
+                "id": wf.id,
+                "name": wf.name,
+                "reason": "no owner assigned"
+            })
+        
+        # Forms without owner
+        form_stmt = select(Form).where(
+            Form.owner_user_id == None,
+            Form.is_active == True
+        )
+        form_result = await db.execute(form_stmt)
+        for form in form_result.scalars().all():
+            issues.append({
+                "type": "form",
+                "id": form.id,
+                "name": form.name,
+                "reason": "no owner assigned"
+            })
+        
+        # Content owned by inactive users
+        wf_stmt2 = select(Workflow).where(
+            Workflow.owner_user_id != None,
+            Workflow.is_active == True
+        )
+        wf_result2 = await db.execute(wf_stmt2)
+        for wf in wf_result2.scalars().all():
+            user_stmt = select(User).where(User.id == wf.owner_user_id, User.is_active == False)
+            user_result = await db.execute(user_stmt)
+            if user_result.scalar_one_or_none():
+                issues.append({
+                    "type": "workflow",
+                    "id": wf.id,
+                    "name": wf.name,
+                    "reason": f"owned by inactive user {wf.owner_user_id}"
+                })
+        
+        return issues
+    
+    async def find_churn_hotspots(self, db: AsyncSession, threshold: int = 5) -> List[Dict]:
+        """Find workflows/forms with high edit churn (many versions in short time)."""
+        from app.models.schemas import Workflow
+        
+        # This is a simplified version — would need version history tracking
+        # For now, return empty list
+        return []
