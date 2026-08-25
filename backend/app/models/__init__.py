@@ -11,3 +11,4 @@ from app.models.services import Service, Category
 from app.models.date_targets import DateTarget
 from app.models.field_library import FieldDefinition
 from app.models.reports import ReportDefinition
+from app.models.roles import CustomRole
