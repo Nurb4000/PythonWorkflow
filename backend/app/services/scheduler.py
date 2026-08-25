@@ -285,9 +285,16 @@ class SchedulerService:
             try:
                 now = datetime.now(tz.utc)
 
-                stmt = select(DateTarget).where(
-                    DateTarget.status == "pending",
-                    DateTarget.target_datetime <= now,
+                # Exclude date targets for paused tasks
+                from app.models.schemas import Task
+                stmt = (
+                    select(DateTarget)
+                    .join(Task, Task.id == DateTarget.task_id, isouter=True)
+                    .where(
+                        DateTarget.status == "pending",
+                        DateTarget.target_datetime <= now,
+                        (Task.pause_state.is_(None)) | (Task.pause_state == "in_process"),
+                    )
                 )
                 result = await db.execute(stmt)
                 breached = result.scalars().all()

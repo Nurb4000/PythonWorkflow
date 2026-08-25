@@ -1,7 +1,8 @@
 """
 Task API endpoints (P6.2: pagination support)
 """
-from fastapi import APIRouter, HTTPException, Depends, Query
+from datetime import datetime, timezone
+from fastapi import APIRouter, HTTPException, Depends, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 from typing import List, Optional
@@ -446,7 +447,7 @@ async def update_task(
         raise HTTPException(status_code=404, detail="Task not found")
     
     # Update fields
-    for field in ["title", "description", "status", "assigned_to_user_id", "assigned_group_id", "form_id", "task_data"]:
+    for field in ["title", "description", "status", "assigned_to_user_id", "assigned_group_id", "form_id", "task_data", "pause_state"]:
         if field in task_data:
             setattr(task, field, task_data[field])
     
@@ -456,6 +457,49 @@ async def update_task(
     await db.refresh(task)
     
     return {"message": "Task updated", "task_id": task.id}
+
+
+@router.post("/tasks/{task_id}/pause")
+async def pause_task(
+    task_id: int,
+    pause_state: str = Body(...),
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Set task pause state (SLA/OLA pause)."""
+    stmt = select(Task).where(Task.id == task_id)
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task.pause_state = pause_state
+    task.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {"message": f"Task paused with state: {pause_state}", "task_id": task.id, "pause_state": task.pause_state}
+
+
+@router.post("/tasks/{task_id}/resume")
+async def resume_task(
+    task_id: int,
+    current_user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db)
+):
+    """Resume task (clear pause state)."""
+    stmt = select(Task).where(Task.id == task_id)
+    result = await db.execute(stmt)
+    task = result.scalar_one_or_none()
+    
+    if not task:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    task.pause_state = "in_process"
+    task.updated_at = datetime.now(timezone.utc)
+    await db.commit()
+    
+    return {"message": "Task resumed", "task_id": task.id}
 
 
 @router.delete("/tasks/{task_id}")

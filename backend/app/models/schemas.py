@@ -174,6 +174,7 @@ class Task(Base):
     ola_closure_target_hours = Column(Integer, nullable=True)  # OLA: target for task to be completed/closed
     ola_pickup_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
     ola_closure_met = Column(Boolean, nullable=True)  # OLA: True=met, False=breached, None=pending
+    pause_state = Column(String(50), default="in_process")  # SLA/OLA pause states
     is_active = Column(Boolean, default=True, server_default=text("true"))
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
