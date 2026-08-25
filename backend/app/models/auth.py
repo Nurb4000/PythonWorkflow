@@ -37,7 +37,8 @@ class User(Base):
     email = Column(String(255), unique=True, nullable=False, index=True)
     password_hash = Column(String(255), nullable=False)
     full_name = Column(String(255))
-    role = Column(String(20), nullable=False, default="user")  # admin, developer, cmdb_manager, staff, user
+    role = Column(String(20), nullable=False, default="user")  # Primary role (admin, developer, cmdb_manager, staff, user) — kept for backward compat
+    roles = Column(JSON, default=list)  # Multiple roles per user (e.g., ["user", "developer"])
     is_active = Column(Boolean, default=True)
     is_verified = Column(Boolean, default=False)
     mfa_enabled = Column(Boolean, default=False)

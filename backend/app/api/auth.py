@@ -39,23 +39,34 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     return user
 
 
+def has_role(user: User, required_role: str) -> bool:
+    """Check if user has a specific role (supports multiple roles via roles JSON field)"""
+    # Check roles array first (new multi-role support)
+    if user.roles and required_role in user.roles:
+        return True
+    # Fall back to primary role for backward compatibility
+    if user.role == required_role:
+        return True
+    return False
+
+
 async def get_current_admin(user: User = Depends(get_current_user)) -> User:
     """Get current admin user"""
-    if user.role != "admin":
+    if not has_role(user, "admin"):
         raise HTTPException(status_code=403, detail="Admin access required")
     return user
 
 
 async def get_current_developer(user: User = Depends(get_current_user)) -> User:
     """Get current user who may develop workflows/forms (admin or developer)"""
-    if user.role not in ("admin", "developer"):
+    if not has_role(user, "admin") and not has_role(user, "developer"):
         raise HTTPException(status_code=403, detail="Developer access required")
     return user
 
 
 async def get_current_cmdb_manager(user: User = Depends(get_current_user)) -> User:
     """Get current user who may manage CMDB data (admin, developer, or cmdb_manager)"""
-    if user.role not in ("admin", "developer", "cmdb_manager"):
+    if not has_role(user, "admin") and not has_role(user, "developer") and not has_role(user, "cmdb_manager"):
         raise HTTPException(status_code=403, detail="CMDB manager access required")
     return user
 
