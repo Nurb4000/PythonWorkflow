@@ -129,6 +129,10 @@ export const taskApi = {
   closeTask: (taskId: number) => api.post(`/tasks/${taskId}/close`),
   rejectTask: (taskId: number, reason?: string) => 
     api.post(`/tasks/${taskId}/reject`, {}, { params: { reason } }),
+  pauseTask: (taskId: number, pauseState: string) => 
+    api.post(`/tasks/${taskId}/pause`, pauseState),
+  resumeTask: (taskId: number) => 
+    api.post(`/tasks/${taskId}/resume`),
   updateTask: (taskId: number, data: any) => api.put(`/tasks/${taskId}`, data),
   deleteTask: (taskId: number) => api.delete(`/tasks/${taskId}`)
 }

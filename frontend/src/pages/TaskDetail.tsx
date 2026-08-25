@@ -18,12 +18,13 @@ interface Task {
   form_id: number | null
   task_data: any
   result_data: any
+  pause_state?: string
+  assigned_user?: { id: number; username: string; full_name: string } | null
+  assigned_group?: { id: number; name: string } | null
   created_at: string
   updated_at: string
   completed_at: string | null
   closed_at: string | null
-  assigned_user: { id: number; username: string; full_name: string } | null
-  assigned_group: { id: number; name: string } | null
 }
 
 export const TaskDetail: React.FC = () => {
@@ -43,6 +44,22 @@ export const TaskDetail: React.FC = () => {
       return response.data as Task
     },
     enabled: !!id
+  })
+
+  const [pauseState, setPauseState] = useState(task?.pause_state || 'in_process')
+
+  const pauseMutation = useMutation({
+    mutationFn: (state: string) => taskApi.pauseTask(taskId, state),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+    },
+  })
+
+  const resumeMutation = useMutation({
+    mutationFn: () => taskApi.resumeTask(taskId),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['task', taskId] })
+    },
   })
 
   const { data: runDateTargets } = useQuery({
@@ -109,14 +126,54 @@ export const TaskDetail: React.FC = () => {
 
   return (
     <div>
-      <div className="card-header">
-        <h2>{task.title}</h2>
-        <span className={`badge ${task.status === 'open' ? 'badge-warning' : 
-          task.status === 'review' ? 'badge-info' : 
-          task.status === 'owned' ? 'badge-primary' : 
-          task.status === 'completed' ? 'badge-success' : 'badge-secondary'}`}>
-          {task.status}
-        </span>
+      <div className="card-header" style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: '1rem' }}>
+        <div>
+          <h2 style={{ margin: 0 }}>{task.title}</h2>
+          <span className={`badge ${task.status === 'open' ? 'badge-warning' : 
+            task.status === 'review' ? 'badge-info' : 
+            task.status === 'owned' ? 'badge-primary' : 
+            task.status === 'completed' ? 'badge-success' : 'badge-secondary'}`}>
+            {task.status}
+          </span>
+        </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+          <label style={{ fontSize: '0.85rem', color: '#666' }}>SLA/OLA Pause:</label>
+          {pauseState === 'in_process' ? (
+            <select
+              className="form-input"
+              value={pauseState}
+              onChange={(e) => setPauseState(e.target.value)}
+              style={{ maxWidth: '250px' }}
+            >
+              <option value="pending_customer_feedback">Pending Customer Feedback</option>
+              <option value="scheduled_with_customer">Scheduled with Customer</option>
+              <option value="pending_vendor">Pending Vendor</option>
+              <option value="pending_internal_team">Pending Internal Team</option>
+              <option value="in_process">In Process</option>
+              <option value="scheduled">Scheduled</option>
+            </select>
+          ) : (
+            <span className="badge badge-warning">{pauseState.replace(/_/g, ' ')}</span>
+          )}
+          {pauseState !== 'in_process' && (
+            <button
+              className="btn btn-sm btn-secondary"
+              onClick={() => resumeMutation.mutate()}
+              disabled={resumeMutation.isPending}
+            >
+              {resumeMutation.isPending ? 'Resuming...' : 'Resume'}
+            </button>
+          )}
+          {pauseState === 'in_process' && (
+            <button
+              className="btn btn-sm btn-primary"
+              onClick={() => pauseMutation.mutate(pauseState)}
+              disabled={pauseMutation.isPending || pauseState === 'in_process'}
+            >
+              {pauseMutation.isPending ? 'Pausing...' : 'Set Pause'}
+            </button>
+          )}
+        </div>
       </div>
 
       <div className="card">
