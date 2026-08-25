@@ -1,0 +1,18 @@
+# Mock LDAP server for testing
+# Uses osixia/openldap with a simple user setup
+version: '3.8'
+
+services:
+  ldap-test:
+    image: osixia/openldap:latest
+    container_name: ldap-test
+    environment:
+      LDAP_ORGANIZATION: "Test Org"
+      LDAP_DOMAIN: "test.example.com"
+      LDAP_ADMIN_PASSWORD: "admin"
+      LDAP_BASE_DN: "dc=test,dc=example,dc=com"
+    ports:
+      - "1389:389"
+    volumes:
+      - ./tests/ldap:/container/service/slapd/assets/config/bootstrap/ldif/custom
+    command: ["--copy-service"]

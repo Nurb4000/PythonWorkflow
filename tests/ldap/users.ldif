@@ -1,0 +1,20 @@
+# Sample users for testing
+dn: ou=users,dc=test,dc=example,dc=com
+objectClass: organizationalUnit
+ou: users
+
+dn: cn=john.doe,ou=users,dc=test,dc=example,dc=com
+objectClass: inetOrgPerson
+cn: John Doe
+sn: Doe
+uid: jdoe
+mail: john.doe@example.com
+userPassword: password123
+
+dn: cn=jane.smith,ou=users,dc=test,dc=example,dc=com
+objectClass: inetOrgPerson
+cn: Jane Smith
+sn: Smith
+uid: jsmith
+mail: jane.smith@example.com
+userPassword: password456
