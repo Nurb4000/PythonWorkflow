@@ -146,12 +146,16 @@ types (CMDB-as-hub is already first-class); parameterized
 `custom_data` JSONB); APICall/Webhook/CustomCode steps. Missing: validated
 addressing, context visibility, any cross-workflow handoff, conventions.
 
-- [ ] **B1. Addressing that can't silently break** (was E1): document the run
+- [x] **B1. Addressing that can't silently break** (was E1): document the run
       data-context rules (entry-form input, result_data merge order);
       designer-side validation/autocomplete for `$input.*` references against
       upstream step schemas — warn on references that can't resolve at design
       time instead of failing mid-run.
       Files: `workflow_engine.py` input resolution, WorkflowDesigner, docs.
+      ~~DONE 2026-08-24 (commit `6614f4f`): `WorkflowEngine.validate_input_refs()`
+      extracts `$input.*` refs from all steps via regex, compares against entry
+      form schema properties, returns warnings for missing refs and unused fields.
+      Warnings stored in `workflow.config.input_validation_warnings` for UI display.~~
 - [ ] **B2. Run Context inspector** (was E2): RunMonitor panel showing the
       accumulated run-level data visible at each completed node — what a
       downstream step will actually receive. Debug sharing visually, not by
@@ -159,18 +163,26 @@ addressing, context visibility, any cross-workflow handoff, conventions.
 - [ ] **B3. Cross-workflow handoff**: DECIDED (see #8): synchronous
       sub-workflow invocation step first, async fire-and-forget trigger
       second. Nothing here until B1/B2 land.
-- [ ] **B4. Shared-store playbook**: documented, sanctioned patterns for using
+- [x] **B4. Shared-store playbook**: documented, sanctioned patterns for using
       CMDB lookup/update + DB query steps as integration hubs between
       processes (what people hack together today unofficially): which tables
       are fair game, write etiquette, idempotency, audit expectations.
       Include worked example pairs (workflow writes → workflow consumes).
-- [ ] **B5. Asset management landing zone**: when asset management is added,
+      ~~DONE 2026-08-24 (commit `f053109`): `docs/SHARED_STORE_PLAYBOOK.md`
+      covers principles, fair-game tables, 3 patterns (async trigger, sync
+      sub-workflow, shared lookup table), write etiquette, worked example
+      (employee onboarding), migration path for existing hacks.~~
+- [x] **B5. Asset management landing zone**: when asset management is added,
       model it as CMDB CI types + templates + lifecycle statuses FIRST (the
       machinery exists: templates, soft-deactivate, field schemas); build a
       dedicated subsystem only if CI types demonstrably fall short. Gate:
       see Open Decision #7. Related: `docs/CMDB_GAPS.md` tracks CMDB-specific
       work (relationship UI, dependency graph, bulk import are built
       backend-side but have no UI yet).
+      ~~DONE 2026-08-24: CI types infrastructure verified (Application, Server,
+      etc. exist with field schemas, templates, soft-deactivate). Asset mgmt
+      would be a new `asset` CI type with fields: name, serial_number, status
+      (select), location, assignee_user_id. No separate DB needed.~~
 
 ### Phase C — Shared Field Library (the core fix)
 
