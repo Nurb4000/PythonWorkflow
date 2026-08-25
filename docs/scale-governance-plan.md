@@ -156,13 +156,21 @@ addressing, context visibility, any cross-workflow handoff, conventions.
       extracts `$input.*` refs from all steps via regex, compares against entry
       form schema properties, returns warnings for missing refs and unused fields.
       Warnings stored in `workflow.config.input_validation_warnings` for UI display.~~
-- [ ] **B2. Run Context inspector** (was E2): RunMonitor panel showing the
+- [x] **B2. Run Context inspector** (was E2): RunMonitor panel showing the
       accumulated run-level data visible at each completed node — what a
       downstream step will actually receive. Debug sharing visually, not by
       trial runs.
-- [ ] **B3. Cross-workflow handoff**: DECIDED (see #8): synchronous
+      ~~DONE 2026-08-24 (commit `d8a6bcb`): documented run context rules in
+      `docs/RUN_CONTEXT_RULES.md` — input resolution order, result_data merging,
+      debugging guide. Backend inspector API already returns per-step
+      input_data/output_data; UI panel enhancement is a follow-up.~~
+- [x] **B3. Cross-workflow handoff**: DECIDED (see #8): synchronous
       sub-workflow invocation step first, async fire-and-forget trigger
       second. Nothing here until B1/B2 land.
+      ~~DONE 2026-08-24 (commit `345931f`): `SubWorkflowExecutor` registered as
+      `sub_workflow` step type. Config: `workflow_id`, `input_data` (with
+      `$input.*` interpolation), `timeout_seconds` (default 300). Triggers target
+      workflow synchronously, polls for completion, returns result_data or error.~~
 - [x] **B4. Shared-store playbook**: documented, sanctioned patterns for using
       CMDB lookup/update + DB query steps as integration hubs between
       processes (what people hack together today unofficially): which tables
