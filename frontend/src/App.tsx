@@ -27,6 +27,7 @@ import { Marketplace } from './pages/Marketplace'
 import { CITypeManager } from './pages/CITypeManager'
 import { CIRelationships } from './pages/CIRelationships'
 import { CIDependencyGraphPage } from './pages/CIDependencyGraphPage'
+import { CIBulkImport } from './pages/CIBulkImport'
 import { CItemList } from './pages/CItemList'
 import { MySubmissions } from './pages/MySubmissions'
 import { ServiceManager } from './pages/ServiceManager'
@@ -420,6 +421,7 @@ const AppContent: React.FC = () => {
           <Route path="/cmdb/items/:id" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
           <Route path="/cmdb/items/:id/relationships" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CIRelationships /></RoleRoute>} />
           <Route path="/cmdb/items/:id/graph" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CIDependencyGraphPage /></RoleRoute>} />
+          <Route path="/cmdb/items/bulk-import/:typeKey" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CIBulkImport /></RoleRoute>} />
           <Route path="/login" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
           <Route path="*" element={<Navigate to={roleDefaultPath(user.role)} replace />} />
         </Routes>

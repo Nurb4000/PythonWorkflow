@@ -313,7 +313,10 @@ export const CItemList: React.FC = () => {
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '1.5rem' }}>
         <h2>CMDB — Configuration Items</h2>
         {selectedTypeId && !showForm && (
-          <button className="btn btn-primary" onClick={handleCreate}>+ New Item</button>
+          <div style={{ display: 'flex', gap: '0.5rem' }}>
+            <button className="btn btn-primary" onClick={handleCreate}>+ New Item</button>
+            <Link to={`/cmdb/items/bulk-import/${currentType?.key}`} className="btn btn-secondary">Bulk Import</Link>
+          </div>
         )}
       </div>
 
