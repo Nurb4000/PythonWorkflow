@@ -24,7 +24,8 @@ interface FormField {
     maxLength?: number
     pattern?: string
   }
-  source?: 'form' | 'reference'
+  source?: 'form' | 'reference' | 'library'
+  field_def_id?: number
   ref_table?: string
   ref_column?: string
   ref_record_id?: number | string
@@ -48,6 +49,16 @@ interface FormSchema {
   properties: Record<string, FormField>
   required: string[]
   columns?: number
+}
+
+interface LibraryField {
+  id: number
+  key: string
+  label: string
+  field_type: string
+  options: any[]
+  validation_rules: Record<string, any>
+  help_text: string
 }
 
 interface Form {
@@ -101,6 +112,9 @@ export const FormDesigner: React.FC = () => {
   const [formColumns, setFormColumns] = useState<1 | 2 | 3 | 4>(1)
   const [formSearch, setFormSearch] = useState('')
   const [formStatusFilter, setFormStatusFilter] = useState('active')
+  const [showLibraryPicker, setShowLibraryPicker] = useState(false)
+  const [libraryFields, setLibraryFields] = useState<LibraryField[]>([])
+  const [librarySearch, setLibrarySearch] = useState('')
   const queryClient = useQueryClient()
 
   const { data: formsData } = useQuery({
@@ -352,6 +366,48 @@ export const FormDesigner: React.FC = () => {
     }
     setFields([...fields, newField])
   }
+
+  // C3: Library field picker
+  const fetchLibraryFields = async () => {
+    try {
+      const token = localStorage.getItem('token')
+      const response = await axios.get(`${API_URL}/field-library/`, {
+        headers: { Authorization: `Bearer ${token}` },
+        params: { is_active: true }
+      })
+      const data = response.data
+      setLibraryFields(data.items || data)
+    } catch (err) {
+      console.error('Failed to fetch library fields:', err)
+    }
+  }
+
+  const handleAddFromLibrary = (libField: LibraryField) => {
+    const newField: FormField = {
+      name: libField.key,
+      type: libField.field_type as any,
+      title: libField.label,
+      required: false,
+      data_size: 'medium',
+      display_size: 'full',
+      column: 0,
+      source: 'library',
+      field_def_id: libField.id,
+      validation: libField.validation_rules || {}
+    }
+    if (libField.options && libField.options.length > 0) {
+      newField.options = libField.options.map((opt: any) => typeof opt === 'string' ? opt : opt.value || opt.label || String(opt))
+    }
+    setFields([...fields, newField])
+    setShowLibraryPicker(false)
+    setLibrarySearch('')
+  }
+
+  useEffect(() => {
+    if (showLibraryPicker) {
+      fetchLibraryFields()
+    }
+  }, [showLibraryPicker])
 
   const handleUpdateField = (index: number, updates: Partial<FormField>) => {
     const updated = [...fields]
@@ -979,6 +1035,9 @@ export const FormDesigner: React.FC = () => {
                 <button className="btn btn-secondary" onClick={handleAddField}>
                   + Add Field
                 </button>
+                <button className="btn btn-primary" onClick={() => setShowLibraryPicker(true)}>
+                  📚 Add from Library
+                </button>
                 <button className="btn btn-primary" onClick={handleSaveSchema}>
                   Save Schema
                 </button>
@@ -1128,6 +1187,50 @@ export const FormDesigner: React.FC = () => {
             )}
           </div>
         </>
+      )}
+
+      {/* C3: Library Picker Modal */}
+      {showLibraryPicker && (
+        <div style={{
+          position: 'fixed', top: 0, left: 0, right: 0, bottom: 0,
+          backgroundColor: 'rgba(0,0,0,0.5)', display: 'flex', alignItems: 'center', justifyContent: 'center', zIndex: 1000
+        }}>
+          <div style={{ backgroundColor: 'white', borderRadius: '8px', padding: '2rem', maxWidth: '600px', width: '90%', maxHeight: '80vh', overflow: 'auto' }}>
+            <h3 style={{ marginTop: 0 }}>Add Field from Library</h3>
+            <input
+              type="text"
+              placeholder="Search library fields..."
+              value={librarySearch}
+              onChange={(e) => setLibrarySearch(e.target.value)}
+              style={{ width: '100%', padding: '0.5rem', marginBottom: '1rem', boxSizing: 'border-box' }}
+            />
+            <div style={{ maxHeight: '400px', overflow: 'auto' }}>
+              {libraryFields
+                .filter(f => !librarySearch || f.label.toLowerCase().includes(librarySearch.toLowerCase()) || f.key.toLowerCase().includes(librarySearch.toLowerCase()))
+                .map(field => (
+                  <div key={field.id} style={{
+                    padding: '0.75rem', border: '1px solid #ddd', borderRadius: '4px', marginBottom: '0.5rem',
+                    cursor: 'pointer', display: 'flex', justifyContent: 'space-between', alignItems: 'center'
+                  }}
+                  onClick={() => handleAddFromLibrary(field)}>
+                    <div>
+                      <strong>{field.label}</strong>
+                      <small style={{ marginLeft: '0.5rem', color: '#666' }}>({field.key})</small>
+                      <div style={{ fontSize: '0.85rem', color: '#888' }}>{field.field_type}</div>
+                    </div>
+                    <button className="btn btn-sm btn-primary">Add</button>
+                  </div>
+                ))
+              }
+            </div>
+            {libraryFields.length === 0 && (
+              <p style={{ color: '#666', textAlign: 'center' }}>No fields in library yet. Create some in Admin → Field Library.</p>
+            )}
+            <div style={{ marginTop: '1rem', textAlign: 'right' }}>
+              <button className="btn btn-secondary" onClick={() => setShowLibraryPicker(false)}>Cancel</button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   )
