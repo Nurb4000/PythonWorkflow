@@ -9,7 +9,7 @@ const API_URL = '/api'
 
 interface FormField {
   name: string
-  type: 'string' | 'number' | 'integer' | 'boolean' | 'email' | 'textarea' | 'select' | 'info' | 'date' | 'date-time' | 'file'
+  type: 'string' | 'number' | 'integer' | 'boolean' | 'email' | 'textarea' | 'select' | 'info' | 'date' | 'date-time' | 'file' | 'lookup'
   title: string
   description?: string
   required: boolean
@@ -28,6 +28,14 @@ interface FormField {
   field_def_id?: number
   ref_table?: string
   ref_column?: string
+  // Lookup configuration
+  lookup_config?: {
+    target_type: 'users' | 'ci_items' | 'custom'
+    search_field: string  // e.g., 'username', 'name', 'custom_field'
+    display_field: string  // e.g., 'full_name', 'name'
+    result_fields: string[]  // Fields to pull into form (e.g., ['email', 'phone'])
+    auto_fill?: boolean  // Auto-fill related fields when lookup succeeds
+  }
   ref_record_id?: number | string
 }
 
@@ -920,6 +928,86 @@ export const FormDesigner: React.FC = () => {
                           {FIELD_TYPES.map(t => <option key={t.value} value={t.value}>{t.label}</option>)}
                         </select>
                       )}
+                      
+                      {/* Lookup configuration */}
+                      {field.type === 'lookup' && field.lookup_config && (
+                        <div style={{ marginTop: '0.5rem', padding: '0.75rem', backgroundColor: '#f8f9fa', borderRadius: '4px', gridColumn: '1 / -1' }}>
+                          <h5 style={{ margin: '0 0 0.5rem', fontSize: '0.9rem' }}>Lookup Configuration</h5>
+                          
+                          <div className="grid grid-2" style={{ marginBottom: '0.5rem' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.75rem' }}>Search Target</label>
+                              <select
+                                className="form-input"
+                                value={field.lookup_config.target_type}
+                                onChange={(e) => handleUpdateField(index, { 
+                                  lookup_config: { ...field.lookup_config, target_type: e.target.value as any }
+                                })}
+                              >
+                                <option value="users">Users</option>
+                                <option value="ci_items">CI Items</option>
+                                <option value="custom">Custom</option>
+                              </select>
+                            </div>
+                            
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.75rem' }}>Search Field</label>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={field.lookup_config.search_field}
+                                onChange={(e) => handleUpdateField(index, { 
+                                  lookup_config: { ...field.lookup_config, search_field: e.target.value }
+                                })}
+                                placeholder="e.g., username, name, email"
+                              />
+                            </div>
+                          </div>
+                          
+                          <div className="grid grid-2" style={{ marginBottom: '0.5rem' }}>
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label className="form-label" style={{ fontSize: '0.75rem' }}>Display Field</label>
+                              <input
+                                type="text"
+                                className="form-input"
+                                value={field.lookup_config.display_field}
+                                onChange={(e) => handleUpdateField(index, { 
+                                  lookup_config: { ...field.lookup_config, display_field: e.target.value }
+                                })}
+                                placeholder="e.g., full_name, name"
+                              />
+                            </div>
+                            
+                            <div className="form-group" style={{ marginBottom: 0 }}>
+                              <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', fontSize: '0.75rem' }}>
+                                <input
+                                  type="checkbox"
+                                  checked={field.lookup_config.auto_fill || false}
+                                  onChange={(e) => handleUpdateField(index, { 
+                                    lookup_config: { ...field.lookup_config, auto_fill: e.target.checked }
+                                  })}
+                                />
+                                Auto-fill related fields
+                              </label>
+                            </div>
+                          </div>
+                          
+                          <div className="form-group" style={{ marginBottom: 0 }}>
+                            <label className="form-label" style={{ fontSize: '0.75rem' }}>Result Fields (comma-separated)</label>
+                            <input
+                              type="text"
+                              className="form-input"
+                              value={(field.lookup_config.result_fields || []).join(', ')}
+                              onChange={(e) => handleUpdateField(index, { 
+                                lookup_config: { ...field.lookup_config, result_fields: e.target.value.split(',').map(s => s.trim()).filter(Boolean) }
+                              })}
+                              placeholder="e.g., email, phone, department"
+                            />
+                            <small style={{ fontSize: '0.7rem', color: '#666' }}>Fields to pull into the form when lookup succeeds</small>
+                          </div>
+                        </div>
+                      )}
+                    
                     {field.type !== 'info' && (
                       <label style={{ display: 'flex', alignItems: 'center', gap: '0.25rem', whiteSpace: 'nowrap' }}>
                         <input

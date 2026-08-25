@@ -295,13 +295,50 @@ async def submit_form(
 ):
     """Submit data to a form"""
     try:
+        # Process lookup fields before submission
+        from app.models.forms import Form
+        from sqlalchemy import select
+        
+        form_stmt = select(Form).where(Form.id == form_id, Form.is_active == True)
+        form_result = await db.execute(form_stmt)
+        form = form_result.scalar_one_or_none()
+        
+        if form and form.schema_json:
+            import json
+            schema = json.loads(form.schema_json) if isinstance(form.schema_json, str) else form.schema_json
+            properties = schema.get("properties", {})
+            
+            # Check for lookup fields and resolve them
+            from app.services.lookup_service import lookup_service
+            for field_name, field_def in properties.items():
+                if isinstance(field_def, dict) and field_def.get("type") == "lookup" and field_def.get("lookup_config"):
+                    lookup_value = data.get(field_name)
+                    if lookup_value:
+                        lookup_result = await lookup_service.perform_lookup(
+                            db, 
+                            field_def["lookup_config"], 
+                            lookup_value
+                        )
+                        if lookup_result:
+                            # Replace lookup field value with selected item ID
+                            data[field_name] = str(lookup_result.get('id', lookup_value))
+                            
+                            # Auto-fill related fields if configured
+                            if field_def["lookup_config"].get("auto_fill"):
+                                result_fields = field_def["lookup_config"].get("result_fields", [])
+                                extracted = await lookup_service.extract_result_fields(lookup_result, result_fields)
+                                for rf in result_fields:
+                                    if rf in extracted and rf not in data:
+                                        data[rf] = extracted[rf]
+        
         submission = await form_service.submit_form(db, form_id, data, current_user.id)
         
         return {
             "id": submission.id,
             "form_id": submission.form_id,
             "status": submission.status,
-            "submitted_at": submission.created_at
+            "submitted_at": submission.created_at,
+            "lookup_resolved": True
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
