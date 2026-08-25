@@ -10,3 +10,4 @@ from app.models.cmdb import CIType, ConfigurationItem, CIRelationship, CIHistory
 from app.models.services import Service, Category
 from app.models.date_targets import DateTarget
 from app.models.field_library import FieldDefinition
+from app.models.reports import ReportDefinition
