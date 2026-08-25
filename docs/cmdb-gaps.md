@@ -65,3 +65,9 @@ work; do not duplicate scope here.
 ### 2026-08-24 — created
 - Recon verified orphans above (`grep` over pages/components: zero usages of
   relationship/graph/bulk-import bindings; stats ARE used by AdminDashboard).
+
+### 2026-08-25 — SLA/OLA pause feature
+- Added `pause_state` field to Task model (in_process, pending_customer_feedback, scheduled_with_customer, etc.)
+- Scheduler skips date targets for paused tasks
+- API endpoints: POST /tasks/{id}/pause, POST /tasks/{id}/resume
+- Frontend: dropdown in TaskDetail with pause states + resume button
