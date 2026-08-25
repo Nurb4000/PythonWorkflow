@@ -1,126 +1,177 @@
-import logging
-import re
-from typing import List, Optional
+"""
+F1: Auto-generate per-form SQL VIEWs for structured reporting.
 
+Generates read-only views that materialize form submissions and CI items as
+flat typed tables. Naming: v_form_<key>, v_ci_<key>. Regenerated on publish.
+Uses jsonb_to_record for JSONB extraction.
+"""
+from typing import Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select, text as sa_text
-
-from app.models.sql_views import SQLView
-
-logger = logging.getLogger(__name__)
-
-DANGEROUS_KEYWORDS = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE TABLE", "TRUNCATE", "EXEC", "EXECUTE"]
+from sqlalchemy import text
 
 
-class SQLViewService:
-    """Manage SQL views lifecycle."""
-
-    def _validate_view_sql(self, sql: str) -> None:
-        """Validate that the SQL is a safe CREATE VIEW statement."""
-        stripped = sql.strip().upper()
-        if not stripped.startswith("CREATE"):
-            raise ValueError("SQL must start with CREATE")
-
-        for keyword in DANGEROUS_KEYWORDS:
-            pattern = r'\b' + keyword + r'\b'
-            if re.search(pattern, sql, re.IGNORECASE):
-                raise ValueError(f"View definition contains disallowed keyword: {keyword}")
-
-    async def list_views(self, db: AsyncSession, include_inactive: bool = False) -> List[SQLView]:
-        """List all SQL views."""
-        stmt = select(SQLView).order_by(SQLView.name)
-        if not include_inactive:
-            stmt = stmt.where(SQLView.is_active == True)
+class SqlViewService:
+    """Manage auto-generated SQL VIEWs for forms and CI types."""
+    
+    async def ensure_form_view(self, db: AsyncSession, form_id: int, form_key: str) -> Dict[str, Any]:
+        """Ensure a SQL VIEW exists for a form's submissions."""
+        # Get form schema to determine columns
+        from app.models.forms import Form
+        stmt = text("SELECT id, name, schema_json FROM forms WHERE id = :id")
+        result = await db.execute(stmt, {"id": form_id})
+        row = result.fetchone()
+        
+        if not row:
+            return {"success": False, "error": f"Form {form_id} not found"}
+        
+        schema = row.schema_json or {}
+        properties = schema.get("properties", {})
+        
+        if not properties:
+            return {"success": True, "message": "No properties to create view for"}
+        
+        # Build column definitions
+        columns = []
+        for field_name, field_def in properties.items():
+            if isinstance(field_def, dict):
+                field_type = field_def.get("type", "text")
+                sql_type = self._map_json_schema_type(field_type)
+                columns.append(f'"{field_name}" {sql_type}')
+        
+        if not columns:
+            return {"success": True, "message": "No valid columns in schema"}
+        
+        # Generate CREATE OR REPLACE VIEW SQL
+        view_name = f"v_form_{form_key}"
+        cols_sql = ", ".join(columns)
+        
+        # Extract data from JSONB submissions
+        select_cols = []
+        for field_name in properties.keys():
+            select_cols.append(f'jsonb_extract_path_text(data, \'{field_name}\') as "{field_name}"')
+        
+        select_sql = ", ".join(select_cols) if select_cols else "'unknown' as _placeholder"
+        
+        sql = f"""
+        CREATE OR REPLACE VIEW {view_name} AS
+        SELECT 
+            fs.id as submission_id,
+            fs.form_id,
+            fs.submitted_by,
+            fs.submitted_at,
+            {select_sql}
+        FROM form_submissions fs
+        WHERE fs.form_id = {form_id}
+        """
+        
+        try:
+            await db.execute(text(sql))
+            await db.commit()
+            return {"success": True, "view_name": view_name, "columns": columns}
+        except Exception as e:
+            await db.rollback()
+            return {"success": False, "error": str(e), "sql": sql}
+    
+    async def ensure_ci_type_view(self, db: AsyncSession, ci_type_id: int, ci_type_key: str) -> Dict[str, Any]:
+        """Ensure a SQL VIEW exists for a CI type's items."""
+        from app.models.cmdb import CIType
+        stmt = text("SELECT id, key, field_schema FROM ci_types WHERE id = :id")
+        result = await db.execute(stmt, {"id": ci_type_id})
+        row = result.fetchone()
+        
+        if not row:
+            return {"success": False, "error": f"CI type {ci_type_id} not found"}
+        
+        field_schema = row.field_schema or []
+        
+        columns = []
+        select_cols = []
+        
+        for field in field_schema:
+            if isinstance(field, dict) and "key" in field:
+                field_key = field["key"]
+                field_type = field.get("type", "text")
+                sql_type = self._map_json_schema_type(field_type)
+                columns.append(f'"{field_key}" {sql_type}')
+                select_cols.append(f'jsonb_extract_path_text(ci_data, \'{field_key}\') as "{field_key}"')
+        
+        if not select_cols:
+            return {"success": True, "message": "No valid fields in schema"}
+        
+        select_sql = ", ".join(select_cols)
+        view_name = f"v_ci_{ci_type_key}"
+        
+        sql = f"""
+        CREATE OR REPLACE VIEW {view_name} AS
+        SELECT 
+            ci.id as item_id,
+            ci.type_id,
+            ci.name,
+            ci.status,
+            {select_sql}
+        FROM configuration_items ci
+        WHERE ci.type_id = {ci_type_id}
+          AND ci.is_active = true
+        """
+        
+        try:
+            await db.execute(text(sql))
+            await db.commit()
+            return {"success": True, "view_name": view_name, "columns": columns}
+        except Exception as e:
+            await db.rollback()
+            return {"success": False, "error": str(e), "sql": sql}
+    
+    def _map_json_schema_type(self, json_type: str) -> str:
+        """Map JSON Schema types to PostgreSQL types."""
+        type_map = {
+            "string": "text",
+            "text": "text",
+            "number": "numeric",
+            "integer": "bigint",
+            "boolean": "boolean",
+            "date": "date",
+            "datetime": "timestamptz",
+            "email": "text",
+            "url": "text",
+            "currency": "numeric",
+        }
+        return type_map.get(json_type, "text")
+    
+    async def drop_view(self, db: AsyncSession, view_name: str) -> Dict[str, Any]:
+        """Drop a generated view."""
+        try:
+            await db.execute(text(f'DROP VIEW IF EXISTS "{view_name}"'))
+            await db.commit()
+            return {"success": True, "message": f"View {view_name} dropped"}
+        except Exception as e:
+            await db.rollback()
+            return {"success": False, "error": str(e)}
+    
+    async def list_views(self, db: AsyncSession) -> List[Dict[str, Any]]:
+        """List all generated views."""
+        stmt = text("""
+            SELECT 
+                schemaname,
+                viewname,
+                definition
+            FROM pg_views 
+            WHERE schemaname = 'public'
+              AND viewname LIKE 'v_form_%'
+              OR viewname LIKE 'v_ci_%'
+            ORDER BY viewname
+        """)
         result = await db.execute(stmt)
-        return result.scalars().all()
-
-    async def get_view(self, db: AsyncSession, view_id: int) -> Optional[SQLView]:
-        """Get a single SQL view by ID."""
-        stmt = select(SQLView).where(SQLView.id == view_id)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def create_view(self, db: AsyncSession, name: str, definition_sql: str,
-                          description: str = "", created_by: Optional[int] = None) -> SQLView:
-        """Create a new SQL view."""
-        self._validate_view_sql(definition_sql)
-
-        existing = await self.get_view_by_name(db, name)
-        if existing:
-            raise ValueError(f"View '{name}' already exists")
-
-        view = SQLView(
-            name=name,
-            definition_sql=definition_sql,
-            description=description,
-            created_by=created_by,
-            is_active=True
-        )
-        db.add(view)
-
-        await db.execute(sa_text(definition_sql))
-        await db.commit()
-        await db.refresh(view)
-
-        logger.info(f"Created SQL view: {name}")
-        return view
-
-    async def update_view(self, db: AsyncSession, view_id: int, definition_sql: Optional[str] = None,
-                          description: Optional[str] = None, is_active: Optional[bool] = None) -> SQLView:
-        """Update an existing SQL view."""
-        view = await self.get_view(db, view_id)
-        if not view:
-            raise ValueError(f"View {view_id} not found")
-
-        if definition_sql:
-            self._validate_view_sql(definition_sql)
-            view.definition_sql = definition_sql
-            await db.execute(sa_text("CREATE OR REPLACE " + definition_sql))
-
-        if description is not None:
-            view.description = description
-        if is_active is not None:
-            view.is_active = is_active
-
-        await db.commit()
-        await db.refresh(view)
-
-        logger.info(f"Updated SQL view: {view.name}")
-        return view
-
-    async def delete_view(self, db: AsyncSession, view_id: int) -> bool:
-        """Deactivate a SQL view (drops from database but keeps record)."""
-        view = await self.get_view(db, view_id)
-        if not view:
-            return False
-
-        await db.execute(sa_text(f"DROP VIEW IF EXISTS {view.name}"))
-        view.is_active = False
-        await db.commit()
-
-        logger.info(f"Deactivated SQL view: {view.name}")
-        return True
-
-    async def get_view_by_name(self, db: AsyncSession, name: str) -> Optional[SQLView]:
-        """Get a view by its database name."""
-        stmt = select(SQLView).where(SQLView.name == name)
-        result = await db.execute(stmt)
-        return result.scalar_one_or_none()
-
-    async def sync_views(self, db: AsyncSession) -> None:
-        """Sync all active views in the database (run on startup)."""
-        stmt = select(SQLView).where(SQLView.is_active == True)
-        result = await db.execute(stmt)
-        views = result.scalars().all()
-
-        for view in views:
-            try:
-                await db.execute(sa_text(view.definition_sql))
-                logger.info(f"Synced view: {view.name}")
-            except Exception as e:
-                logger.warning(f"Failed to sync view {view.name}: {e}")
-
-        await db.commit()
+        rows = result.fetchall()
+        
+        return [
+            {
+                "schema": row.schemaname,
+                "name": row.viewname,
+                "preview": (row.definition or "")[:200] + "..." if len(row.definition or "") > 200 else row.definition
+            }
+            for row in rows
+        ]
 
 
-sql_view_service = SQLViewService()
+sql_view_service = SqlViewService()

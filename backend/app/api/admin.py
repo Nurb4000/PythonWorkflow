@@ -571,3 +571,60 @@ async def promote_form(
     """E3: Promote a form to a target environment."""
     from app.services.promotion_service import promotion_service
     return await promotion_service.promote_form(db, form_id, target_env, current_user.id)
+
+
+@router.post("/views/regenerate/form/{form_id}")
+async def regenerate_form_view(
+    form_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """F1: Regenerate SQL VIEW for a form."""
+    from app.services.sql_view_service import sql_view_service
+    # Get form key (use name slugified)
+    from sqlalchemy import select as sa_select
+    from app.models.forms import Form
+    result = await db.execute(sa_select(Form).where(Form.id == form_id))
+    form = result.scalar_one_or_none()
+    if not form:
+        raise HTTPException(status_code=404, detail="Form not found")
+    key = form.name.lower().replace(" ", "_")[:50]
+    return await sql_view_service.ensure_form_view(db, form_id, key)
+
+
+@router.post("/views/regenerate/ci-type/{ci_type_id}")
+async def regenerate_ci_type_view(
+    ci_type_id: int,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """F1: Regenerate SQL VIEW for a CI type."""
+    from app.services.sql_view_service import sql_view_service
+    from sqlalchemy import select as sa_select
+    from app.models.cmdb import CIType
+    result = await db.execute(sa_select(CIType).where(CIType.id == ci_type_id))
+    ci_type = result.scalar_one_or_none()
+    if not ci_type:
+        raise HTTPException(status_code=404, detail="CI type not found")
+    return await sql_view_service.ensure_ci_type_view(db, ci_type_id, ci_type.key)
+
+
+@router.get("/views")
+async def list_generated_views(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """F1: List all generated SQL VIEWs."""
+    from app.services.sql_view_service import sql_view_service
+    return await sql_view_service.list_views(db)
+
+
+@router.delete("/views/{view_name}")
+async def drop_generated_view(
+    view_name: str,
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """F1: Drop a generated SQL VIEW."""
+    from app.services.sql_view_service import sql_view_service
+    return await sql_view_service.drop_view(db, view_name)
