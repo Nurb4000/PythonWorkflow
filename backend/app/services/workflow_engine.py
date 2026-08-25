@@ -42,6 +42,7 @@ class WorkflowEngine:
             ProgrammableDelayExecutor,
             CmdbLookupExecutor,
             CmdbUpdateExecutor,
+            SubWorkflowExecutor,
         )
         
         self.step_executors = {
@@ -60,6 +61,7 @@ class WorkflowEngine:
             "programmable_delay": ProgrammableDelayExecutor(),  # P5.5
             "cmdb_lookup": CmdbLookupExecutor(),  # CMDB Phase 3
             "cmdb_update": CmdbUpdateExecutor(),  # CMDB Phase 3
+            "sub_workflow": SubWorkflowExecutor(),  # B3: sync sub-workflow
         }
     
     def validate_input_refs(self, steps: List[Dict[str, Any]], entry_form_schema: Optional[Dict] = None) -> List[str]:

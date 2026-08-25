@@ -1165,3 +1165,116 @@ class CmdbUpdateExecutor(BaseExecutor):
             "old_values": {k: old_data.get(k) for k in updates} if updates else {},
             "executed_at": datetime.utcnow().isoformat(),
         }
+
+
+class SubWorkflowExecutor(BaseExecutor):
+    """B3: Synchronous sub-workflow invocation (call, wait, merge result).
+    
+    Configuration:
+      - workflow_id: int — target workflow to invoke
+      - input_data: dict — data to pass to sub-workflow (supports $input.* interpolation)
+      - timeout_seconds: int — max wait for sub-run (default 300)
+    
+    Returns: result_data from the sub-workflow run, or error if timed out/failed.
+    """
+    
+    def _interpolate_input(self, template: Any, input_data: Dict[str, Any]) -> Any:
+        """Recursively interpolate $input.* in a template value."""
+        if isinstance(template, str) and "$input." in template:
+            import re
+            def replace(match):
+                field = match.group(1)
+                return str(input_data.get(field, match.group(0)))
+            return re.sub(r'\$input\.(\w+)', replace, template)
+        elif isinstance(template, dict):
+            return {k: self._interpolate_input(v, input_data) for k, v in template.items()}
+        elif isinstance(template, list):
+            return [self._interpolate_input(item, input_data) for item in template]
+        return template
+    
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], 
+                     db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        """Execute sub-workflow synchronously."""
+        from app.services.workflow_engine import workflow_engine
+        
+        workflow_id = step_definition.get("workflow_id")
+        if not workflow_id:
+            raise ValueError("sub_workflow step requires 'workflow_id'")
+        
+        # Interpolate input data
+        raw_input = step_definition.get("input_data", {})
+        resolved_input = self._interpolate_input(raw_input, input_data)
+        
+        # Create run data for sub-workflow
+        from app.schemas.workflow import WorkflowRunCreate
+        run_data = WorkflowRunCreate(
+            workflow_id=workflow_id,
+            input_data=resolved_input,
+            triggered_by="sub_workflow",
+            parent_run_id=None  # Could track parent for auditing
+        )
+        
+        # Trigger sub-workflow
+        sub_run = await workflow_engine.trigger_workflow(db, workflow_id, run_data)
+        
+        # Wait for completion (synchronous)
+        timeout = step_definition.get("timeout_seconds", 300)
+        import asyncio
+        try:
+            await asyncio.wait_for(
+                self._wait_for_run_completion(db, sub_run.id, timeout),
+                timeout=timeout
+            )
+        except asyncio.TimeoutError:
+            return {
+                "error": f"Sub-workflow run {sub_run.id} timed out after {timeout}s",
+                "run_id": sub_run.id,
+                "status": "timeout"
+            }
+        
+        # Fetch final run state
+        from sqlalchemy import select as sa_select
+        from app.models.schemas import WorkflowRun
+        run_stmt = sa_select(WorkflowRun).where(WorkflowRun.id == sub_run.id)
+        run_result = await db.execute(run_stmt)
+        final_run = run_result.scalar_one_or_none()
+        
+        if final_run.status == "completed":
+            return {
+                "success": True,
+                "run_id": final_run.id,
+                "status": final_run.status,
+                "result_data": final_run.result_data or {},
+                "duration_seconds": (final_run.completed_at - final_run.started_at).total_seconds() if final_run.completed_at and final_run.started_at else None
+            }
+        else:
+            return {
+                "success": False,
+                "run_id": final_run.id,
+                "status": final_run.status,
+                "error_message": final_run.error_message if hasattr(final_run, 'error_message') and final_run.error_message else f"Sub-workflow ended with status: {final_run.status}"
+            }
+    
+    async def _wait_for_run_completion(self, db: AsyncSession, run_id: int, timeout: int):
+        """Poll until run completes, fails, or times out."""
+        import asyncio
+        from app.models.schemas import WorkflowRun
+        from sqlalchemy import select as sa_select
+        
+        start = asyncio.get_event_loop().time()
+        while True:
+            await asyncio.sleep(5)  # Poll every 5 seconds
+            
+            stmt = sa_select(WorkflowRun).where(WorkflowRun.id == run_id)
+            result = await db.execute(stmt)
+            run = result.scalar_one_or_none()
+            
+            if not run:
+                raise ValueError(f"Sub-workflow run {run_id} not found")
+            
+            if run.status in ("completed", "failed", "cancelled"):
+                return  # Done
+            
+            elapsed = asyncio.get_event_loop().time() - start
+            if elapsed > timeout:
+                raise asyncio.TimeoutError(f"Timed out after {timeout}s")
