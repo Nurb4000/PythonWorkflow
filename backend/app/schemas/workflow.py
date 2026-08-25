@@ -63,6 +63,8 @@ class WorkflowUpdate(BaseModel):
     manual_version_increment: bool = False  # P7: Manual version bump
     owner_user_id: Optional[int] = None  # A3: explicit owner
     tags: Optional[List[str]] = None  # A3: freeform tags
+    is_deprecated: Optional[bool] = None  # E1: deprecation
+    suggested_replacement_id: Optional[int] = None  # E1
 
 
 class WorkflowResponse(BaseModel):

@@ -259,6 +259,19 @@ class WorkflowEngine:
         if workflow_data.tags is not None:
             workflow.tags = workflow_data.tags
         
+        # E1: deprecation
+        from datetime import datetime, timezone
+        if workflow_data.is_deprecated is not None:
+            workflow.is_deprecated = workflow_data.is_deprecated
+            if workflow_data.is_deprecated:
+                workflow.deprecated_at = datetime.now(timezone.utc)
+                workflow.deprecated_by_id = created_by
+            else:
+                workflow.deprecated_at = None
+                workflow.deprecated_by_id = None
+        if workflow_data.suggested_replacement_id is not None:
+            workflow.suggested_replacement_id = workflow_data.suggested_replacement_id
+        
         # Update steps if provided
         if workflow_data.steps is not None:
             # Delete existing steps

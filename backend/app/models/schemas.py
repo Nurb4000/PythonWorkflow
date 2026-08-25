@@ -33,6 +33,10 @@ class Workflow(Base):
     show_in_portal = Column(Boolean, default=True, server_default=sa_text("true"))  # Show on general Offerings page (vs service-only)
     entry_form_id = Column(Integer, nullable=True)  # Form to show before triggering (P3.3)
     service_id = Column(Integer, ForeignKey("services.id"), nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 1
+    is_deprecated = Column(Boolean, default=False)  # E1: deprecation state
+    deprecated_at = Column(DateTime(timezone=True), nullable=True)  # E1
+    deprecated_by_id = Column(Integer, ForeignKey("users.id"), nullable=True)  # E1
+    suggested_replacement_id = Column(Integer, ForeignKey("workflows.id"), nullable=True)  # E1
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
