@@ -316,6 +316,17 @@ export const CItemList: React.FC = () => {
           <div style={{ display: 'flex', gap: '0.5rem' }}>
             <button className="btn btn-primary" onClick={handleCreate}>+ New Item</button>
             <Link to={`/cmdb/items/bulk-import/${currentType?.key}`} className="btn btn-secondary">Bulk Import</Link>
+            <button className="btn btn-secondary" onClick={() => {
+              cmdbApi.exportItems(selectedTypeId, 'csv').then(res => {
+                const url = window.URL.createObjectURL(new Blob([res.data]))
+                const link = document.createElement('a')
+                link.href = url
+                link.setAttribute('download', `ci_export_${selectedTypeId}.csv`)
+                document.body.appendChild(link)
+                link.click()
+                link.remove()
+              })
+            }}>Export CSV</button>
           </div>
         )}
       </div>

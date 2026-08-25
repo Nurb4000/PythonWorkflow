@@ -258,6 +258,9 @@ export const cmdbApi = {
   // Templates
   listTemplates: () => api.get('/cmdb/templates'),
   applyTemplate: (key: string) => api.post(`/cmdb/templates/${key}/apply`),
+  // Export
+  exportItems: (typeId?: number, format: 'json' | 'csv' = 'json') => 
+    api.get('/cmdb/items/export', { params: { type_id: typeId, format }, responseType: 'blob' }),
 }
 
 // Service Management APIs (SERVICE_MANAGEMENT_PLAN Phase 1)
