@@ -48,12 +48,13 @@
 ## Open Items (Low Priority)
 
 ### AI Assist Coverage
+- [x] **Reporting AI** — Report definition generation via `/ai/assist-report` (commit `adc665e`)
+- [x] **Scheduler AI** — Cron expression generation via `/ai/assist-cron` (commit `adc665e`)
+- [x] **Webhook AI** — Webhook configuration assist via `/ai/assist-webhook` (commit `adc665e`)
 - [ ] **AI standards enforcement (A5)** — Gated on resuming AI features
 - [ ] **CMDB AI assist** — CI type schema generation, relationship config, bulk import mapping
 - [ ] **Task management AI** — Assignment suggestions, priority calculation
-- [ ] **Scheduler AI** — Cron expression generation, conflict detection
 - [ ] **LDAP AI** — Filter generation, attribute mapping
-- [ ] **Reporting AI** — Report definition generation, view column suggestions
 - [ ] **Marketplace AI** — Description generation, category suggestions
 - [ ] **Email template AI** — Template generation, variable suggestion
 
