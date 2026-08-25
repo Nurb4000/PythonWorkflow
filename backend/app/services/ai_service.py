@@ -446,6 +446,141 @@ Output must be valid JSON:
         result = self._parse_response(response)
         return {"action": action, "result": result}
 
+    async def assist_report(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_report: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Assist with report definition creation and improvement"""
+        kb_context = self._get_relevant_kb(["steering.master", "reporting.report_def"])
+
+        if action == "generate":
+            system_prompt = """Generate a report definition from the description.
+
+Output must be valid JSON:
+{
+  "name": "Report Name",
+  "description": "Report purpose",
+  "source": "sql_view|custom_query|form_submission",
+  "columns": [
+    {"field": "column_name", "label": "Display Label"}
+  ],
+  "filters": [
+    {"column": "field", "operator": "=", "value": "condition"}
+  ],
+  "sort": [{"column": "field", "direction": "asc|desc"}],
+  "limit": 100
+}
+
+Rules:
+1. Use descriptive names and descriptions
+2. Include sensible defaults for optional fields
+3. Set reasonable limits (default 100, max 10000)
+4. Sort by most useful column first
+5. Filter to relevant data subset"""
+
+            user_prompt = f"Generate a report: {description}"
+        elif action == "improve":
+            system_prompt = """Improve the following report definition. Suggest better columns, filters, or sorting.
+
+Output must be valid JSON with structure:
+{
+  "suggestions": ["list", "of", "improvements"],
+  "improved_report": { /* improved report definition */ }
+}"""
+
+            user_prompt = f"Improve this report:\n{json.dumps(current_report, indent=2)}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
+    async def assist_cron(
+        self,
+        description: str,
+    ) -> Dict[str, Any]:
+        """Generate cron expression from natural language description"""
+        kb_context = self._get_relevant_kb(["steering.master", "scheduler.cron"])
+
+        system_prompt = """Generate a valid cron expression from the description.
+
+Output must be valid JSON:
+{
+  "cron_expression": "0 9 * * *",
+  "timezone": "UTC",
+  "description": "Human-readable description",
+  "next_runs": ["2026-08-26 09:00:00", "2026-08-27 09:00:00"]
+}
+
+Rules:
+1. Use standard 5-field cron format
+2. Include timezone (default UTC)
+3. Provide human-readable description
+4. Calculate next 2-3 run times
+5. Validate expression is syntactically correct"""
+
+        user_prompt = f"Generate cron expression for: {description}"
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return result
+
+    async def assist_webhook(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_config: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Assist with webhook configuration"""
+        kb_context = self._get_relevant_kb(["steering.master", "webhooks.config"])
+
+        if action == "generate":
+            system_prompt = """Generate webhook configuration from description.
+
+Output must be valid JSON:
+{
+  "url": "https://example.com/webhook",
+  "method": "POST",
+  "headers": {"Content-Type": "application/json"},
+  "body": "{\"data\": $input}",
+  "timeout": 30,
+  "retry_count": 3,
+  "secret": "auto-generated-secret"
+}
+
+Rules:
+1. Use HTTPS URLs when possible
+2. Include proper headers
+3. Set reasonable timeouts (default 30s)
+4. Enable retry logic (default 3 retries)
+5. Generate secure secret for incoming webhooks"""
+
+            user_prompt = f"Generate webhook config: {description}"
+        elif action == "validate":
+            system_prompt = """Validate the following webhook configuration. Check for security issues, best practices, and correctness.
+
+Output must be valid JSON:
+{
+  "valid": true|false,
+  "issues": ["list", "of", "issues"],
+  "suggestions": ["improvement", "ideas"],
+  "security_rating": "high|medium|low"
+}"""
+
+            user_prompt = f"Validate this webhook config:\n{json.dumps(current_config, indent=2)}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
     async def explain_error(
         self,
         step_type: str,

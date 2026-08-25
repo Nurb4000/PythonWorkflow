@@ -46,6 +46,22 @@ class ExplainErrorRequest(BaseModel):
     input_data_sample: Optional[Dict[str, Any]] = None
 
 
+class AssistReportRequest(BaseModel):
+    action: str = Field(..., description="generate or improve")
+    description: Optional[str] = None
+    current_report: Optional[Dict[str, Any]] = None
+
+
+class AssistCronRequest(BaseModel):
+    description: str = Field(..., description="Natural language description of schedule")
+
+
+class AssistWebhookRequest(BaseModel):
+    action: str = Field(..., description="generate or validate")
+    description: Optional[str] = None
+    current_config: Optional[Dict[str, Any]] = None
+
+
 # ---------------------------------------------------------------------------
 # Existing endpoints (preserved)
 # ---------------------------------------------------------------------------
@@ -243,6 +259,90 @@ async def assist_form(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI form assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-report")
+async def assist_report(
+    request: AssistReportRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with report definition creation and improvement"""
+    valid_actions = {"generate", "improve"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action == "improve" and not request.current_report:
+        raise HTTPException(status_code=400, detail="current_report is required for improve action")
+
+    try:
+        result = await ai_service.assist_report(
+            action=request.action,
+            description=request.description,
+            current_report=request.current_report,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI report assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-cron")
+async def assist_cron(
+    request: AssistCronRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Generate cron expression from natural language description"""
+    try:
+        result = await ai_service.assist_cron(
+            description=request.description,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI cron assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-webhook")
+async def assist_webhook(
+    request: AssistWebhookRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with webhook configuration"""
+    valid_actions = {"generate", "validate"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action == "validate" and not request.current_config:
+        raise HTTPException(status_code=400, detail="current_config is required for validate action")
+
+    try:
+        result = await ai_service.assist_webhook(
+            action=request.action,
+            description=request.description,
+            current_config=request.current_config,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI webhook assist failed: {str(e)}")
 
 
 @router.post("/ai/explain-error")
