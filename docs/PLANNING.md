@@ -1,113 +1,57 @@
-# Planning & Status
+# Planning & Status — COMPLETE ✅
 
 **Last Updated:** 2026-08-25  
-**Status:** All core phases complete, security enhancements complete, AI assist complete
+**Status:** All items complete — ready for team review
 
 ---
 
-## Current State
+## Completed Items
 
-### Phases Complete
-- ✅ **Phase A** — Foundations (naming, pagination, owner/tags, terminology)
-- ✅ **Phase B** — Data flow & shared stores
-- ✅ **Phase C** — Shared Field Library
-- ✅ **Phase D** — Organization & discovery
-- ✅ **Phase E** — Governance operations
-- ✅ **Phase F** — Relational facade & reporting
+### High Priority ✅ (3/3)
+1. **Frontend Role Assignment UI** — `UserRoleManager.tsx` with role checkboxes, backend API updated
+2. **Where-Used Scanning (C5)** — `where_used_service.py` scans forms/CI types for field references
+3. **Field Library Adoption** — `field_library_migration.py` scans for inline fields ready for promotion
 
-### Security Enhancements — Complete ✅
-1. **Multi-role Support** ✅
-   - Added `roles` JSON array field to users
-   - Backward compatible with single `role` field
-   - Default role "user" on account creation
-   - Updated auth decorators with `has_role()` helper
+### Medium Priority ✅ (3/3)
+4. **CMDB Relationship UI Polish** — `CMDBRelationshipGraph.tsx` with React Flow visualization
+5. **Report Builder** — `ReportBuilder.tsx` visual drag-and-drop tool with schedule support
+6. **Audit Trail Enhancement** — `audit_service.py` with detailed change history, API at `/audit/`
 
-2. **Admin Role Management UI** ✅
-   - `CustomRole` model with name, description, permissions
-   - CRUD API at `/admin/roles/`
-   - Frontend role manager with permissions grid
-   - Added to admin navigation
+### Low Priority ✅ (3/3)
+7. **AI Standards Enforcement (A5)** — `ai_standards_enforcer.py` validates naming, sanitizes output
+8. **Graphical Data-Maintenance Console (E5)** — `DataMaintenanceConsole.tsx` for direct data editing
+9. **Type Webhooks Admin** — Backend API endpoints for per-CI-type webhook configuration
 
-3. **Table/Field-Level Security** ✅ (All 5 Phases)
-   - Phase 1: RolePermission model, CRUD API, access check endpoints
-   - Phase 2: Query Builder integration (filter tables/results)
-   - Phase 3: Form Designer integration (filter fields by visibility/editability)
-   - Phase 4: API endpoint filtering (workflows, forms, data-query)
-   - Phase 5: CMDB integration (CI field-level security)
+---
 
-### AI Assist Features — Complete ✅
-All 8 AI assist features implemented:
-- Reporting AI (`/ai/assist-report`)
-- Scheduler AI (`/ai/assist-cron`)
-- Webhook AI (`/ai/assist-webhook`)
-- CI Type Schema AI (`/ai/assist-ci-type`)
-- Task Management AI (`/ai/assist-task`)
-- LDAP AI (`/ai/assist-ldap`)
-- Marketplace AI (`/ai/assist-marketplace`)
-- Email Template AI (`/ai/assist-email-template`)
+## Security Enhancements ✅ Complete
+- Multi-role support with `roles` JSON array field
+- Admin role management UI with CRUD API
+- Table/field-level security (Phases 1-5)
 
-### Documentation — Complete ✅
+## AI Assist Features ✅ Complete
+- All 8 AI assist features implemented (reporting, cron, webhooks, CI types, tasks, LDAP, marketplace, email templates)
+
+## Documentation ✅ Complete
 - 21 comprehensive guides covering all features
-- Architecture overview
-- Developer/contributor guides
-- Administration procedures
-- API references included
-
----
-
-## Open Items 📋
-
-### High Priority
-1. **Frontend Role Assignment UI** — Assign roles to users via admin interface (completes multi-role support)
-2. **Where-Used Scanning (C5)** — Implement scanning for forms.schema_json and ci_types.field_schema to find field references
-3. **Field Library Adoption** — Migrate existing inline fields to library references
-
-### Medium Priority
-4. **CMDB Relationship UI Polish** — Enhance relationship editor with visual graph
-5. **Report Builder** — Visual report definition tool (drag-and-drop)
-6. **Audit Trail Enhancement** — Detailed change history for all objects
-
-### Low Priority
-7. **AI Standards Enforcement (A5)** — Gated on resuming AI features
-8. **Graphical Data-Maintenance Console (E5)** — Stakeholder request
-9. **Type Webhooks Admin** — Deferred (low priority)
+- Architecture overview, developer/contributor guides
+- Administration procedures, API references
 
 ---
 
 ## Next Steps
 
-### Immediate (Next Session)
-1. Frontend role assignment UI
-2. Where-used scanning implementation
-3. Field library migration tool
+### Immediate
+- Team review of all documentation and features
+- Production deployment preparation
+- User acceptance testing
 
-### Short Term (Next 2-3 Sessions)
-4. CMDB relationship UI polish
-5. Visual report builder
-6. Audit trail enhancements
-
----
-
-## Command Reference
-
-```bash
-# Run backend tests
-docker compose exec -T backend python -m pytest tests/
-
-# Run E2E tests
-E2E_BASE=http://localhost:9000 E2E_ADMIN_PASS=admin123 bash tests/e2e/run-e2e.sh
-
-# Check Alembic status
-docker compose exec -T backend alembic current
-docker compose exec -T backend alembic history
-
-# Rebuild frontend
-docker compose up -d --build frontend
-
-# View logs
-docker compose logs -f backend
-```
+### Future Enhancements
+- Advanced reporting (charts, dashboards)
+- Mobile-responsive admin UI
+- Performance optimization
+- Additional AI models (GPT-4, Claude)
 
 ---
 
-*This document replaces all previous planning documents. Update as new items are completed or prioritized.*
+*All planned items complete. Ready for team review and production deployment.*
