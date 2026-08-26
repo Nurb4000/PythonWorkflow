@@ -132,10 +132,13 @@ Or for field lists:
 - **Implemented:** `/workflows` endpoint with security context
 - **Added:** `_security.has_access` flag to indicate permission status
 
-### Phase 5: CMDB Integration 🔲
+### Phase 5: CMDB Integration ✅
 - Apply field-level security to CI data
 - Restrict which CI fields are visible/editable per role
 - Example: Support staff can view server name but not IP address
+- **Implemented:** `/cmdb/items` endpoint filters `ci_data` by visible fields
+- **Implemented:** `/cmdb/items/{id}` endpoint filters individual CI data
+- **Added:** `_security.visible_fields` and `_security.has_access` to responses
 
 ---
 
