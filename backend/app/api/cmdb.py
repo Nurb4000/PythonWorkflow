@@ -368,12 +368,34 @@ async def list_cis(
     result = await db.execute(stmt)
     items = result.scalars().all()
     
+    # Apply security filtering
+    from app.services.query_security_service import query_security_service
+    visible_fields = await query_security_service.get_visible_fields(db, current_user, "configuration_items")
+    
+    filtered_items = []
+    for ci in items:
+        ci_dict = _ci_detail_to_dict(ci)
+        
+        # Filter ci_data fields based on visibility
+        if ci_dict.get("ci_data") and visible_fields and visible_fields != ["*"]:
+            filtered_ci_data = {}
+            for key, value in ci_dict["ci_data"].items():
+                if key in visible_fields or "*" in visible_fields:
+                    filtered_ci_data[key] = value
+            ci_dict["ci_data"] = filtered_ci_data
+        
+        filtered_items.append(ci_dict)
+    
     return {
-        "items": [_ci_detail_to_dict(i) for i in items],
+        "items": filtered_items,
         "total": total,
         "page": page,
         "page_size": page_size,
-        "pages": (total + page_size - 1) // page_size if total else 0
+        "pages": (total + page_size - 1) // page_size if total else 0,
+        "_security": {
+            "visible_fields": visible_fields,
+            "has_access": True
+        }
     }
 
 
@@ -484,7 +506,7 @@ async def get_ci(
     current_user: User = Depends(get_current_cmdb_manager),
     db: AsyncSession = Depends(get_db),
 ):
-    """Get a single configuration item with type info."""
+    """Get a single configuration item with type info and security filtering."""
     stmt = select(ConfigurationItem).where(
         ConfigurationItem.id == item_id
     ).options(selectinload(ConfigurationItem.ci_type))
@@ -493,7 +515,25 @@ async def get_ci(
     if not ci:
         raise HTTPException(status_code=404, detail="Configuration item not found")
 
-    return _ci_detail_to_dict(ci)
+    ci_dict = _ci_detail_to_dict(ci)
+    
+    # Apply security filtering
+    from app.services.query_security_service import query_security_service
+    visible_fields = await query_security_service.get_visible_fields(db, current_user, "configuration_items")
+    
+    if ci_dict.get("ci_data") and visible_fields and visible_fields != ["*"]:
+        filtered_ci_data = {}
+        for key, value in ci_dict["ci_data"].items():
+            if key in visible_fields or "*" in visible_fields:
+                filtered_ci_data[key] = value
+        ci_dict["ci_data"] = filtered_ci_data
+    
+    ci_dict["_security"] = {
+        "visible_fields": visible_fields,
+        "has_access": True
+    }
+    
+    return ci_dict
 
 
 @router.put("/items/{item_id}")
