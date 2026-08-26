@@ -556,3 +556,33 @@ class AssistEmailTemplateRequest(BaseModel):
     action: str = Field(..., description="generate or improve")
     description: Optional[str] = None
     current_template: Optional[Dict[str, Any]] = None
+
+
+@router.post("/ai/validate-standards")
+async def validate_standards(
+    request: ValidateStandardsRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Validate content against AI standards (naming, security, etc.)"""
+    from app.services.ai_standards_enforcer import ai_standards_enforcer
+    
+    if request.content_type == "name":
+        result = ai_standards_enforcer.validate_name(request.content)
+    elif request.content_type == "field_key":
+        result = ai_standards_enforcer.validate_field_key(request.content)
+    elif request.content_type == "step_config":
+        import json
+        try:
+            config = json.loads(request.content) if isinstance(request.content, str) else request.content
+            result = ai_standards_enforcer.validate_step_config(config)
+        except json.JSONDecodeError:
+            raise HTTPException(status_code=400, detail="Invalid JSON for step_config")
+    else:
+        raise HTTPException(status_code=400, detail=f"Unknown content_type: {request.content_type}")
+    
+    return result
+
+
+class ValidateStandardsRequest(BaseModel):
+    content_type: str = Field(..., description="name, field_key, or step_config")
+    content: Any = Field(..., description="Content to validate")
