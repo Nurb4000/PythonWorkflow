@@ -30,10 +30,10 @@ interface FormField {
   ref_column?: string
   // Lookup configuration
   lookup_config?: {
-    target_type: 'users' | 'ci_items' | 'custom'
-    search_field: string  // e.g., 'username', 'name', 'custom_field'
-    display_field: string  // e.g., 'full_name', 'name'
-    result_fields: string[]  // Fields to pull into form (e.g., ['email', 'phone'])
+    target_type?: 'users' | 'ci_items' | 'custom'
+    search_field?: string  // e.g., 'username', 'name', 'custom_field'
+    display_field?: string  // e.g., 'full_name', 'name'
+    result_fields?: string[]  // Fields to pull into form (e.g., ['email', 'phone'])
     auto_fill?: boolean  // Auto-fill related fields when lookup succeeds
   }
   ref_record_id?: number | string

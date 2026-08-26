@@ -20,6 +20,7 @@ import { FormDesigner } from './pages/FormDesigner'
 import { SettingsPage } from './pages/SettingsPage'
 import { FieldManager } from './pages/FieldManager'
 import { FieldDictionary } from './pages/FieldDictionary'
+import { RoleManager } from './pages/RoleManager'
 import { DataExplorer } from './pages/DataExplorer'
 import { WorkflowImportExport } from './pages/WorkflowImportExport'
 import { SQLViewManager } from './pages/SQLViewManager'
@@ -139,6 +140,7 @@ const RoleAwareNav: React.FC = () => {
           <Link to="/settings" onClick={() => navigate('/settings')}>Settings</Link>
           <Link to="/admin/fields" onClick={() => navigate('/admin/fields')}>Field Manager</Link>
           <Link to="/admin/dictionary" onClick={() => navigate('/admin/dictionary')}>Data Dictionary</Link>
+          <Link to="/admin/roles" onClick={() => navigate('/admin/roles')}>Roles</Link>
         </Dropdown>
       )}
 
@@ -414,7 +416,8 @@ const AppContent: React.FC = () => {
 <Route path="/admin/data" element={<RoleRoute roles={['admin', 'developer']}><DataExplorer /></RoleRoute>} />
           <Route path="/admin/views" element={<RoleRoute roles={['admin', 'developer']}><SQLViewManager /></RoleRoute>} />
 <Route path="/admin/fields" element={<RoleRoute roles={['admin']}><FieldManager /></RoleRoute>} />
-<Route path="/admin/dictionary" element={<RoleRoute roles={['admin', 'developer']}><FieldDictionary /></RoleRoute>} />
+          <Route path="/admin/dictionary" element={<RoleRoute roles={['admin', 'developer']}><FieldDictionary /></RoleRoute>} />
+          <Route path="/admin/roles" element={<RoleRoute roles={['admin']}><RoleManager /></RoleRoute>} />
           <Route path="/marketplace" element={<RoleRoute roles={['admin', 'developer']}><Marketplace /></RoleRoute>} />
           <Route path="/cmdb/types" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CITypeManager /></RoleRoute>} />
           <Route path="/cmdb/items" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
