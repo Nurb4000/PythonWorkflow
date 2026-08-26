@@ -404,3 +404,155 @@ async def assist_ci_type(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI CI type assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-task")
+async def assist_task(
+    request: AssistTaskRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with task assignment and priority configuration"""
+    valid_actions = {"suggest", "improve"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "suggest" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for suggest action")
+
+    if request.action == "improve" and not request.current_config:
+        raise HTTPException(status_code=400, detail="current_config is required for improve action")
+
+    try:
+        result = await ai_service.assist_task_assignment(
+            action=request.action,
+            description=request.description,
+            current_config=request.current_config,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI task assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-ldap")
+async def assist_ldap(
+    request: AssistLdapRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with LDAP filter generation and validation"""
+    valid_actions = {"generate", "validate"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action == "validate" and not request.current_filter:
+        raise HTTPException(status_code=400, detail="current_filter is required for validate action")
+
+    try:
+        result = await ai_service.assist_ldap_filter(
+            action=request.action,
+            description=request.description,
+            current_filter=request.current_filter,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI LDAP assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-marketplace")
+async def assist_marketplace(
+    request: AssistMarketplaceRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with marketplace item descriptions and categorization"""
+    valid_actions = {"generate", "improve"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action == "improve" and not request.current_item:
+        raise HTTPException(status_code=400, detail="current_item is required for improve action")
+
+    try:
+        result = await ai_service.assist_marketplace(
+            action=request.action,
+            description=request.description,
+            current_item=request.current_item,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI marketplace assist failed: {str(e)}")
+
+
+@router.post("/ai/assist-email-template")
+async def assist_email_template(
+    request: AssistEmailTemplateRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with email template generation and improvement"""
+    valid_actions = {"generate", "improve"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action == "improve" and not request.current_template:
+        raise HTTPException(status_code=400, detail="current_template is required for improve action")
+
+    try:
+        result = await ai_service.assist_email_template(
+            action=request.action,
+            description=request.description,
+            current_template=request.current_template,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI email template assist failed: {str(e)}")
+
+
+class AssistTaskRequest(BaseModel):
+    action: str = Field(..., description="suggest or improve")
+    description: Optional[str] = None
+    current_config: Optional[Dict[str, Any]] = None
+
+
+class AssistLdapRequest(BaseModel):
+    action: str = Field(..., description="generate or validate")
+    description: Optional[str] = None
+    current_filter: Optional[str] = None
+
+
+class AssistMarketplaceRequest(BaseModel):
+    action: str = Field(..., description="generate or improve")
+    description: Optional[str] = None
+    current_item: Optional[Dict[str, Any]] = None
+
+
+class AssistEmailTemplateRequest(BaseModel):
+    action: str = Field(..., description="generate or improve")
+    description: Optional[str] = None
+    current_template: Optional[Dict[str, Any]] = None

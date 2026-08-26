@@ -877,5 +877,157 @@ Output must be valid JSON:
         result = self._parse_response(response)
         return {"action": action, "result": result}
 
+    async def assist_task_assignment(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_config: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Assist with task assignment and priority configuration"""
+        kb_context = self._get_relevant_kb(["steering.master", "tasks.assignment"])
+
+        if action == "suggest":
+            system_prompt = """Suggest task assignment configuration.
+
+Output must be valid JSON:
+{
+  "assigned_to_user_id": "user_id or expression",
+  "assignment_type": "direct|group|dynamic|round_robin",
+  "priority": 1-5,
+  "escalation_rules": [{"after_hours": 2, "notify": ["admin"]}]
+}"""
+            user_prompt = f"Suggest task assignment: {description}"
+        elif action == "improve":
+            system_prompt = """Improve task assignment configuration.
+
+Output must be valid JSON:
+{
+  "suggestions": ["list", "of", "improvements"],
+  "improved_config": { /* improved config */ }
+}"""
+            user_prompt = f"Improve this task assignment:\n{json.dumps(current_config, indent=2)}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
+    async def assist_ldap_filter(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_filter: Optional[str] = None,
+    ) -> Dict[str, Any]:
+        """Assist with LDAP filter generation and validation"""
+        kb_context = self._get_relevant_kb(["steering.master", "ldap.filter"])
+
+        if action == "generate":
+            system_prompt = """Generate an LDAP filter.
+
+Output must be valid JSON:
+{
+  "filter": "(uid=*)",
+  "description": "What this filter does",
+  "search_command": "ldapsearch ...",
+  "expected_results": "Description of matches"
+}"""
+            user_prompt = f"Generate LDAP filter: {description}"
+        elif action == "validate":
+            system_prompt = """Validate an LDAP filter.
+
+Output must be valid JSON:
+{
+  "valid": true,
+  "issues": ["list", "of", "issues"],
+  "suggestions": ["improvement", "ideas"]
+}"""
+            user_prompt = f"Validate this LDAP filter:\n{current_filter}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
+    async def assist_marketplace(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_item: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Assist with marketplace item descriptions"""
+        kb_context = self._get_relevant_kb(["steering.master", "marketplace.description"])
+
+        if action == "generate":
+            system_prompt = """Generate marketplace item metadata.
+
+Output must be valid JSON:
+{
+  "name": "Item Name",
+  "description": "3-5 sentence description",
+  "category": "hr|it|finance|...",
+  "tags": ["tag1", "tag2"],
+  "version": "1.0"
+}"""
+            user_prompt = f"Generate marketplace item: {description}"
+        elif action == "improve":
+            system_prompt = """Improve marketplace item metadata.
+
+Output must be valid JSON:
+{
+  "suggestions": ["improvement", "ideas"],
+  "improved_item": { /* improved metadata */ }
+}"""
+            user_prompt = f"Improve this marketplace item:\n{json.dumps(current_item, indent=2)}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
+    async def assist_email_template(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_template: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Assist with email template generation"""
+        kb_context = self._get_relevant_kb(["steering.master", "email.template"])
+
+        if action == "generate":
+            system_prompt = """Generate an email template.
+
+Output must be valid JSON:
+{
+  "name": "Template Name",
+  "subject": "Email subject",
+  "body_html": "<html>...</html>",
+  "body_text": "Plain text version",
+  "variables": ["var1", "var2"]
+}"""
+            user_prompt = f"Generate email template: {description}"
+        elif action == "improve":
+            system_prompt = """Improve an email template.
+
+Output must be valid JSON:
+{
+  "suggestions": ["improvement", "ideas"],
+  "improved_template": { /* improved template */ }
+}"""
+            user_prompt = f"Improve this email template:\n{json.dumps(current_template, indent=2)}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
+
 # Singleton instance
 ai_service = AIService()
