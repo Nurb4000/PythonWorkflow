@@ -13,3 +13,4 @@ from app.models.field_library import FieldDefinition
 from app.models.reports import ReportDefinition
 from app.models.roles import CustomRole
 from app.models.role_permissions import RolePermission
+from app.models.audit_log import AuditLog
