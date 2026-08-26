@@ -25,9 +25,22 @@ async def list_tables(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db),
 ):
-    """List all queryable tables with their columns and custom fields."""
+    """List all queryable tables with security filtering."""
     try:
-        return await list_tables_with_fields(db)
+        from app.services.query_security_service import query_security_service
+        
+        # Get allowed tables for this user
+        allowed_tables = await query_security_service.get_allowed_tables(db, current_user)
+        
+        # Get full table list
+        result = await list_tables_with_fields(db)
+        
+        # Filter by allowed tables
+        if allowed_tables:
+            filtered = [t for t in result if t["table"] in allowed_tables]
+            return {"tables": filtered, "total": len(filtered), "allowed_count": len(allowed_tables)}
+        
+        return {"tables": result, "total": len(result), "allowed_count": len(result)}
     except Exception as e:
         logger.error(f"Failed to list tables: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to load tables: {str(e)}")
@@ -39,10 +52,18 @@ async def run_visual_query(
     current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db),
 ):
-    """Execute a visual filter builder query."""
+    """Execute a visual filter builder query with security filtering."""
     table_name = query_body.get("table", "")
     if table_name not in QUERYABLE_TABLES:
         raise HTTPException(status_code=400, detail=f"Unknown table: {table_name}")
+
+    # Check access permission
+    from app.services.query_security_service import query_security_service
+    has_access = await query_security_service.validate_query_access(
+        db, current_user, table_name, "view"
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail=f"Access denied to table: {table_name}")
 
     try:
         result = await execute_visual_query(
@@ -56,6 +77,13 @@ async def run_visual_query(
             offset=query_body.get("offset", 0),
             custom_field_scope_id=query_body.get("custom_field_scope_id"),
         )
+        
+        # Filter results based on visible fields
+        if "results" in result:
+            result["results"] = await query_security_service.filter_query_results(
+                db, current_user, table_name, result["results"], "view"
+            )
+        
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
