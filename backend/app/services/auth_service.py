@@ -85,7 +85,7 @@ class AuthService:
             raise ValueError(f"User {user_id} not found")
 
         # Update allowed fields
-        allowed_fields = ['email', 'full_name', 'role', 'is_active', 'mfa_enabled']
+        allowed_fields = ['email', 'full_name', 'role', 'roles', 'is_active', 'mfa_enabled']
         for field in allowed_fields:
             if field in kwargs:
                 setattr(user, field, kwargs[field])

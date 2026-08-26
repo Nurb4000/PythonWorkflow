@@ -292,6 +292,7 @@ async def update_user(
     email: Optional[str] = None,
     full_name: Optional[str] = None,
     role: Optional[str] = None,
+    roles: Optional[str] = None,  # JSON array of roles
     is_active: Optional[bool] = None,
     mfa_enabled: Optional[bool] = None,
     password: Optional[str] = None,
@@ -299,9 +300,20 @@ async def update_user(
     db: AsyncSession = Depends(get_db)
 ):
     """Update user (admin only)"""
+    import json
     try:
         body = await request.json()
         custom_data = body if body else None
+
+        # Parse roles JSON array if provided
+        parsed_roles = None
+        if roles:
+            try:
+                parsed_roles = json.loads(roles)
+                if not isinstance(parsed_roles, list):
+                    raise ValueError("roles must be a JSON array")
+            except json.JSONDecodeError:
+                raise HTTPException(status_code=400, detail="Invalid roles JSON")
 
         # Admins can only update non-admin users unless they're updating themselves
         if role and role != "admin" and admin_user.id != user_id:
@@ -314,6 +326,8 @@ async def update_user(
             kwargs["full_name"] = full_name
         if role is not None:
             kwargs["role"] = role
+        if parsed_roles is not None:
+            kwargs["roles"] = parsed_roles
         if is_active is not None:
             kwargs["is_active"] = is_active
         if mfa_enabled is not None:
@@ -331,10 +345,13 @@ async def update_user(
             "email": user.email,
             "full_name": user.full_name,
             "role": user.role,
+            "roles": user.roles or [],
             "is_active": user.is_active
         }
     except ValueError as e:
         raise HTTPException(status_code=404, detail=str(e))
+    except HTTPException:
+        raise
 
 
 @router.delete("/auth/users/{user_id}")
