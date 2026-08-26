@@ -1,7 +1,7 @@
 # Planning & Status
 
 **Last Updated:** 2026-08-25  
-**Status:** All core phases complete, documentation complete
+**Status:** All core phases complete, security enhancements complete, AI assist complete
 
 ---
 
@@ -9,34 +9,44 @@
 
 ### Phases Complete
 - ✅ **Phase A** — Foundations (naming, pagination, owner/tags, terminology)
-- ✅ **Phase B** — Data flow & shared stores ($input.* validation, run context, sub-workflow, shared-store playbook, asset landing zone)
-- ✅ **Phase C** — Shared Field Library (FieldDefinition model, $ref resolution, library picker, adoption tooling)
-- ✅ **Phase D** — Organization & discovery (tags, unified search, data dictionary, hygiene reports)
-- ✅ **Phase E** — Governance operations (deprecation, bulk ops, env promotion, stewardship reporting)
-- ✅ **Phase F** — Relational facade & reporting (SQL VIEWs, report definitions)
+- ✅ **Phase B** — Data flow & shared stores
+- ✅ **Phase C** — Shared Field Library
+- ✅ **Phase D** — Organization & discovery
+- ✅ **Phase E** — Governance operations
+- ✅ **Phase F** — Relational facade & reporting
 
-### Features Shipped
-- Field Library with $ref resolution
-- Lookup fields in forms (user/CI search with auto-fill)
-- Sub-workflow executor (sync invocation)
-- Unified search across all objects
-- Data Dictionary UI
-- Hygiene reports (duplicates, broken refs, stale content)
-- Deprecation workflow for workflows/forms/fields
-- Bulk operations API
-- Environment promotion with pre-flight checks
-- Stewardship reporting
-- SQL VIEW generation for forms/CI types
-- Report definitions with scheduled exports
-- OpenAI provider support (alongside llama.cpp)
-- LDAP integration (auth + sync)
-- SLA/OLA pause states on tasks
-- CMDB relationships UI
-- CI dependency graph viewer
-- Bulk import UI for CIs
-- CSV export for CIs
+### Security Enhancements — Complete ✅
+1. **Multi-role Support** ✅
+   - Added `roles` JSON array field to users
+   - Backward compatible with single `role` field
+   - Default role "user" on account creation
+   - Updated auth decorators with `has_role()` helper
 
-### Documentation Complete
+2. **Admin Role Management UI** ✅
+   - `CustomRole` model with name, description, permissions
+   - CRUD API at `/admin/roles/`
+   - Frontend role manager with permissions grid
+   - Added to admin navigation
+
+3. **Table/Field-Level Security** ✅ (All 5 Phases)
+   - Phase 1: RolePermission model, CRUD API, access check endpoints
+   - Phase 2: Query Builder integration (filter tables/results)
+   - Phase 3: Form Designer integration (filter fields by visibility/editability)
+   - Phase 4: API endpoint filtering (workflows, forms, data-query)
+   - Phase 5: CMDB integration (CI field-level security)
+
+### AI Assist Features — Complete ✅
+All 8 AI assist features implemented:
+- Reporting AI (`/ai/assist-report`)
+- Scheduler AI (`/ai/assist-cron`)
+- Webhook AI (`/ai/assist-webhook`)
+- CI Type Schema AI (`/ai/assist-ci-type`)
+- Task Management AI (`/ai/assist-task`)
+- LDAP AI (`/ai/assist-ldap`)
+- Marketplace AI (`/ai/assist-marketplace`)
+- Email Template AI (`/ai/assist-email-template`)
+
+### Documentation — Complete ✅
 - 21 comprehensive guides covering all features
 - Architecture overview
 - Developer/contributor guides
@@ -45,153 +55,36 @@
 
 ---
 
-## Open Items (Low Priority)
+## Open Items 📋
 
-### AI Assist Coverage
-- [x] **Reporting AI** — Report definition generation via `/ai/assist-report` (commit `adc665e`)
-- [x] **Scheduler AI** — Cron expression generation via `/ai/assist-cron` (commit `adc665e`)
-- [x] **Webhook AI** — Webhook configuration assist via `/ai/assist-webhook` (commit `adc665e`)
-- [x] **CMDB AI assist** — CI type schema generation via `/ai/assist-ci-type` (commit `38e3cfa`)
-- [x] **Task management AI** — Assignment suggestions via `/ai/assist-task` (commit `e4b7852`)
-- [x] **LDAP AI** — Filter generation via `/ai/assist-ldap` (commit `e4b7852`)
-- [x] **Marketplace AI** — Description generation via `/ai/assist-marketplace` (commit `e4b7852`)
-- [x] **Email template AI** — Template generation via `/ai/assist-email-template` (commit `e4b7852`)
-- [ ] **AI standards enforcement (A5)** — Gated on resuming AI features
+### High Priority
+1. **Frontend Role Assignment UI** — Assign roles to users via admin interface (completes multi-role support)
+2. **Where-Used Scanning (C5)** — Implement scanning for forms.schema_json and ci_types.field_schema to find field references
+3. **Field Library Adoption** — Migrate existing inline fields to library references
 
-### Other Open Items
-- [ ] **E5. Graphical data-maintenance console** — Stakeholder request, not yet prioritized
-- [ ] **Type webhooks admin** — Deferred (low priority, no stakeholder request)
-
----
-
-## Next Priorities
-
-### Immediate (Next Session)
-1. **AI Assist Resumption** — Resume work on AI features (llama.cpp/OpenAI integration)
-2. **Field Library Adoption** — Migrate existing inline fields to library references
-3. **Where-Used Scanning** — Implement C5 scanning for forms.schema_json and ci_types.field_schema
-
-### Short Term (Next 2-3 Sessions)
+### Medium Priority
 4. **CMDB Relationship UI Polish** — Enhance relationship editor with visual graph
 5. **Report Builder** — Visual report definition tool (drag-and-drop)
 6. **Audit Trail Enhancement** — Detailed change history for all objects
 
-### Long Term
-7. **Multi-tenancy** — Support multiple organizations/teams
-8. **Plugin System** — Extensible step types and integrations
-9. **Mobile App** — Responsive design or native mobile interface
+### Low Priority
+7. **AI Standards Enforcement (A5)** — Gated on resuming AI features
+8. **Graphical Data-Maintenance Console (E5)** — Stakeholder request
+9. **Type Webhooks Admin** — Deferred (low priority)
 
 ---
 
-## Key Decisions Log
+## Next Steps
 
-| Date | Decision | Rationale |
-|------|----------|-----------|
-| 2026-08-24 | Storage stays JSONB, no dynamic-DDL tables | Avoid prod schema-alter rights, backup coupling, DDL lock contention |
-| 2026-08-24 | Cross-workflow handoff: sync sub-workflow step first | Covers majority use case, async second |
-| 2026-08-24 | Incoming email stays IMAP, no POP3 port | Crash-safety (fetch→workflow→move), UID dedupe, IDLE near-real-time |
-| 2026-08-24 | Python version stays 3.11 | pydantic≥2.9 and bcrypt≥4.2 have no cp313 wheels yet |
-| 2026-08-25 | AI provider: both llama.cpp and OpenAI supported | Flexibility for offline/cloud use cases |
-| 2026-08-25 | LDAP integration optional, local accounts retained | Support both directory-authenticated and standalone deployments |
+### Immediate (Next Session)
+1. Frontend role assignment UI
+2. Where-used scanning implementation
+3. Field library migration tool
 
----
-
-## Session History
-
-### 2026-08-24 (Session 1)
-- E2E suite restored (21/21 green)
-- CMDB item view mode added
-- SCALE_GOVERNANCE_PLAN created
-- Storage direction settled (JSONB)
-- Email test feature implemented
-- SQLite purge planned
-
-### 2026-08-24 (Session 2)
-- SCALE_GOVERNANCE_PLAN expanded (Phase E added)
-- Data sharing promoted to Phase B priority
-- Decision #8 settled (sync first, async second)
-- CMDB_GAPS.md created
-- Email test feature completed
-
-### 2026-08-24 (Session 3)
-- SQLite purge completed (157 tests green)
-- Settings page collapsible sections
-- JWT SECRET_KEY fixed
-- Demo shots moved to scripts/demos/
-- PostgreSQL-only policy stated
-- Startup guard for database_url
-- Python 3.11 pin rationale documented
-- CI workflow added
-- npm audit triaged
-
-### 2026-08-25 (Session 4 — Current)
-- Phase A complete (A1-A4)
-- Phase B complete (B1-B5)
-- Phase C complete (C1-C6)
-- Phase D complete (D1-D4)
-- Phase E complete (E1-E4)
-- Phase F complete (F1-F2)
-- CMDB gaps closed (relationships, graph, bulk import, export)
-- SLA/OLA pause feature added
-- OpenAI provider support added
-- LDAP integration completed
-- Lookup fields added to forms
-- Comprehensive documentation created (21 guides)
-
----
-
-## Archive Status
-
-### Archived (Consolidated into this document)
-- `docs/CLEANUP_PLAN.md` — All items complete, consolidated here
-- `docs/SCALE_GOVERNANCE_PLAN.md` — All phases complete, open items noted above
-- `docs/CMDB_GAPS.md` — All items complete or deferred
-- `docs/SESSION_HANDOFF_2026-08-25.md` — Superseded by this document
-- `docs/DOCUMENTATION_PLAN.md` — Plan followed, all docs created
-
-### Active (Keep for reference)
-- `docs/PLANNING.md` — This document (current state and next steps)
-- `docs/` — All feature documentation (reference material)
-
----
-
-## Security Enhancements (New)
-
-### 1. Multi-role Support
-**Status:** Not started  
-**Description:** Currently users have a single role (admin, developer, staff, user). Enable multiple roles per user (like groups), with default "user" role on account creation (manual or LDAP).
-
-**Changes needed:**
-- `users` table: Add `roles` JSON array field (or many-to-many table)
-- Auth service: Update role checks to support multiple roles
-- LDAP sync: Apply default "user" role + any LDAP-assigned roles
-- Frontend: Display multiple roles in user list/edit
-
-### 2. Admin Role Management UI
-**Status:** Not started  
-**Description:** Form for admins to create/edit/delete custom roles beyond the built-in ones.
-
-**Changes needed:**
-- `roles` table: Store custom role definitions (name, description, permissions)
-- API: CRUD endpoints for roles
-- Frontend: Admin form to manage roles
-- Integration: Assign roles to users via UI
-
-### 3. Table/Field-Level Security
-**Status:** Not started (largest lift)  
-**Description:** Granular permissions: which roles can view/edit which tables and which fields within those tables.
-
-**Changes needed:**
-- `role_permissions` table: Store table/field access rules per role
-- Query builder: Filter results based on user's role permissions
-- Form designer: Restrict field visibility/editability by role
-- CMDB: Apply field-level security to CI data
-- API middleware: Validate access before returning data
-
-**Priority:** This is the most complex item. Consider implementing in phases:
-1. Table-level visibility (can role see this table?)
-2. Field-level visibility (can role see this field?)
-3. Field-level editing (can role edit this field?)
+### Short Term (Next 2-3 Sessions)
+4. CMDB relationship UI polish
+5. Visual report builder
+6. Audit trail enhancements
 
 ---
 
