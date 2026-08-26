@@ -104,17 +104,20 @@ Or for field lists:
 
 ## Integration Points (Future Phases)
 
-### Phase 1 (Current): Model + API ✅
+### Phase 1: Model + API ✅
 - `RolePermission` model
 - CRUD API for admins
 - Access check endpoints
 
-### Phase 2: Query Builder Integration 🟡
+### Phase 2: Query Builder Integration ✅
 - Filter results based on user's visible fields
 - Prevent editing non-editable fields
 - Example: Visual Query Builder only shows accessible tables/fields
+- **Implemented:** `query_security_service.py` with `filter_query_results()` and `validate_query_access()`
+- **Updated:** `/data-query/build` endpoint filters results by visible fields
+- **Updated:** `/data-query/tables` endpoint filters table list by allowed tables
 
-### Phase 3: Form Designer Integration 🟡
+### Phase 3: Form Designer Integration 🔲
 - Hide non-visible fields in form editor
 - Disable editing for non-editable fields
 - Example: Form Designer only shows configurable fields
