@@ -254,3 +254,44 @@ async def get_field_where_used(
         "ci_types_using": [],
         "note": "C5 implementation pending — requires schema_json parsing"
     }
+
+
+@router.get("/scan/forms")
+async def scan_forms_for_migration(
+    min_uses: int = Query(2, ge=1, le=10),
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Scan forms for fields that could be promoted to library (admin only)."""
+    from app.services.field_library_migration import field_library_migration_service
+    candidates = await field_library_migration_service.scan_forms(db, min_uses)
+    return {"candidates": candidates, "total": len(candidates)}
+
+
+@router.get("/scan/ci-types")
+async def scan_ci_types_for_migration(
+    min_uses: int = Query(2, ge=1, le=10),
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Scan CI types for fields that could be promoted to library (admin only)."""
+    from app.services.field_library_migration import field_library_migration_service
+    candidates = await field_library_migration_service.scan_ci_types(db, min_uses)
+    return {"candidates": candidates, "total": len(candidates)}
+
+
+@router.get("/migration-plan")
+async def get_migration_plan(
+    current_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db)
+):
+    """Generate full migration plan (admin only)."""
+    from app.services.field_library_migration import field_library_migration_service
+    
+    forms_candidates = await field_library_migration_service.scan_forms(db, min_uses=2)
+    ci_candidates = await field_library_migration_service.scan_ci_types(db, min_uses=2)
+    
+    plan = await field_library_migration_service.generate_migration_plan(
+        db, forms_candidates, ci_candidates
+    )
+    return plan
