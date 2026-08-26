@@ -155,6 +155,46 @@
 
 ---
 
+## Security Enhancements (New)
+
+### 1. Multi-role Support
+**Status:** Not started  
+**Description:** Currently users have a single role (admin, developer, staff, user). Enable multiple roles per user (like groups), with default "user" role on account creation (manual or LDAP).
+
+**Changes needed:**
+- `users` table: Add `roles` JSON array field (or many-to-many table)
+- Auth service: Update role checks to support multiple roles
+- LDAP sync: Apply default "user" role + any LDAP-assigned roles
+- Frontend: Display multiple roles in user list/edit
+
+### 2. Admin Role Management UI
+**Status:** Not started  
+**Description:** Form for admins to create/edit/delete custom roles beyond the built-in ones.
+
+**Changes needed:**
+- `roles` table: Store custom role definitions (name, description, permissions)
+- API: CRUD endpoints for roles
+- Frontend: Admin form to manage roles
+- Integration: Assign roles to users via UI
+
+### 3. Table/Field-Level Security
+**Status:** Not started (largest lift)  
+**Description:** Granular permissions: which roles can view/edit which tables and which fields within those tables.
+
+**Changes needed:**
+- `role_permissions` table: Store table/field access rules per role
+- Query builder: Filter results based on user's role permissions
+- Form designer: Restrict field visibility/editability by role
+- CMDB: Apply field-level security to CI data
+- API middleware: Validate access before returning data
+
+**Priority:** This is the most complex item. Consider implementing in phases:
+1. Table-level visibility (can role see this table?)
+2. Field-level visibility (can role see this field?)
+3. Field-level editing (can role edit this field?)
+
+---
+
 ## Command Reference
 
 ```bash
