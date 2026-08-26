@@ -62,6 +62,12 @@ class AssistWebhookRequest(BaseModel):
     current_config: Optional[Dict[str, Any]] = None
 
 
+class AssistCITypeRequest(BaseModel):
+    action: str = Field(..., description="generate or validate")
+    description: Optional[str] = None
+    current_schema: Optional[Dict[str, Any]] = None
+
+
 # ---------------------------------------------------------------------------
 # Existing endpoints (preserved)
 # ---------------------------------------------------------------------------
@@ -366,3 +372,35 @@ async def explain_error(
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"AI error diagnosis failed: {str(e)}")
+
+
+@router.post("/ai/assist-ci-type")
+async def assist_ci_type(
+    request: AssistCITypeRequest,
+    user: Any = Depends(get_current_developer),
+):
+    """Assist with CI type schema generation and validation"""
+    valid_actions = {"generate", "validate"}
+    if request.action not in valid_actions:
+        raise HTTPException(status_code=400, detail=f"Action must be one of: {valid_actions}")
+
+    if request.action == "generate" and not request.description:
+        raise HTTPException(status_code=400, detail="Description is required for generate action")
+
+    if request.action == "validate" and not request.current_schema:
+        raise HTTPException(status_code=400, detail="current_schema is required for validate action")
+
+    try:
+        result = await ai_service.assist_ci_type_schema(
+            action=request.action,
+            description=request.description,
+            current_schema=request.current_schema,
+        )
+        return {
+            "success": True,
+            "result": result,
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"AI CI type assist failed: {str(e)}")

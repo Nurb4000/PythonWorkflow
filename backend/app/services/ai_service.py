@@ -813,4 +813,69 @@ Rules:
 
 
 # Singleton instance
+    async def assist_ci_type_schema(
+        self,
+        action: str,
+        description: Optional[str] = None,
+        current_schema: Optional[Dict] = None,
+    ) -> Dict[str, Any]:
+        """Assist with CI type schema generation and validation"""
+        kb_context = self._get_relevant_kb(["steering.master", "cmdb.ci_type_schema"])
+
+        if action == "generate":
+            system_prompt = """Generate a CI type field schema from the description.
+
+
+ai_service = AIService()
+
+Output must be valid JSON:
+{
+  "key": "type_key",
+  "name": "Type Name",
+  "description": "Description",
+  "icon": "emoji",
+  "fields": [
+    {
+      "key": "field_key",
+      "label": "Field Label",
+      "type": "string|number|select|...",
+      "required": true,
+      "help_text": "Optional help text",
+      "options": ["opt1", "opt2"]  // For select type
+    }
+  ]
+}
+
+Rules:
+1. Use snake_case for field keys
+2. Include common fields like name, status, owner
+3. Use lookup type for references to users or other CIs
+4. Add help_text for complex fields
+5. Keep required fields to a minimum"""
+
+            user_prompt = f"Generate CI type schema: {description}"
+        elif action == "validate":
+            system_prompt = """Validate the following CI type schema. Check for:
+- Valid field types
+- Required fields marked appropriately
+- Consistent naming conventions
+- Missing help text for complex fields
+
+Output must be valid JSON:
+{
+  "valid": true,
+  "issues": ["list", "of", "issues"],
+  "suggestions": ["improvement", "ideas"]
+}"""
+
+            user_prompt = f"Validate this CI type schema:\n{json.dumps(current_schema, indent=2)}"
+        else:
+            raise ValueError(f"Unknown action: {action}")
+
+        full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
+        response = await self._call_ai(full_prompt)
+        result = self._parse_response(response)
+        return {"action": action, "result": result}
+
+# Singleton instance
 ai_service = AIService()
