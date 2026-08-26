@@ -51,12 +51,12 @@
 - [x] **Reporting AI** — Report definition generation via `/ai/assist-report` (commit `adc665e`)
 - [x] **Scheduler AI** — Cron expression generation via `/ai/assist-cron` (commit `adc665e`)
 - [x] **Webhook AI** — Webhook configuration assist via `/ai/assist-webhook` (commit `adc665e`)
+- [x] **CMDB AI assist** — CI type schema generation via `/ai/assist-ci-type` (commit `38e3cfa`)
+- [x] **Task management AI** — Assignment suggestions via `/ai/assist-task` (commit `e4b7852`)
+- [x] **LDAP AI** — Filter generation via `/ai/assist-ldap` (commit `e4b7852`)
+- [x] **Marketplace AI** — Description generation via `/ai/assist-marketplace` (commit `e4b7852`)
+- [x] **Email template AI** — Template generation via `/ai/assist-email-template` (commit `e4b7852`)
 - [ ] **AI standards enforcement (A5)** — Gated on resuming AI features
-- [ ] **CMDB AI assist** — CI type schema generation, relationship config, bulk import mapping
-- [ ] **Task management AI** — Assignment suggestions, priority calculation
-- [ ] **LDAP AI** — Filter generation, attribute mapping
-- [ ] **Marketplace AI** — Description generation, category suggestions
-- [ ] **Email template AI** — Template generation, variable suggestion
 
 ### Other Open Items
 - [ ] **E5. Graphical data-maintenance console** — Stakeholder request, not yet prioritized
