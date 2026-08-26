@@ -179,8 +179,25 @@ async def list_forms(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """List forms accessible to user. By default excludes deactivated forms."""
+    """List forms accessible to user with security filtering."""
     try:
+        from app.services.query_security_service import query_security_service
+        
+        # Check if user has access to forms table
+        has_access = await query_security_service.validate_query_access(
+            db, current_user, "forms", "view"
+        )
+        
+        if not has_access:
+            return {
+                "items": [],
+                "total": 0,
+                "page": page,
+                "page_size": page_size,
+                "pages": 0,
+                "_security": {"access_denied": True}
+            }
+        
         result = await form_service.list_forms(db, current_user, environment, include_inactive, page, page_size)
         
         return {
@@ -200,7 +217,8 @@ async def list_forms(
             "total": result["total"],
             "page": result["page"],
             "page_size": result["page_size"],
-            "pages": result["pages"]
+            "pages": result["pages"],
+            "_security": {"access_granted": True}
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -212,20 +230,63 @@ async def get_form(
     current_user: User = Depends(get_current_user),
     db: AsyncSession = Depends(get_db)
 ):
-    """Get form details"""
+    """Get form details with security filtering"""
     try:
+        from app.services.query_security_service import query_security_service
+        
         form = await form_service.get_form(db, form_id)
         if not form:
             raise HTTPException(status_code=404, detail="Form not found")
+        
+        # Check if user can view this form
+        has_access = await query_security_service.validate_query_access(
+            db, current_user, "forms", "view"
+        )
+        if not has_access:
+            raise HTTPException(status_code=403, detail="Access denied to this form")
+        
+        # Get visible and editable fields for this user
+        visible_fields = await query_security_service.get_visible_fields(
+            db, current_user, "forms"
+        )
+        editable_fields = await query_security_service.get_editable_fields(
+            db, current_user, "forms"
+        )
+        
+        # Filter schema fields based on permissions
+        schema = form.schema_json or {}
+        if schema and "properties" in schema:
+            properties = schema["properties"]
+            filtered_properties = {}
+            
+            for field_name, field_def in properties.items():
+                # Check if field is visible
+                if visible_fields and visible_fields != ["*"]:
+                    if field_name not in visible_fields:
+                        continue  # Skip non-visible fields
+                
+                # Add security metadata to field definition
+                field_copy = dict(field_def) if isinstance(field_def, dict) else {"type": str(field_def)}
+                field_copy["_security"] = {
+                    "is_visible": field_name in (visible_fields or ["*"]),
+                    "is_editable": field_name in (editable_fields or ["*"])
+                }
+                filtered_properties[field_name] = field_copy
+            
+            schema["properties"] = filtered_properties
         
         return {
             "id": form.id,
             "name": form.name,
             "description": form.description,
-            "schema": form.schema_json,
+            "schema": schema,
             "version": form.version,
             "environment": form.environment,
-            "is_published": form.is_published
+            "is_published": form.is_published,
+            "_security": {
+                "visible_fields": visible_fields,
+                "editable_fields": editable_fields
+            }
         }
     except HTTPException:
         raise
