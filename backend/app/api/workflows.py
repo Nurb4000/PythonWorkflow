@@ -180,8 +180,16 @@ async def list_workflows(
     result = await db.execute(group_stmt)
     groups_by_wf = {w.id: w.allowed_groups for w in result.scalars().all()}
 
+    # Check security permissions
+    from app.services.query_security_service import query_security_service
+    has_access = await query_security_service.validate_query_access(db, current_user, "workflows", "view")
+    
     workflows = []
     for row in rows:
+        # Skip workflows user doesn't have access to
+        if not has_access and row.id not in permitted_ids:
+            continue
+            
         workflows.append({
             "id": row.id,
             "name": row.name,
@@ -198,12 +206,14 @@ async def list_workflows(
             "created_at": row.created_at,
             "allowed_groups": [{"id": g.id, "name": g.name} for g in groups_by_wf.get(row.id, [])]
         })
+    
     return {
         "items": workflows,
         "total": total,
         "page": page,
         "page_size": page_size,
-        "pages": (total + page_size - 1) // page_size if total else 0
+        "pages": (total + page_size - 1) // page_size if total else 0,
+        "_security": {"has_access": has_access}
     }
 
 
