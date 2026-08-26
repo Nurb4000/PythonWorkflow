@@ -2,6 +2,7 @@ import React, { useState, useMemo } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { Link } from 'react-router-dom'
 import { cmdbApi } from '../services/api'
+import { CMDBRelationshipGraph } from './CMDBRelationshipGraph'
 
 interface CIType {
   id: number
@@ -457,6 +458,13 @@ export const CItemList: React.FC = () => {
               </div>
             ))}
           </div>
+
+          {viewMode === 'view' && editingItem && (
+            <div style={{ marginTop: '2rem' }}>
+              <h3 style={{ marginBottom: '1rem' }}>Dependency Graph</h3>
+              <CMDBRelationshipGraph itemId={editingItem.id} />
+            </div>
+          )}
 
           <div style={{ display: 'flex', gap: '0.5rem', marginTop: '1rem' }}>
             {viewMode === 'edit' && (
