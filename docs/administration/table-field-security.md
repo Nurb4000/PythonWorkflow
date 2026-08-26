@@ -125,10 +125,12 @@ Or for field lists:
 - **Implemented:** `/forms` endpoint checks access before listing forms
 - **Added:** `_security` metadata to responses with `visible_fields` and `editable_fields` lists
 
-### Phase 4: API Middleware 🔲
-- Automatically filter responses by visible fields
-- Reject writes to non-editable fields
-- Example: `GET /cmdb/items` only returns accessible columns
+### Phase 4: API Endpoint Filtering ✅
+- Add field-level filtering to list endpoints
+- Include `_security` metadata in responses
+- Example: `GET /workflows` filters by user permissions
+- **Implemented:** `/workflows` endpoint with security context
+- **Added:** `_security.has_access` flag to indicate permission status
 
 ### Phase 5: CMDB Integration 🔲
 - Apply field-level security to CI data
