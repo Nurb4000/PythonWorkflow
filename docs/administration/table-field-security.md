@@ -117,10 +117,13 @@ Or for field lists:
 - **Updated:** `/data-query/build` endpoint filters results by visible fields
 - **Updated:** `/data-query/tables` endpoint filters table list by allowed tables
 
-### Phase 3: Form Designer Integration 🔲
+### Phase 3: Form Designer Integration ✅
 - Hide non-visible fields in form editor
 - Disable editing for non-editable fields
 - Example: Form Designer only shows configurable fields
+- **Implemented:** `/forms/{id}` endpoint filters schema properties by visible/editable fields
+- **Implemented:** `/forms` endpoint checks access before listing forms
+- **Added:** `_security` metadata to responses with `visible_fields` and `editable_fields` lists
 
 ### Phase 4: API Middleware 🔲
 - Automatically filter responses by visible fields
