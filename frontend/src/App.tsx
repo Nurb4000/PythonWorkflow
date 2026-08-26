@@ -22,6 +22,7 @@ import { FieldManager } from './pages/FieldManager'
 import { FieldDictionary } from './pages/FieldDictionary'
 import { RoleManager } from './pages/RoleManager'
 import { UserRoleManager } from './pages/UserRoleManager'
+import { ReportBuilder } from './pages/ReportBuilder'
 import { DataExplorer } from './pages/DataExplorer'
 import { WorkflowImportExport } from './pages/WorkflowImportExport'
 import { SQLViewManager } from './pages/SQLViewManager'
@@ -143,6 +144,7 @@ const RoleAwareNav: React.FC = () => {
           <Link to="/admin/dictionary" onClick={() => navigate('/admin/dictionary')}>Data Dictionary</Link>
           <Link to="/admin/roles" onClick={() => navigate('/admin/roles')}>Roles</Link>
           <Link to="/admin/user-roles" onClick={() => navigate('/admin/user-roles')}>User Roles</Link>
+          <Link to="/admin/reports" onClick={() => navigate('/admin/reports')}>Reports</Link>
         </Dropdown>
       )}
 
@@ -421,6 +423,7 @@ const AppContent: React.FC = () => {
           <Route path="/admin/dictionary" element={<RoleRoute roles={['admin', 'developer']}><FieldDictionary /></RoleRoute>} />
           <Route path="/admin/roles" element={<RoleRoute roles={['admin']}><RoleManager /></RoleRoute>} />
           <Route path="/admin/user-roles" element={<RoleRoute roles={['admin']}><UserRoleManager /></RoleRoute>} />
+          <Route path="/admin/reports" element={<RoleRoute roles={['admin', 'developer']}><ReportBuilder /></RoleRoute>} />
           <Route path="/marketplace" element={<RoleRoute roles={['admin', 'developer']}><Marketplace /></RoleRoute>} />
           <Route path="/cmdb/types" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CITypeManager /></RoleRoute>} />
           <Route path="/cmdb/items" element={<RoleRoute roles={['admin', 'developer', 'cmdb_manager']}><CItemList /></RoleRoute>} />
