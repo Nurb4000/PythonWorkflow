@@ -12,3 +12,4 @@ from app.models.date_targets import DateTarget
 from app.models.field_library import FieldDefinition
 from app.models.reports import ReportDefinition
 from app.models.roles import CustomRole
+from app.models.role_permissions import RolePermission
