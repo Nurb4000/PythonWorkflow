@@ -411,4 +411,4 @@ The portal provides a user-friendly interface for discovering and running workfl
 
 ## License
 
-Private project
+Distributed under the terms of the Apache License 2.0. This project is open source and available for use and modification. See LICENSE for details.
