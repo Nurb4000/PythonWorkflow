@@ -485,7 +485,6 @@ class WorkflowEngine:
                 
                 if run.status == "running":
                     run.status = "completed"
-                    print(f"DEBUG: Set run status to completed")
 
                 if run.status in ("completed", "failed"):
                     run.completed_at = datetime.utcnow()

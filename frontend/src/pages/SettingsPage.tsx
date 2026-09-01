@@ -496,8 +496,7 @@ export const SettingsPage: React.FC = () => {
     e.preventDefault()
     try {
       const token = localStorage.getItem('token')
-      console.log('Saving branding:', brandingForm)
-      const response = await axios.put(
+      await axios.put(
         `${API_URL}/settings/branding`,
         null,
         {
@@ -505,11 +504,8 @@ export const SettingsPage: React.FC = () => {
           headers: { Authorization: `Bearer ${token}` }
         }
       )
-      console.log('Save response:', response.data)
       // Refresh branding context
-      console.log('Calling refreshBranding...')
       await refreshBranding()
-      console.log('After refresh, branding context:', branding)
       setMessage('Branding updated successfully')
     } catch (error: any) {
       console.error('Save error:', error.response?.data || error.message)

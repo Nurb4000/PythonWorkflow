@@ -242,18 +242,19 @@ async def delete_field_definition(
 @router.get("/{field_id}/where-used")
 async def get_field_where_used(
     field_id: int,
-    current_user: User = Depends(get_current_user),
+    current_user: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
     """C5: Show where a field definition is used (forms, CI types)."""
-    # This would query forms.schema_json and ci_types.field_schema for references
-    # For now, return a placeholder structure
-    return {
-        "field_id": field_id,
-        "forms_using": [],
-        "ci_types_using": [],
-        "note": "C5 implementation pending — requires schema_json parsing"
-    }
+    stmt = select(FieldDefinition).where(FieldDefinition.id == field_id)
+    result = await db.execute(stmt)
+    field = result.scalar_one_or_none()
+
+    if not field:
+        raise HTTPException(status_code=404, detail="Field definition not found")
+
+    from app.services.where_used_service import where_used_service
+    return await where_used_service.find_all_references(db, field_id)
 
 
 @router.get("/scan/forms")
