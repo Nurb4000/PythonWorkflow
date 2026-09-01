@@ -2,6 +2,8 @@
 
 A production-ready workflow automation platform with visual designer, AI-assisted step generation, human-in-the-loop execution, and comprehensive task management.
 
+> **⚠️ Work in Progress:** This project is still being actively developed and is only about two-thirds complete. It functions at this point in time, but there are still major bugs and missing or confusing features. Expect breaking changes as we move forward.
+
 ## Architecture
 
 ```
@@ -352,13 +354,11 @@ PythonWorkflow/
 
 ## Next Steps
 
-- **SCALE Governance**: Naming conventions, field library, data dictionary, governance ops (see `docs/SCALE_GOVERNANCE_PLAN.md`)
-- **CMDB Gaps**: Relationships UI, dependency graph viewer, bulk import UI (see `docs/CMDB_GAPS.md`)
 - **P7**: Production deployment hardening (secrets management, rate limiting, audit logging)
 - **P8**: Advanced features (sub-workflows, parallel branches with synchronization, error handling patterns)
 - **P9**: Performance optimization (connection pooling, query optimization, caching)
 
-See `docs/` for reference documentation (`docker-deployment.md`, `scheduling.md`, `ENTRY_FORMS_AND_TASKS.md`), the active plan (`INCIDENT_CHANGE_PLAN.md`), and the maintenance backlog (`CLEANUP_PLAN.md`). Completed feature plans are removed once shipped; notable history lives in `CHANGELOG.md`.
+See `docs/` for reference documentation (`docker-deployment.md`, `scheduling.md`, `entry-forms-and-tasks.md`) and the active plan (`incident-change-plan.md`). Completed feature plans are removed once shipped; notable history lives in `CHANGELOG.md`.
 
 ## Task System
 
