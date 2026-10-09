@@ -8,9 +8,17 @@ Covers:
 - C4: created_by parameter in update_workflow()
 - H1: exec/eval/compile removed from sandbox
 - H2: AST-based safe condition evaluation
+- H6: webhook rate limiting
+- H7: external API trigger auth validation
 - H10: SSRF protection in WebhookExecutor
+- M1: SQL echo config flag
+- M5: manual transaction control
+- M7: timezone-aware datetime in SLA checks
 - M9: email uniqueness check
 """
+import time
+from datetime import datetime
+
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
@@ -325,3 +333,111 @@ class TestM9_EmailUniqueness:
             password="StrongPass1",
         )
         assert u1.email != u2.email
+
+
+class TestH6_RateLimiting:
+    """H6: Webhook endpoints have rate limiting."""
+
+    def test_rate_limit_allows_under_threshold(self):
+        from app.api.webhooks import _check_rate_limit, _rate_buckets
+
+        key = "test_rl_1"
+        _rate_buckets[key] = []
+        for _ in range(100):
+            _check_rate_limit(key)  # should not raise
+        assert len(_rate_buckets[key]) == 100
+
+    def test_rate_limit_exceeds_threshold(self):
+        from app.api.webhooks import _check_rate_limit, _rate_buckets, _RATE_LIMIT_MAX
+        from fastapi import HTTPException
+
+        key = "test_rl_2"
+        _rate_buckets[key] = [time.monotonic()] * _RATE_LIMIT_MAX
+        with pytest.raises(HTTPException, match="Rate limit"):
+            _check_rate_limit(key)
+
+
+class TestH7_ApiKeyValidation:
+    """H7: External API trigger validates API key."""
+
+    @pytest.mark.asyncio
+    async def test_external_trigger_requires_api_key(self, db_session):
+        from app.api.webhooks import external_trigger
+        from fastapi import HTTPException
+
+        # Create a workflow first
+        from app.services.workflow_engine import WorkflowEngine
+        from app.schemas.workflow import WorkflowCreate
+        engine = WorkflowEngine()
+        wf = await engine.create_workflow(
+            db_session,
+            WorkflowCreate(name="H7 Test", description="test"),
+        )
+
+        # Call without API key — should raise 401
+        with pytest.raises(HTTPException, match="Missing X-Api-Key"):
+            await external_trigger(
+                workflow_id=wf.id,
+                input_data={"key": "val"},
+                x_api_key=None,
+                x_forwarded_for="1.2.3.4",
+                db=db_session,
+            )
+
+    @pytest.mark.asyncio
+    async def test_external_trigger_validates_api_key(self, db_session):
+        from app.api.webhooks import external_trigger
+        from fastapi import HTTPException
+
+        from app.services.workflow_engine import WorkflowEngine
+        from app.schemas.workflow import WorkflowCreate
+        engine = WorkflowEngine()
+        wf = await engine.create_workflow(
+            db_session,
+            WorkflowCreate(name="H7 Test2", description="test"),
+        )
+
+        # Call with invalid API key — should raise 401
+        with pytest.raises(HTTPException, match="Invalid API key"):
+            await external_trigger(
+                workflow_id=wf.id,
+                input_data={"key": "val"},
+                x_api_key="nonexistent-key-abc123",
+                x_forwarded_for="1.2.3.4",
+                db=db_session,
+            )
+
+
+class TestM1_SqlEchoConfig:
+    """M1: SQL echo is controlled by separate sql_echo setting."""
+
+    def test_sql_echo_defaults_to_false(self):
+        from app.core.config import Settings
+        s = Settings()
+        assert s.sql_echo is False
+
+
+class TestM5_ManualTransactionControl:
+    """M5: get_db_manual provides manual transaction control."""
+
+    def test_get_db_manual_exists(self):
+        from app.core.database import get_db_manual
+        assert callable(get_db_manual)
+
+
+class TestM7_TimezoneAwareDatetime:
+    """M7: SLA checks use timezone-aware datetimes."""
+
+    def test_make_aware_naive(self):
+        from app.services.scheduler import _make_aware
+        naive = datetime(2026, 10, 9, 12, 0, 0)
+        aware = _make_aware(naive)
+        assert aware.tzinfo is not None
+
+    def test_make_aware_already_aware(self):
+        from app.services.scheduler import _make_aware
+        from datetime import timezone
+        aware = datetime(2026, 10, 9, 12, 0, 0, tzinfo=timezone.utc)
+        result = _make_aware(aware)
+        assert result.tzinfo is not None
+        assert result == aware

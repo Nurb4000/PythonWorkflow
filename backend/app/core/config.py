@@ -66,6 +66,9 @@ class Settings(BaseSettings):
             )
         return self
     
+    # Database echo (separate from debug to avoid SQL spam in prod)
+    sql_echo: bool = False
+
     # Scheduler
     scheduler_timezone: str = "UTC"
     

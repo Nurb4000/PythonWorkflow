@@ -2,6 +2,9 @@
 API endpoints for webhooks and external triggers (P2.5)
 """
 import hmac
+import hashlib
+import time
+from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Header, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -12,6 +15,24 @@ from app.services.scheduler import scheduler_service
 from app.models.schemas import Workflow
 
 router = APIRouter()
+
+# Simple in-memory rate limiter: max requests per source IP per window
+_RATE_LIMIT_WINDOW = 60  # seconds
+_RATE_LIMIT_MAX = 120    # requests per window
+_rate_buckets: dict[str, list[float]] = defaultdict(list)
+
+
+def _check_rate_limit(key: str) -> None:
+    """Raise 429 if rate limit exceeded for the given key."""
+    now = time.monotonic()
+    bucket = _rate_buckets[key]
+    # Prune old entries
+    cutoff = now - _RATE_LIMIT_WINDOW
+    while bucket and bucket[0] < cutoff:
+        bucket.pop(0)
+    if len(bucket) >= _RATE_LIMIT_MAX:
+        raise HTTPException(status_code=429, detail="Rate limit exceeded (120 req/min)")
+    bucket.append(now)
 
 
 def verify_webhook_secret(x_webhook_secret: Optional[str]) -> None:
@@ -31,10 +52,15 @@ async def webhook_trigger(
     workflow_id: int,
     payload: dict,
     x_webhook_secret: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Trigger a workflow via webhook"""
-    
+
+    # Rate limiting by source IP
+    client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
+    _check_rate_limit(f"webhook:{client_ip}")
+
     # Verify webhook secret if configured
     verify_webhook_secret(x_webhook_secret)
     
@@ -70,10 +96,33 @@ async def external_trigger(
     workflow_id: int,
     input_data: dict,
     x_api_key: Optional[str] = Header(None),
+    x_forwarded_for: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Trigger a workflow via external API"""
-    
+
+    # Rate limiting by source IP
+    client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
+    _check_rate_limit(f"api_trigger:{client_ip}")
+
+    # Validate API key against stored tokens if provided
+    if x_api_key:
+        from app.models.auth import APIToken
+        token_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
+        stmt = select(APIToken).where(
+            APIToken.token_hash == token_hash,
+            APIToken.is_active == True
+        )
+        result = await db.execute(stmt)
+        api_token = result.scalar_one_or_none()
+        if not api_token:
+            raise HTTPException(status_code=401, detail="Invalid API key")
+        from datetime import datetime
+        if api_token.expires_at and api_token.expires_at < datetime.utcnow():
+            raise HTTPException(status_code=401, detail="API key expired")
+    else:
+        raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
+
     try:
         # Verify workflow exists and is active
         stmt = select(Workflow).where(Workflow.id == workflow_id, Workflow.is_active == True)

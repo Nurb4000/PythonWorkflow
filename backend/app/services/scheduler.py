@@ -7,7 +7,7 @@ from apscheduler.schedulers.asyncio import AsyncIOScheduler
 from apscheduler.triggers.cron import CronTrigger
 from apscheduler.triggers.interval import IntervalTrigger
 from apscheduler.triggers.date import DateTrigger
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 
@@ -17,6 +17,13 @@ from app.services.workflow_engine import WorkflowEngine
 from app.schemas.workflow import WorkflowRunCreate
 
 logger = logging.getLogger(__name__)
+
+
+def _make_aware(dt: datetime) -> datetime:
+    """Ensure a datetime is timezone-aware (UTC)."""
+    if dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc)
+    return dt
 
 
 class SchedulerService:
@@ -206,7 +213,6 @@ class SchedulerService:
         if not self.db_session_factory:
             return
 
-        from datetime import timezone as tz
         from app.services.email_service import notify_admin
 
         async with self.db_session_factory() as db:
@@ -220,14 +226,14 @@ class SchedulerService:
                 result = await db.execute(stmt)
                 runs = result.scalars().all()
 
-                now = datetime.now(tz.utc)
+                now = datetime.now(timezone.utc)
                 breached_ids = []
 
                 for run in runs:
                     if not run.started_at:
                         continue
 
-                    start = run.started_at.replace(tzinfo=tz.utc) if run.started_at.tzinfo is None else run.started_at
+                    start = _make_aware(run.started_at)
                     elapsed_hours = (now - start).total_seconds() / 3600
                     target_hours = run.sla_response_target_hours
 
