@@ -1,14 +1,15 @@
 """
 API endpoints for workflow management
 """
-from fastapi import APIRouter, Depends, HTTPException, Query
+import logging
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
 from app.core.database import get_db
-from app.models.auth import User, Group
+from app.models.auth import User, Group, AuditLog
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, Task
 from app.models.forms import Form, FormSubmission
 from app.api.auth import get_current_user, get_current_developer, user_can_access_workflow
@@ -22,6 +23,38 @@ from app.services.workflow_engine import WorkflowEngine
 
 router = APIRouter()
 engine = WorkflowEngine()
+logger = logging.getLogger(__name__)
+
+
+def _get_client_info(request: Request) -> tuple[str | None, str | None]:
+    """Extract client IP and user agent from request."""
+    forwarded = request.headers.get("x-forwarded-for")
+    ip = forwarded.split(",")[0].strip() if forwarded else request.client.host
+    return ip, request.headers.get("user-agent")
+
+
+async def _log_audit(
+    db: AsyncSession,
+    user_id: int | None,
+    action: str,
+    resource_type: str,
+    resource_id: int | None,
+    details: str | None,
+    ip_address: str | None,
+    user_agent: str | None,
+) -> None:
+    """Write an audit log entry."""
+    entry = AuditLog(
+        user_id=user_id,
+        action=action,
+        resource_type=resource_type,
+        resource_id=resource_id,
+        details=details,
+        ip_address=ip_address,
+        user_agent=user_agent,
+    )
+    db.add(entry)
+    await db.flush()
 
 
 def _step_to_dict(step: WorkflowStep) -> dict:
@@ -66,6 +99,7 @@ def _workflow_to_response(workflow: Workflow) -> dict:
 @router.post("/")
 async def create_workflow(
     workflow_data: WorkflowCreate,
+    request: Request,
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
@@ -75,6 +109,12 @@ async def create_workflow(
             db, workflow_data,
             created_by=developer.id,
             allowed_group_ids=workflow_data.allowed_group_ids
+        )
+        # FG1: Audit log
+        ip, ua = _get_client_info(request)
+        await _log_audit(
+            db, developer.id, "create_workflow", "workflow", workflow.id,
+            f"Created workflow '{workflow.name}'", ip, ua,
         )
         # Reload with steps and groups for response
         stmt = (
@@ -245,6 +285,7 @@ async def get_workflow(
 async def update_workflow(
     workflow_id: int,
     workflow_data: WorkflowUpdate,
+    request: Request,
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
@@ -252,6 +293,13 @@ async def update_workflow(
     workflow = await engine.update_workflow(db, workflow_id, workflow_data, created_by=developer.id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
+    # FG1: Audit log
+    ip, ua = _get_client_info(request)
+    changes = list(workflow_data.model_fields_set)
+    await _log_audit(
+        db, developer.id, "update_workflow", "workflow", workflow_id,
+        f"Updated fields: {', '.join(changes)}", ip, ua,
+    )
     # Reload with steps for response
     stmt = (
         select(Workflow)
@@ -336,6 +384,7 @@ async def get_workflow_associated_forms(
 @router.delete("/{workflow_id}")
 async def delete_workflow(
     workflow_id: int,
+    request: Request,
     developer: User = Depends(get_current_developer),
     db: AsyncSession = Depends(get_db)
 ):
@@ -348,6 +397,12 @@ async def delete_workflow(
         raise HTTPException(status_code=404, detail="Workflow not found")
 
     workflow.is_active = False
+    # FG1: Audit log
+    ip, ua = _get_client_info(request)
+    await _log_audit(
+        db, developer.id, "delete_workflow", "workflow", workflow_id,
+        f"Deactivated workflow '{workflow.name}'", ip, ua,
+    )
     await db.commit()
 
     return {

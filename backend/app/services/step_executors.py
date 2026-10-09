@@ -770,17 +770,9 @@ class ReportExecutor(BaseExecutor):
                 "executed_at": datetime.utcnow().isoformat(),
             }
         except Exception as e:
-            return {
-                "report_type": "sql_query",
-                "title": title,
-                "sql": interpolated,
-                "limit": limit,
-                "columns": [],
-                "rows": [],
-                "row_count": 0,
-                "error": str(e),
-                "executed_at": datetime.utcnow().isoformat(),
-            }
+            # L2: Raise consistently like other executors instead of returning error dict
+            logger.error(f"SQL report query failed: {str(e)}")
+            raise ValueError(f"SQL report query failed: {str(e)}") from e
 
 
 class ReadonlyFormExecutor(BaseExecutor):

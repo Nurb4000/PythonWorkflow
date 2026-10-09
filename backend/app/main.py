@@ -4,10 +4,12 @@ Instant Workflow - Main Application
 import asyncio
 import json
 import logging
+import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
@@ -108,6 +110,17 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Webhook-Secret", "X-Api-Key"],
 )
+
+# E1: Request ID tracing — attach unique ID to every request
+@app.middleware("http")
+async def add_request_id(request: Request, call_next):
+    request_id = request.headers.get("X-Request-ID", str(uuid.uuid4()))
+    response = await call_next(request)
+    response.headers["X-Request-ID"] = request_id
+    return response
+
+# E5: GZip compression for API responses
+app.add_middleware(GZipMiddleware, minimum_size=1024)
 
 # Include routers (nginx strips /api prefix, so backend routes exclude it)
 app.include_router(workflows.router, prefix="/workflows", tags=["workflows"])

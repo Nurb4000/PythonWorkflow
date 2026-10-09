@@ -181,7 +181,11 @@ class MarketplaceService:
         if status:
             stmt = stmt.where(MarketplaceItem.status == status)
         else:
-            stmt = stmt.where(MarketplaceItem.status == "published")
+            # FG2: Consistent soft-delete — require both published status and active flag
+            stmt = stmt.where(
+                MarketplaceItem.status == "published",
+                MarketplaceItem.is_active == True,
+            )
 
         if search:
             pattern = f"%{search}%"
@@ -407,13 +411,17 @@ class MarketplaceService:
 
     async def get_categories_and_tags(self, db: AsyncSession) -> Dict[str, Any]:
         cat_stmt = select(MarketplaceItem.category, func.count(MarketplaceItem.id).label("count")).where(
-            MarketplaceItem.status == "published"
+            MarketplaceItem.status == "published",
+            MarketplaceItem.is_active == True,
         ).group_by(MarketplaceItem.category)
         cat_result = await db.execute(cat_stmt)
         categories = [{"name": r[0], "count": r[1]} for r in cat_result.all()]
 
         tag_counts: Dict[str, int] = {}
-        all_stmt = select(MarketplaceItem.tags).where(MarketplaceItem.status == "published")
+        all_stmt = select(MarketplaceItem.tags).where(
+            MarketplaceItem.status == "published",
+            MarketplaceItem.is_active == True,
+        )
         all_result = await db.execute(all_stmt)
         for row in all_result.scalars().all():
             try:
