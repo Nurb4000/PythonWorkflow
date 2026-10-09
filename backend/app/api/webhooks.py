@@ -21,6 +21,10 @@ _RATE_LIMIT_WINDOW = 60  # seconds
 _RATE_LIMIT_MAX = 120    # requests per window
 _rate_buckets: dict[str, list[float]] = defaultdict(list)
 
+# FG5: Idempotency — track idempotency keys for 15 minutes
+_IDEMPOTENCY_WINDOW = 900  # seconds
+_idempotency_cache: dict[str, tuple[float, int]] = {}  # key -> (timestamp, run_id)
+
 
 def _check_rate_limit(key: str) -> None:
     """Raise 429 if rate limit exceeded for the given key."""
@@ -53,6 +57,7 @@ async def webhook_trigger(
     payload: dict,
     x_webhook_secret: Optional[str] = Header(None),
     x_forwarded_for: Optional[str] = Header(None),
+    x_idempotency_key: Optional[str] = Header(None),
     db: AsyncSession = Depends(get_db)
 ):
     """Trigger a workflow via webhook"""
@@ -60,6 +65,24 @@ async def webhook_trigger(
     # Rate limiting by source IP
     client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
     _check_rate_limit(f"webhook:{client_ip}")
+
+    # FG5: Idempotency check
+    if x_idempotency_key:
+        now = time.monotonic()
+        # Prune expired entries
+        cutoff = now - _IDEMPOTENCY_WINDOW
+        expired = [k for k, (ts, _) in _idempotency_cache.items() if ts < cutoff]
+        for k in expired:
+            del _idempotency_cache[k]
+        cached = _idempotency_cache.get(x_idempotency_key)
+        if cached and cached[0] >= cutoff:
+            return {
+                "success": True,
+                "run_id": cached[1],
+                "workflow_id": workflow_id,
+                "message": "Duplicate request (idempotent replay)",
+                "idempotent": True,
+            }
 
     # Verify webhook secret if configured
     verify_webhook_secret(x_webhook_secret)
@@ -75,7 +98,11 @@ async def webhook_trigger(
         
         # Trigger the workflow via scheduler (which uses engine.trigger_workflow)
         run = await scheduler_service.trigger_webhook(workflow_id, payload)
-        
+
+        # Store idempotency key
+        if x_idempotency_key:
+            _idempotency_cache[x_idempotency_key] = (time.monotonic(), run.id)
+
         return {
             "success": True,
             "run_id": run.id,

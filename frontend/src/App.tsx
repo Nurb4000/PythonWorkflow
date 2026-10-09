@@ -262,14 +262,12 @@ const Navbar: React.FC = () => {
     }
     setPwdLoading(true)
     try {
-      const token = localStorage.getItem('token')
-      const res = await fetch('/api/auth/me/password', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${token}` },
-        body: JSON.stringify({ old_password: pwdForm.old_password, new_password: pwdForm.new_password })
+      const { authApi } = await import('./services/api')
+      const res = await authApi.changePassword({
+        old_password: pwdForm.old_password,
+        new_password: pwdForm.new_password,
       })
-      const data = await res.json()
-      if (!res.ok) throw new Error(data.detail || 'Failed to change password')
+      if (!res.data) throw new Error('Failed to change password')
       setPwdMsg('Password changed successfully')
       setPwdForm({ old_password: '', new_password: '', confirm_password: '' })
       setTimeout(() => setShowPwdModal(false), 1500)

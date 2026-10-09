@@ -51,24 +51,32 @@ logging.getLogger().addHandler(_capture_handler)
 async def get_system_logs(
     level: Optional[str] = None,
     search: Optional[str] = None,
-    lines: int = 500,
+    page: int = 1,
+    page_size: int = 200,
     source: str = "app",
     current_user: User = Depends(get_current_admin),
 ):
-    """Get system logs. source='app' for in-memory Python logs, source='docker' for container logs."""
+    """Get system logs with pagination. source='app' for in-memory Python logs, source='docker' for container logs."""
+    if page < 1:
+        page = 1
+    if page_size < 1 or page_size > 2000:
+        page_size = 200
+
     if source == "docker":
         try:
             result = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: subprocess.run(
-                    ["docker", "logs", "--tail", str(lines * 2), "pythonworkflow-backend"],
+                    ["docker", "logs", "--tail", str(page_size * max(page, 5)), "pythonworkflow-backend"],
                     capture_output=True, text=True, timeout=10
                 )
             )
             log_lines = result.stderr.splitlines() if result.stderr else []
         except Exception:
-            log_lines = list(_log_buffer)
+            with _log_lock:
+                log_lines = list(_log_buffer)
     else:
-        log_lines = list(_log_buffer)
+        with _log_lock:
+            log_lines = list(_log_buffer)
 
     # Filter by level
     if level:
@@ -80,10 +88,16 @@ async def get_system_logs(
         search_lower = search.lower()
         log_lines = [l for l in log_lines if search_lower in l.lower()]
 
-    # Return last N lines
+    total_count = len(log_lines)
+    start = (page - 1) * page_size
+    end = start + page_size
+
     return {
-        "logs": log_lines[-lines:],
-        "total_count": len(log_lines),
+        "logs": log_lines[start:end],
+        "total_count": total_count,
+        "page": page,
+        "page_size": page_size,
+        "total_pages": (total_count + page_size - 1) // page_size if page_size > 0 else 1,
         "source": source,
     }
 

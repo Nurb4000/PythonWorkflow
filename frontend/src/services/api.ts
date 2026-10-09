@@ -72,7 +72,9 @@ export const authApi = {
   updateGroup: (id: number, data: any) => api.put(`/auth/groups/${id}`, null, { params: data }),
   deleteGroup: (id: number) => api.delete(`/auth/groups/${id}`),
   setUserGroups: (userId: number, groupIds: number[]) =>
-    api.put(`/auth/users/${userId}/groups`, groupIds)
+    api.put(`/auth/users/${userId}/groups`, groupIds),
+  changePassword: (data: { old_password: string; new_password: string }) =>
+    api.put('/auth/me/password', data)
 }
 
 // Workflow Run APIs

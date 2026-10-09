@@ -262,7 +262,6 @@ class WorkflowEngine:
             workflow.tags = workflow_data.tags
         
         # E1: deprecation
-        from datetime import datetime, timezone
         if workflow_data.is_deprecated is not None:
             workflow.is_deprecated = workflow_data.is_deprecated
             if workflow_data.is_deprecated:

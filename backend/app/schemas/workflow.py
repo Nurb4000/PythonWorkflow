@@ -1,9 +1,40 @@
 """
 Pydantic schemas for request/response validation
 """
+import json
+from enum import Enum
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from datetime import datetime
+
+
+# L4: Centralized status enums to replace hardcoded strings
+class WorkflowRunStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    WAITING = "waiting"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    CANCELLED = "cancelled"
+
+
+class StepInstanceStatus(str, Enum):
+    PENDING = "pending"
+    RUNNING = "running"
+    COMPLETED = "completed"
+    FAILED = "failed"
+    SKIPPED = "skipped"
+
+
+class TaskStatus(str, Enum):
+    PENDING = "pending"
+    IN_PROGRESS = "in_progress"
+    COMPLETED = "completed"
+    CLOSED = "closed"
+
+
+# FG4: Max payload size for workflow run input (1 MB)
+MAX_RUN_INPUT_BYTES = 1_000_000
 
 
 # Step Schemas
@@ -109,6 +140,18 @@ class WorkflowRunCreate(BaseModel):
     failure_hooks: List[Dict[str, Any]] = []  # List of failure hook configurations
     priority: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 3
     service_id: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 4
+
+    def __init__(self, **data):
+        super().__init__(**data)
+        # FG4: Validate input payload size
+        if self.input_data:
+            payload_size = len(json.dumps(self.input_data))
+            if payload_size > MAX_RUN_INPUT_BYTES:
+                from pydantic import ValidationError
+                raise ValueError(
+                    f"input_data exceeds {MAX_RUN_INPUT_BYTES} bytes "
+                    f"(actual: {payload_size})"
+                )
 
 
 class WorkflowRunResponse(BaseModel):

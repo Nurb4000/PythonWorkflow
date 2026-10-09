@@ -370,4 +370,33 @@ async def root():
 
 @app.get("/health")
 async def health_check():
-    return {"status": "healthy"}
+    """Detailed health check for production monitoring."""
+    from sqlalchemy import text
+
+    components = {}
+
+    # Database connectivity
+    try:
+        async with async_session_factory() as db:
+            await db.execute(text("SELECT 1"))
+        components["database"] = {"status": "healthy"}
+    except Exception as e:
+        components["database"] = {"status": "unhealthy", "detail": str(e)}
+
+    # Scheduler status
+    try:
+        from app.services.scheduler import scheduler_service
+        active = scheduler_service.get_active_schedules()
+        components["scheduler"] = {
+            "status": "healthy" if scheduler_service._initialized else "degraded",
+            "active_schedules": len(active),
+        }
+    except Exception as e:
+        components["scheduler"] = {"status": "unhealthy", "detail": str(e)}
+
+    overall = "healthy" if all(c.get("status") == "healthy" for c in components.values()) else "degraded"
+
+    return {
+        "status": overall,
+        "components": components,
+    }

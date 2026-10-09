@@ -441,3 +441,77 @@ class TestM7_TimezoneAwareDatetime:
         result = _make_aware(aware)
         assert result.tzinfo is not None
         assert result == aware
+
+
+class TestL4_StatusEnums:
+    """L4: Status enums replace hardcoded strings."""
+
+    def test_workflow_run_status_enum(self):
+        from app.schemas.workflow import WorkflowRunStatus
+        assert WorkflowRunStatus.PENDING.value == "pending"
+        assert WorkflowRunStatus.RUNNING.value == "running"
+        assert WorkflowRunStatus.COMPLETED.value == "completed"
+        assert WorkflowRunStatus.FAILED.value == "failed"
+        assert WorkflowRunStatus.CANCELLED.value == "cancelled"
+
+    def test_step_instance_status_enum(self):
+        from app.schemas.workflow import StepInstanceStatus
+        assert StepInstanceStatus.PENDING.value == "pending"
+        assert StepInstanceStatus.COMPLETED.value == "completed"
+        assert StepInstanceStatus.FAILED.value == "failed"
+        assert StepInstanceStatus.SKIPPED.value == "skipped"
+
+    def test_task_status_enum(self):
+        from app.schemas.workflow import TaskStatus
+        assert TaskStatus.PENDING.value == "pending"
+        assert TaskStatus.COMPLETED.value == "completed"
+        assert TaskStatus.CLOSED.value == "closed"
+
+
+class TestFG4_InputPayloadValidation:
+    """FG4: Workflow run input payload size is validated."""
+
+    def test_small_payload_accepted(self):
+        from app.schemas.workflow import WorkflowRunCreate
+        run = WorkflowRunCreate(input_data={"key": "value"})
+        assert run.input_data == {"key": "value"}
+
+    def test_large_payload_rejected(self):
+        from app.schemas.workflow import WorkflowRunCreate, MAX_RUN_INPUT_BYTES
+        # Create a payload larger than the limit
+        large_data = {"data": "x" * (MAX_RUN_INPUT_BYTES + 100)}
+        with pytest.raises(ValueError, match="exceeds"):
+            WorkflowRunCreate(input_data=large_data)
+
+
+class TestFG5_Idempotency:
+    """FG5: Webhook triggers support idempotency keys."""
+
+    def test_idempotency_cache_structure(self):
+        from app.api.webhooks import _idempotency_cache, _IDEMPOTENCY_WINDOW
+        assert isinstance(_idempotency_cache, dict)
+        assert _IDEMPOTENCY_WINDOW == 900
+
+
+class TestL5_LogPagination:
+    """L5: Admin log endpoint supports pagination."""
+
+    def test_pagination_params_in_route(self):
+        from app.api.admin import router
+        logs_routes = [r for r in router.routes if hasattr(r, "path") and r.path == "/logs"]
+        assert len(logs_routes) == 1
+        # Check the endpoint function signature includes page/page_size
+        import inspect
+        sig = inspect.signature(logs_routes[0].endpoint)
+        params = list(sig.parameters.keys())
+        assert "page" in params
+        assert "page_size" in params
+
+
+class TestE7_HealthCheck:
+    """E7: Health check returns component-level status."""
+
+    def test_health_endpoint_exists(self):
+        from app.main import app
+        health_routes = [r for r in app.routes if hasattr(r, "path") and r.path == "/health"]
+        assert len(health_routes) == 1
