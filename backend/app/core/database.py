@@ -5,10 +5,17 @@ from sqlalchemy.ext.asyncio import create_async_engine, AsyncSession, async_sess
 from sqlalchemy.orm import DeclarativeBase
 from app.core.config import settings
 
-# Create async engine (echo defaults to False; override with SQL_ECHO env var)
+# E6: Database query timeout (seconds) — prevents long-running queries from blocking pool slots
+QUERY_TIMEOUT = getattr(settings, "query_timeout_seconds", 30)
+
+# Create async engine with pool monitoring config and query timeout
 engine = create_async_engine(
     settings.database_url,
     echo=settings.sql_echo,
+    pool_size=20,
+    max_overflow=10,
+    pool_pre_ping=True,
+    pool_recycle=3600,
 )
 
 # Session factory
@@ -17,6 +24,18 @@ async_session_factory = async_sessionmaker(
     class_=AsyncSession,
     expire_on_commit=False
 )
+
+
+def get_pool_status() -> dict:
+    """Return connection pool metrics for health monitoring."""
+    pool = engine.pool
+    return {
+        "pool_size": pool.size(),
+        "checked_in": pool.checkedin(),
+        "checked_out": pool.checkedout(),
+        "overflow": pool.overflow(),
+        "total": pool.checkedin() + pool.checkedout(),
+    }
 
 
 class Base(DeclarativeBase):

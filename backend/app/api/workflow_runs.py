@@ -17,7 +17,7 @@ router = APIRouter()
 runs_router = APIRouter()
 
 
-async def _check_workflow_access(db: AsyncSession, current_user: User, workflow_id: int):
+async def _check_workflow_access(db: AsyncSession, current_user: User, workflow_id: int) -> None:
     if not await user_can_access_workflow(db, current_user, workflow_id):
         raise HTTPException(status_code=403, detail="You do not have permission to access this workflow")
 
@@ -29,8 +29,8 @@ async def list_runs(
     db: AsyncSession = Depends(get_db),
     status: Optional[str] = None,
     limit: int = Query(default=100, ge=1, le=1000),
-    offset: int = Query(default=0, ge=0)
-):
+    offset: int = Query(default=0, ge=0),
+) -> Dict[str, Any]:
     """List runs for a workflow with pagination (P6.2)."""
     await _check_workflow_access(db, current_user, workflow_id)
     
@@ -106,8 +106,8 @@ async def cancel_run(
     workflow_id: int,
     run_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, str]:
     """Cancel a running workflow run"""
     await _check_workflow_access(db, current_user, workflow_id)
     stmt = select(WorkflowRun).where(WorkflowRun.id == run_id, WorkflowRun.workflow_id == workflow_id)
@@ -131,8 +131,8 @@ async def cancel_run(
 async def get_run_by_id(
     run_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
+    db: AsyncSession = Depends(get_db),
+) -> WorkflowRun:
     """Get details of a run by its id (with workflow access check)"""
     stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
     result = await db.execute(stmt)
@@ -178,8 +178,8 @@ async def get_run_steps_by_id(
 async def cancel_run_global(
     run_id: int,
     current_user: User = Depends(get_current_user),
-    db: AsyncSession = Depends(get_db)
-):
+    db: AsyncSession = Depends(get_db),
+) -> Dict[str, str]:
     """Cancel a running workflow run (global endpoint, no workflow id needed)."""
     stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
     result = await db.execute(stmt)

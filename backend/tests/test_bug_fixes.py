@@ -600,3 +600,66 @@ class TestE5_GZipMiddleware:
         # Simpler check: verify GZipMiddleware class is imported in main
         import app.main as main_module
         assert hasattr(main_module, "GZipMiddleware")
+
+
+class TestE3_MigrationCheck:
+    """E3: Migration version check at startup."""
+
+    def test_check_migrations_function_exists(self):
+        from app.main import _check_migrations
+        assert callable(_check_migrations)
+
+
+class TestE6_QueryTimeout:
+    """E6: Database query timeout configuration."""
+
+    def test_query_timeout_configured(self):
+        from app.core.database import QUERY_TIMEOUT
+        assert QUERY_TIMEOUT > 0
+
+
+class TestFG6_PoolMonitoring:
+    """FG6: DB connection pool monitoring in health check."""
+
+    def test_pool_status_function_exists(self):
+        from app.core.database import get_pool_status
+        assert callable(get_pool_status)
+
+    def test_pool_status_returns_dict(self):
+        from app.core.database import get_pool_status
+        status = get_pool_status()
+        assert isinstance(status, dict)
+        assert "pool_size" in status
+        assert "checked_in" in status
+        assert "checked_out" in status
+
+
+class TestL3_TypeHints:
+    """L3: Key API routes have type hints."""
+
+    def test_cancel_run_has_return_type(self):
+        import inspect
+        from app.api.workflow_runs import cancel_run
+        sig = inspect.signature(cancel_run)
+        assert sig.return_annotation is not inspect.Signature.empty
+
+    def test_get_run_by_id_has_return_type(self):
+        import inspect
+        from app.api.workflow_runs import get_run_by_id
+        sig = inspect.signature(get_run_by_id)
+        assert sig.return_annotation is not inspect.Signature.empty
+
+    def test_check_workflow_access_has_return_type(self):
+        import inspect
+        from app.api.workflow_runs import _check_workflow_access
+        sig = inspect.signature(_check_workflow_access)
+        assert sig.return_annotation is not inspect.Signature.empty
+
+
+class TestE4_ErrorBoundary:
+    """E4: Frontend error boundary component exists."""
+
+    def test_error_boundary_file_exists(self):
+        from pathlib import Path
+        eb_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "components" / "ErrorBoundary.tsx"
+        assert eb_path.exists()

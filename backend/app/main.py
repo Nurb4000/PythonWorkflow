@@ -75,6 +75,32 @@ DEMO_METADATA = {
 _demo_seeded = False
 
 
+def _check_migrations() -> None:
+    """E3: Compare current Alembic revision against head and warn if pending."""
+    try:
+        from alembic.config import Config
+        from alembic.runtime.migration import MigrationContext
+        from alembic.script import ScriptDirectory
+
+        alembic_cfg = Config(str(Path(__file__).resolve().parent.parent / "alembic.ini"))
+        script = ScriptDirectory.from_config(alembic_cfg)
+        head_revision = script.get_current_head()
+
+        with engine.connect() as conn:
+            context = MigrationContext.configure(conn)
+            current_revision = context.get_current_revision()
+
+        if current_revision and current_revision != head_revision:
+            logger.warning(
+                f"Database migration behind: current={current_revision}, "
+                f"head={head_revision}. Run 'alembic upgrade head'."
+            )
+        elif not current_revision:
+            logger.info("No Alembic revision found in database (may be fresh install).")
+    except Exception as e:
+        logger.debug(f"Migration check skipped: {e}")
+
+
 @asynccontextmanager
 async def lifespan(fastapi_app: FastAPI):
     """Initialize database and scheduler on startup; cleanup on shutdown."""
@@ -87,6 +113,8 @@ async def lifespan(fastapi_app: FastAPI):
     async with async_session_factory() as db:
         await sql_view_service.sync_views(db)
     await scheduler_service.start_email_monitor()
+    # E3: Check migration version at startup
+    _check_migrations()
     asyncio.create_task(seed_marketplace_demos())
     logger.info("Application started")
     yield
@@ -388,11 +416,16 @@ async def health_check():
 
     components = {}
 
-    # Database connectivity
+    # Database connectivity + FG6: pool monitoring
     try:
         async with async_session_factory() as db:
             await db.execute(text("SELECT 1"))
-        components["database"] = {"status": "healthy"}
+        from app.core.database import get_pool_status
+        pool = get_pool_status()
+        components["database"] = {
+            "status": "healthy",
+            "pool": pool,
+        }
     except Exception as e:
         components["database"] = {"status": "unhealthy", "detail": str(e)}
 
