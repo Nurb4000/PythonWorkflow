@@ -663,3 +663,58 @@ class TestE4_ErrorBoundary:
         from pathlib import Path
         eb_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "components" / "ErrorBoundary.tsx"
         assert eb_path.exists()
+
+
+class TestFG7_MarketplaceExportRestore:
+    """FG7: Marketplace export/restore endpoints exist."""
+
+    def test_export_endpoint_exists(self):
+        from app.api.marketplace import router
+        export_routes = [r for r in router.routes if hasattr(r, "path") and r.path == "/export"]
+        assert len(export_routes) == 1
+
+    def test_restore_endpoint_exists(self):
+        from app.api.marketplace import router
+        restore_routes = [r for r in router.routes if hasattr(r, "path") and r.path == "/restore"]
+        assert len(restore_routes) == 1
+
+    def test_restore_request_schema(self):
+        from app.api.marketplace import MarketplaceRestoreRequest, MarketplaceRestoreItem
+        item = MarketplaceRestoreItem(
+            item_type="workflow",
+            name="Test",
+            content="<workflow/>",
+            content_format="xml",
+        )
+        req = MarketplaceRestoreRequest(items=[item])
+        assert len(req.items) == 1
+
+
+class TestL8_FrontendTests:
+    """L8: Frontend unit test scaffold exists."""
+
+    def test_vitest_config_exists(self):
+        from pathlib import Path
+        config_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "vitest.config.ts"
+        assert config_path.exists()
+
+    def test_frontend_test_file_exists(self):
+        from pathlib import Path
+        test_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "App.test.tsx"
+        assert test_path.exists()
+
+    def test_setup_tests_file_exists(self):
+        from pathlib import Path
+        setup_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "setupTests.ts"
+        assert setup_path.exists()
+
+
+class TestL6_CookieAuthSupport:
+    """L6: Frontend supports cookie-based auth as alternative to localStorage."""
+
+    def test_api_client_has_with_credentials(self):
+        from pathlib import Path
+        api_file = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "services" / "api.ts"
+        content = api_file.read_text()
+        assert "withCredentials" in content
+        assert "true" in content

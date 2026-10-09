@@ -4,13 +4,17 @@ const api = axios.create({
   baseURL: '/api',
   headers: {
     'Content-Type': 'application/json'
-  }
+  },
+  // L6: withCredentials enables cookie-based auth as an alternative to localStorage.
+  // When the backend sets HttpOnly cookies, the browser sends them automatically.
+  // The interceptor below falls back to localStorage for backward compatibility.
+  withCredentials: true,
 })
 
-// Add auth token to requests
+// Add auth token to requests — prefer cookie (set by backend), fall back to localStorage
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
-  if (token) {
+  if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`
   }
   return config

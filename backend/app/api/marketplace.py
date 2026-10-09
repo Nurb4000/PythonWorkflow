@@ -3,12 +3,15 @@ Marketplace API — browse, publish, and manage workflow packages and node templ
 """
 import json
 from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy import select as sa_select
 from typing import List, Optional
 
 from app.core.database import get_db
 from app.models.auth import User
+from app.models.marketplace import MarketplaceItem
 from app.api.auth import get_current_user, get_current_developer, get_current_admin
 from app.services.marketplace_service import marketplace_service
 
@@ -398,3 +401,110 @@ async def update_categories(
 
     await marketplace_service.set_categories(db, cats)
     return {"message": "Categories updated", "categories": cats}
+
+
+# ── FG7: Export / Restore (backup) ─────────────────────────────────────
+
+@router.get("/export")
+async def export_marketplace(
+    item_type: Optional[str] = None,
+    category: Optional[str] = None,
+    current_user: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Export marketplace items as JSON for backup/restore."""
+    stmt = sa_select(MarketplaceItem).where(MarketplaceItem.is_active == True)
+    if item_type:
+        stmt = stmt.where(MarketplaceItem.item_type == item_type)
+    if category:
+        stmt = stmt.where(MarketplaceItem.category == category)
+
+    result = await db.execute(stmt)
+    items = result.scalars().all()
+
+    export_data = {
+        "version": "1.0",
+        "exported_by": current_user.username,
+        "item_count": len(items),
+        "items": [],
+    }
+
+    for item in items:
+        export_data["items"].append({
+            "item_type": item.item_type,
+            "name": item.name,
+            "description": item.description or "",
+            "category": item.category or "General",
+            "tags": item.tags_list or [],
+            "content": item.content or "",
+            "content_format": item.content_format or "json",
+            "node_type": item.node_type,
+            "status": item.status or "published",
+        })
+
+    return JSONResponse(content=export_data)
+
+
+class MarketplaceRestoreItem(BaseModel):
+    item_type: str
+    name: str
+    description: str = ""
+    category: str = "General"
+    tags: List[str] = []
+    content: str
+    content_format: str = "json"
+    node_type: Optional[str] = None
+    status: str = "published"
+
+
+class MarketplaceRestoreRequest(BaseModel):
+    items: List[MarketplaceRestoreItem]
+
+
+@router.post("/restore")
+async def restore_marketplace(
+    body: MarketplaceRestoreRequest,
+    current_user: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore marketplace items from a previously exported JSON payload."""
+    created = 0
+    skipped = 0
+    errors: List[str] = []
+
+    for item_data in body.items:
+        try:
+            # Check for duplicate (same name + type)
+            check_stmt = sa_select(MarketplaceItem).where(
+                MarketplaceItem.name == item_data.name,
+                MarketplaceItem.item_type == item_data.item_type,
+                MarketplaceItem.is_active == True,
+            )
+            check_result = await db.execute(check_stmt)
+            if check_result.scalar_one_or_none():
+                skipped += 1
+                continue
+
+            await marketplace_service.create_item(
+                db=db,
+                item_type=item_data.item_type,
+                name=item_data.name,
+                description=item_data.description,
+                category=item_data.category,
+                tags=item_data.tags,
+                author_id=current_user.id,
+                content=item_data.content,
+                content_format=item_data.content_format,
+                node_type=item_data.node_type,
+                status=item_data.status,
+            )
+            created += 1
+        except ValueError as e:
+            errors.append(f"{item_data.name}: {str(e)}")
+
+    return {
+        "created": created,
+        "skipped": skipped,
+        "errors": errors,
+        "total_processed": len(body.items),
+    }
