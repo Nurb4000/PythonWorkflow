@@ -49,6 +49,12 @@ class AuthService:
         if result.scalar_one_or_none():
             raise ValueError(f"Username '{username}' already exists")
 
+        # Check for duplicate email
+        stmt_email = select(User).where(User.email == email)
+        result_email = await db.execute(stmt_email)
+        if result_email.scalar_one_or_none():
+            raise ValueError(f"Email '{email}' already exists")
+
         # Hash password
         password_hash = pwd_context.hash(password)
 

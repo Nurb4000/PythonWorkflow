@@ -4,6 +4,7 @@ Instant Workflow - Main Application
 import asyncio
 import json
 import logging
+from contextlib import asynccontextmanager
 from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
@@ -71,7 +72,29 @@ DEMO_METADATA = {
 
 _demo_seeded = False
 
+
+@asynccontextmanager
+async def lifespan(fastapi_app: FastAPI):
+    """Initialize database and scheduler on startup; cleanup on shutdown."""
+    await init_db()
+    await create_default_admin()
+    from app.services.email_service import load_smtp_overrides
+    await load_smtp_overrides()
+    await scheduler_service.initialize(async_session_factory)
+    from app.services.sql_view_service import sql_view_service
+    async with async_session_factory() as db:
+        await sql_view_service.sync_views(db)
+    await scheduler_service.start_email_monitor()
+    asyncio.create_task(seed_marketplace_demos())
+    logger.info("Application started")
+    yield
+    scheduler_service.stop()
+    await close_db()
+    logger.info("Application stopped")
+
+
 app = FastAPI(
+    lifespan=lifespan,
     title="Instant Workflow",
     description="Web-based workflow management with AI-generated steps",
     version="0.1.0"
@@ -82,8 +105,8 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins,
     allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "Accept", "X-Webhook-Secret", "X-Api-Key"],
 )
 
 # Include routers (nginx strips /api prefix, so backend routes exclude it)
@@ -338,30 +361,6 @@ A: No, submissions cannot be edited once submitted. If you need changes, please 
         _demo_seeded = True
     except Exception as e:
         logger.error(f"Marketplace demo seeding failed: {e}", exc_info=True)
-
-
-@app.on_event("startup")
-async def startup_event():
-    """Initialize database and scheduler on startup"""
-    await init_db()
-    await create_default_admin()
-    from app.services.email_service import load_smtp_overrides
-    await load_smtp_overrides()
-    await scheduler_service.initialize(async_session_factory)
-    from app.services.sql_view_service import sql_view_service
-    async with async_session_factory() as db:
-        await sql_view_service.sync_views(db)
-    await scheduler_service.start_email_monitor()
-    asyncio.create_task(seed_marketplace_demos())
-    logger.info("Application started")
-
-
-@app.on_event("shutdown")
-async def shutdown_event():
-    """Cleanup on shutdown"""
-    scheduler_service.stop()
-    await close_db()
-    logger.info("Application stopped")
 
 
 @app.get("/")

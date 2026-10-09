@@ -23,8 +23,10 @@ from app.services.scheduler import scheduler_service
 router = APIRouter()
 
 
-# In-memory log buffer for recent entries
+# In-memory log buffer for recent entries (thread-safe)
+import threading
 _log_buffer: List[str] = []
+_log_lock = threading.Lock()
 _MAX_LOG_ENTRIES = 10000
 
 
@@ -32,9 +34,10 @@ class LogCaptureHandler(logging.Handler):
     """Captures log records and stores them in memory."""
     def emit(self, record):
         msg = self.format(record)
-        _log_buffer.append(msg)
-        if len(_log_buffer) > _MAX_LOG_ENTRIES:
-            _log_buffer[:] = _log_buffer[-_MAX_LOG_ENTRIES:]
+        with _log_lock:
+            _log_buffer.append(msg)
+            if len(_log_buffer) > _MAX_LOG_ENTRIES:
+                _log_buffer[:] = _log_buffer[-_MAX_LOG_ENTRIES:]
 
 
 # Attach to root logger

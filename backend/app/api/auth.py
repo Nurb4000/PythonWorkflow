@@ -173,8 +173,8 @@ async def change_password(
     if not old_password or not new_password:
         raise HTTPException(status_code=400, detail="Both old_password and new_password are required")
 
-    if len(new_password) < 4:
-        raise HTTPException(status_code=400, detail="New password must be at least 4 characters")
+    if len(new_password) < 8:
+        raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
 
     from passlib.context import CryptContext
     pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
