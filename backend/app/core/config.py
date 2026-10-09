@@ -1,10 +1,13 @@
 """
 Application settings and configuration
 """
+import logging
 from pathlib import Path
 from pydantic_settings import BaseSettings
 from typing import List
-from pydantic import field_validator
+from pydantic import field_validator, model_validator
+
+logger = logging.getLogger(__name__)
 
 
 class Settings(BaseSettings):
@@ -52,7 +55,16 @@ class Settings(BaseSettings):
     # Security
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
-    access_token_expire_minutes: int = 10080
+    access_token_expire_minutes: int = 1440
+
+    @model_validator(mode="after")
+    def check_secret_key(self):
+        if self.secret_key == "change-me-in-production":
+            logger.warning(
+                "SECRET_KEY is still the default value. "
+                "Set SECRET_KEY env var for production deployments."
+            )
+        return self
     
     # Scheduler
     scheduler_timezone: str = "UTC"

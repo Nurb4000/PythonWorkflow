@@ -2,6 +2,7 @@
 Core workflow engine for executing workflows and steps
 """
 import asyncio
+import ast
 import logging
 from typing import Dict, Any, List, Optional
 from datetime import datetime
@@ -936,14 +937,105 @@ class WorkflowEngine:
         return routes, default
 
     def _evaluate_condition(self, condition_expr: str, data: Dict[str, Any]) -> bool:
-        """Evaluate a condition expression. Raises ValueError on any error (STRICT)."""
+        """Evaluate a condition expression using safe AST-based evaluation.
+
+        Allowed operations: comparisons, boolean ops, arithmetic, subscript access
+        on ``data``, and attribute access on leaf values (not on dict proxies).
+        """
         try:
-            return bool(eval(condition_expr, {"__builtins__": {}}, {"data": data}))
+            tree = ast.parse(condition_expr, mode="eval")
+            return bool(self._safe_eval(node=tree.body, data=data))
         except Exception as e:
             raise ValueError(
                 f"Condition evaluation failed for expression {condition_expr!r}: "
                 f"{type(e).__name__}: {e}"
             ) from e
+
+    def _safe_eval(self, node: ast.AST, data: Dict[str, Any]) -> Any:
+        """Recursively evaluate an AST node with restricted operations."""
+        if isinstance(node, ast.Constant):
+            return node.value
+        if isinstance(node, ast.Name):
+            if node.id == "data":
+                return data
+            raise ValueError(f"Name {node.id!r} not in scope (expected 'data')")
+        if isinstance(node, ast.Subscript):
+            value = self._safe_eval(node.value, data)
+            if isinstance(node.slice, ast.Constant):
+                return value[node.slice.value]
+            if isinstance(node.slice, ast.Index):
+                return value[self._safe_eval(node.slice.value, data)]
+            raise ValueError(f"Subscript slice type {type(node.slice).__name__}")
+        if isinstance(node, ast.Attribute):
+            obj = self._safe_eval(node.value, data)
+            return getattr(obj, node.attr)
+        if isinstance(node, ast.Compare):
+            left = self._safe_eval(node.left, data)
+            results = []
+            for op, comparator in zip(node.ops, node.comparators):
+                right = self._safe_eval(comparator, data)
+                results.append(self._compare(left, op, right))
+                left = right
+            return all(results)
+        if isinstance(node, ast.BoolOp):
+            values = [self._safe_eval(v, data) for v in node.values]
+            if isinstance(node.op, ast.And):
+                return all(values)
+            return any(values)
+        if isinstance(node, ast.UnaryOp):
+            operand = self._safe_eval(node.operand, data)
+            if isinstance(node.op, ast.Not):
+                return not operand
+            if isinstance(node.op, ast.USub):
+                return -operand
+            raise ValueError(f"UnaryOp {type(node.op).__name__}")
+        if isinstance(node, ast.BinOp):
+            left = self._safe_eval(node.left, data)
+            right = self._safe_eval(node.right, data)
+            op_map = {
+                ast.Add: lambda a, b: a + b,
+                ast.Sub: lambda a, b: a - b,
+                ast.Mult: lambda a, b: a * b,
+                ast.Div: lambda a, b: a / b,
+                ast.Mod: lambda a, b: a % b,
+                ast.Pow: lambda a, b: a ** b,
+                ast.Eq: lambda a, b: a == b,
+                ast.NotEq: lambda a, b: a != b,
+            }
+            fn = op_map.get(type(node.op))
+            if fn:
+                return fn(left, right)
+            raise ValueError(f"BinOp {type(node.op).__name__}")
+        if isinstance(node, ast.Call):
+            func = self._safe_eval(node.func, data)
+            args = [self._safe_eval(a, data) for a in node.args]
+            kwargs = {
+                k.arg: self._safe_eval(v, data)
+                for k, v in zip(node.keywords, node.values)
+                if k.arg is not None
+            }
+            return func(*args, **kwargs)
+        raise ValueError(f"AST node type {type(node).__name__} not supported")
+
+    @staticmethod
+    def _compare(left: Any, op: ast.cmpop, right: Any) -> bool:
+        """Evaluate a single comparison operator."""
+        op_map = {
+            ast.Eq: lambda a, b: a == b,
+            ast.NotEq: lambda a, b: a != b,
+            ast.Lt: lambda a, b: a < b,
+            ast.LtE: lambda a, b: a <= b,
+            ast.Gt: lambda a, b: a > b,
+            ast.GtE: lambda a, b: a >= b,
+            ast.Is: lambda a, b: a is b,
+            ast.IsNot: lambda a, b: a is not b,
+            ast.In: lambda a, b: a in b,
+            ast.NotIn: lambda a, b: a not in b,
+        }
+        fn = op_map.get(type(op))
+        if fn:
+            return fn(left, right)
+        raise ValueError(f"Comparison operator {type(op).__name__}")
 
     async def _human_task_resolved(self, db, run_id: int, step_id: int) -> bool:
         """Check if a human task is resolved (completed or closed). For resume to work properly."""

@@ -13,6 +13,56 @@ from sqlalchemy import text as sa_text, select
 logger = logging.getLogger(__name__)
 
 
+def _is_safe_url(url: str, allow_loopback: bool = False) -> bool:
+    """Check if URL is safe (not private/loopback).
+
+    Args:
+        url: The URL to check
+        allow_loopback: If True, allow localhost/loopback URLs (for tests)
+    """
+    from urllib.parse import urlparse
+    import ipaddress
+
+    parsed = urlparse(url)
+    host = parsed.hostname
+
+    if not host:
+        return False
+
+    # If loopback is explicitly allowed, only block truly private ranges (not loopback)
+    if allow_loopback:
+        try:
+            ip = ipaddress.ip_address(host)
+            if ip.is_reserved:
+                return False
+            private_networks = [
+                ipaddress.ip_network("10.0.0.0/8"),
+                ipaddress.ip_network("172.16.0.0/12"),
+                ipaddress.ip_network("192.168.0.0/16"),
+            ]
+            for network in private_networks:
+                if ip in network:
+                    return False
+            return True
+        except ValueError:
+            return True
+
+    # Block localhost/loopback hostnames
+    loopback_hosts = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
+    if host in loopback_hosts:
+        return False
+
+    try:
+        ip = ipaddress.ip_address(host)
+        if ip.is_private or ip.is_loopback or ip.is_reserved:
+            return False
+    except ValueError:
+        if not host.endswith(".com") and not host.endswith(".org") and not host.endswith(".net"):
+            logger.info(f"Request to non-standard hostname: {host}")
+
+    return True
+
+
 class BaseExecutor:
     """Base class for step executors"""
     
@@ -22,63 +72,7 @@ class BaseExecutor:
 
 class APICallExecutor(BaseExecutor):
     """Execute HTTP API calls with SSRF protection (P6.1)."""
-    
-    def _is_safe_url(self, url: str, allow_loopback: bool = False) -> bool:
-        """Check if URL is safe (not private/loopback).
-        
-        Args:
-            url: The URL to check
-            allow_loopback: If True, allow localhost/loopback URLs (for tests)
-        """
-        from urllib.parse import urlparse
-        import ipaddress
-        
-        parsed = urlparse(url)
-        host = parsed.hostname
-        
-        if not host:
-            return False
-        
-        # If loopback is explicitly allowed, only block truly private ranges (not loopback)
-        if allow_loopback:
-            try:
-                ip = ipaddress.ip_address(host)
-                # Block private ranges (10.x, 172.16-31.x, 192.168.x) and reserved
-                # But allow loopback (127.x) and public IPs
-                if ip.is_reserved:
-                    return False
-                # Check for RFC 1918 private ranges
-                private_networks = [
-                    ipaddress.ip_network('10.0.0.0/8'),
-                    ipaddress.ip_network('172.16.0.0/12'),
-                    ipaddress.ip_network('192.168.0.0/16'),
-                ]
-                for network in private_networks:
-                    if ip in network:
-                        return False
-                return True
-            except ValueError:
-                # Not an IP address, allow hostnames
-                return True
-        
-        # Block localhost/loopback hostnames
-        loopback_hosts = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
-        if host in loopback_hosts:
-            return False
-        
-        # Try to parse as IP address for private/reserved range checks
-        try:
-            ip = ipaddress.ip_address(host)
-            if ip.is_private or ip.is_loopback or ip.is_reserved:
-                return False
-        except ValueError:
-            # Not an IP address, could be a hostname - allow public hostnames
-            # but log warnings for non-standard hostnames
-            if not host.endswith(".com") and not host.endswith(".org") and not host.endswith(".net"):
-                logger.info(f"API call to non-standard hostname: {host}")
-        
-        return True
-    
+
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         method = step_definition.get("method", "GET").upper()
         url = step_definition.get("url", "")
@@ -86,7 +80,7 @@ class APICallExecutor(BaseExecutor):
         body = step_definition.get("body")
         
         # P6.1: SSRF protection - block private/loopback URLs
-        if not self._is_safe_url(url):
+        if not _is_safe_url(url):
             raise ValueError(f"API call to private/loopback URL blocked for security: {url}")
         
         # Merge input data into request
@@ -440,7 +434,11 @@ class WebhookExecutor(BaseExecutor):
         url = step_definition.get("url")
         if not url:
             raise ValueError("Webhook step requires a 'url'")
-        
+
+        # SSRF protection — block private/loopback URLs
+        if not _is_safe_url(url):
+            raise ValueError(f"Webhook to private/loopback URL blocked for security: {url}")
+
         method = step_definition.get("method", "POST").upper()
         headers = step_definition.get("headers", {"Content-Type": "application/json"})
         timeout = step_definition.get("timeout", 30)
@@ -524,9 +522,6 @@ class CustomCodeExecutor(BaseExecutor):
             "iter": iter,
             "next": next,
             "callable": callable,
-            "compile": compile,
-            "exec": exec,
-            "eval": eval,
             # Exception classes
             "Exception": Exception,
             "ValueError": ValueError,
