@@ -192,7 +192,8 @@ class WorkflowEngine:
         await db.refresh(workflow, attribute_names=["steps"])
         return workflow
     
-    async def update_workflow(self, db: AsyncSession, workflow_id: int, workflow_data: WorkflowUpdate) -> Optional[Workflow]:
+    async def update_workflow(self, db: AsyncSession, workflow_id: int, workflow_data: WorkflowUpdate,
+                              created_by: Optional[int] = None) -> Optional[Workflow]:
         """Update an existing workflow"""
         stmt = select(Workflow).where(Workflow.id == workflow_id)
         result = await db.execute(stmt)

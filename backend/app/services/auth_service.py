@@ -53,8 +53,7 @@ class AuthService:
         password_hash = pwd_context.hash(password)
 
         # Default roles to [role] if not specified
-        if not roles:
-            roles = [role] if role else ["user"]
+        roles = [role] if role else ["user"]
 
         user = User(
             username=username,

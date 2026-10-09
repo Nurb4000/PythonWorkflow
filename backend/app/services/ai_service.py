@@ -798,7 +798,7 @@ Rules:
         if system_settings.ai_provider == "openai":
             return await self._call_openai(prompt)
         else:
-            return await self._call_ai(prompt)
+            return await self._call_llama_cpp(prompt)
 
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """Parse AI response into structured data"""

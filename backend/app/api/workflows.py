@@ -249,7 +249,7 @@ async def update_workflow(
     db: AsyncSession = Depends(get_db)
 ):
     """Update a workflow (admin/developer only)"""
-    workflow = await engine.update_workflow(db, workflow_id, workflow_data)
+    workflow = await engine.update_workflow(db, workflow_id, workflow_data, created_by=developer.id)
     if not workflow:
         raise HTTPException(status_code=404, detail="Workflow not found")
     # Reload with steps for response
