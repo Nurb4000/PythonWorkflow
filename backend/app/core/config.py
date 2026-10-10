@@ -69,6 +69,9 @@ class Settings(BaseSettings):
     # Database echo (separate from debug to avoid SQL spam in prod)
     sql_echo: bool = False
 
+    # Logging — "text" for human-readable, "json" for structured logs
+    log_format: str = "text"
+
     # Scheduler
     scheduler_timezone: str = "UTC"
     

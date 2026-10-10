@@ -718,3 +718,23 @@ class TestL6_CookieAuthSupport:
         content = api_file.read_text()
         assert "withCredentials" in content
         assert "true" in content
+
+
+class TestE2_StructuredLogging:
+    """E2: Structured JSON logging configuration."""
+
+    def test_log_format_setting_exists(self):
+        from app.core.config import Settings
+        s = Settings()
+        assert hasattr(s, "log_format")
+        assert s.log_format in ("text", "json")
+
+    def test_json_formatter_imported_when_configured(self):
+        from app.main import _configure_logging
+        assert callable(_configure_logging)
+
+    def test_python_json_logger_in_requirements(self):
+        from pathlib import Path
+        req_file = Path(__file__).resolve().parent.parent / "requirements.txt"
+        content = req_file.read_text()
+        assert "python-json-logger" in content

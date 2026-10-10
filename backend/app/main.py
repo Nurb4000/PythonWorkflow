@@ -17,8 +17,36 @@ from app.core.database import init_db, close_db, async_session_factory
 from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions
 from app.services.scheduler import scheduler_service
 
-# Configure logging
-logging.basicConfig(level=logging.INFO)
+# E2: Configure logging — JSON format for production, text for development
+def _configure_logging() -> None:
+    """Set up root logger with appropriate formatter."""
+    root_logger = logging.getLogger()
+    root_logger.setLevel(logging.INFO)
+
+    # Remove existing handlers to avoid duplicates on reload
+    for handler in root_logger.handlers[:]:
+        root_logger.removeHandler(handler)
+
+    handler = logging.StreamHandler()
+    handler.setLevel(logging.INFO)
+
+    if settings.log_format == "json":
+        from pythonjsonlogger import jsonlogger
+        formatter = jsonlogger.JsonFormatter(
+            "%(asctime)s %(levelname)s %(name)s %(message)s %(filename)s %(lineno)d",
+            datefmt="%Y-%m-%dT%H:%M:%S%z",
+        )
+    else:
+        formatter = logging.Formatter(
+            "%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+            datefmt="%Y-%m-%d %H:%M:%S",
+        )
+
+    handler.setFormatter(formatter)
+    root_logger.addHandler(handler)
+
+
+_configure_logging()
 logger = logging.getLogger(__name__)
 
 DEMO_METADATA = {
