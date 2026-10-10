@@ -738,3 +738,26 @@ class TestE2_StructuredLogging:
         req_file = Path(__file__).resolve().parent.parent / "requirements.txt"
         content = req_file.read_text()
         assert "python-json-logger" in content
+
+
+class TestE9_BundleAnalysis:
+    """E9: Frontend bundle analysis configuration."""
+
+    def test_rollup_plugin_visualizer_in_package_json(self):
+        from pathlib import Path
+        pkg_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "package.json"
+        content = pkg_path.read_text()
+        assert "rollup-plugin-visualizer" in content
+
+    def test_build_analyze_script_exists(self):
+        from pathlib import Path
+        pkg_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "package.json"
+        content = pkg_path.read_text()
+        assert "build:analyze" in content
+
+    def test_vite_config_has_manual_chunks(self):
+        from pathlib import Path
+        config_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "vite.config.ts"
+        content = config_path.read_text()
+        assert "manualChunks" in content
+        assert "reactflow" in content
