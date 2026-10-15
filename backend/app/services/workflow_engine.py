@@ -273,8 +273,34 @@ class WorkflowEngine:
         if workflow_data.suggested_replacement_id is not None:
             workflow.suggested_replacement_id = workflow_data.suggested_replacement_id
         
-        # Update steps if provided
+        # M15 fix: validate $input.* references on update (same as create).
+        # Previously only create_workflow called validate_input_refs.
         if workflow_data.steps is not None:
+            entry_form_schema = None
+            if workflow.entry_form_id:
+                from app.models.forms import Form
+                form_stmt = select(Form).where(Form.id == workflow.entry_form_id)
+                form_result = await db.execute(form_stmt)
+                form = form_result.scalar_one_or_none()
+                if form:
+                    import json
+                    entry_form_schema = (
+                        json.loads(form.schema_json)
+                        if isinstance(form.schema_json, str)
+                        else form.schema_json
+                    )
+
+            validation_warnings = self.validate_input_refs(
+                workflow_data.steps or [], entry_form_schema
+            )
+            if validation_warnings:
+                logger.warning(
+                    f"Workflow '{workflow.name}' update has input validation warnings: "
+                    f"{validation_warnings}"
+                )
+                workflow.config = workflow.config or {}
+                workflow.config["input_validation_warnings"] = validation_warnings
+
             # Delete existing steps
             stmt = select(WorkflowStep).where(WorkflowStep.workflow_id == workflow_id)
             result = await db.execute(stmt)

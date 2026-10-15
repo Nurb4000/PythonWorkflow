@@ -227,11 +227,18 @@ async def rerun_run(
         raise HTTPException(status_code=403, detail="You do not have permission to re-run this workflow")
 
     engine = WorkflowEngine()
+    # M4 fix: rerun with the original input_data only (not the accumulated
+    # output_data from prior steps).  Previously run.input_data contained every
+    # step's output merged in, causing double-submit on form/CMDB/API steps.
+    original_input = run.input_data or {}
+    # Strip engine-injected keys so they are re-generated for the new run
+    clean_input = {k: v for k, v in original_input.items() if not k.startswith("_")}
+
     new_run = await engine.trigger_workflow(
         db,
         run.workflow_id,
         WorkflowRunCreate(
-            input_data=run.input_data or {},
+            input_data=clean_input,
             triggered_by=f"rerun:{current_user.username}",
             timeout_seconds=run.timeout_seconds,
             max_retries=run.max_retries,

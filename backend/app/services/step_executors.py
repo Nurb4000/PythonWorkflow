@@ -251,17 +251,34 @@ class DatabaseQueryExecutor(BaseExecutor):
             set_clauses = ", ".join(f"{col} = EXCLUDED.{col}" for col in columns)
             sql = f"INSERT INTO {table} ({', '.join(columns)}) VALUES ({placeholders}) ON CONFLICT DO UPDATE SET {set_clauses}"
             params = list(data.values())
-        
-        # Simulate execution (in real impl, would use asyncpg with parameterized query)
-        logger.info(f"DatabaseQueryExecutor: {sql} with {len(params)} params")
-        
+
+        # M14 fix: actually execute the parameterized query instead of returning
+        # a simulated result.  Convert positional placeholders ($1, $2, ...) to
+        # SQLAlchemy named parameters (:p1, :p2, ...) for bindparams().
+        named_sql = sql
+        named_params: dict[str, Any] = {}
+        for i, val in enumerate(params, 1):
+            placeholder = f"${i}"
+            named = f":p{i}"
+            named_sql = named_sql.replace(placeholder, named)
+            named_params[named] = val
+
+        logger.info(f"DatabaseQueryExecutor: {named_sql} with {len(named_params)} params")
+
+        if db is not None:
+            bound = sa_text(named_sql).bindparams(**named_params)
+            result = await db.execute(bound)
+            rows_affected = result.rowcount if result.rowcount is not None else 0
+        else:
+            rows_affected = -1  # no session available
+
         return {
             "query_type": query_type,
             "table": table,
-            "rows_affected": 1,
+            "rows_affected": rows_affected,
             "executed_at": datetime.utcnow().isoformat(),
-            "sql": sql,
-            "params_count": len(params),
+            "sql": named_sql,
+            "params_count": len(named_params),
         }
 
     async def _execute_visual_query(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], visual_query: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
@@ -330,16 +347,21 @@ class EmailExecutor(BaseExecutor):
         to = self._interpolate(step_definition.get("to", ""), input_data)
         subject = self._interpolate(step_definition.get("subject", ""), input_data)
         body = self._interpolate(step_definition.get("body", ""), input_data)
-        
+
         if not to:
             raise ValueError("Email step requires a 'to' recipient")
-        
+
+        # M11 fix: run blocking SMTP I/O in a thread pool so the async event
+        # loop is not blocked for the duration of the SMTP transaction.
         from app.services.email_service import send_email
-        result = send_email(to=to, subject=subject, body=body)
-        
+        loop = asyncio.get_running_loop()
+        result = await loop.run_in_executor(
+            None, lambda: send_email(to=to, subject=subject, body=body)
+        )
+
         if not result["sent"]:
             logger.warning(f"Email not sent to {to}: {subject} (SMTP not configured)")
-        
+
         return result
 
 
@@ -1250,8 +1272,16 @@ class CmdbLookupExecutor(BaseExecutor):
         if not ci_type:
             raise ValueError(f"CI type with id {ci_type_id} not found")
 
-        # Fetch all CIs of this type
-        items_stmt = select(ConfigurationItem).where(ConfigurationItem.type_id == ci_type_id)
+        # M12 fix: for "first" match mode, limit the query to reduce memory usage.
+        # For "all" mode with lookup_fields, we still load all items of the type
+        # but apply a reasonable cap (10k) to prevent OOM on very large types.
+        # TODO: push equality filters into SQL via JSONB operators for better perf.
+        max_items = 1 if match_mode == "first" else 10000
+        items_stmt = (
+            select(ConfigurationItem)
+            .where(ConfigurationItem.type_id == ci_type_id)
+            .limit(max_items + 1)  # +1 to detect if we hit the cap
+        )
         items_result = await db.execute(items_stmt)
         all_items = items_result.scalars().all()
 
@@ -1289,6 +1319,9 @@ class CmdbLookupExecutor(BaseExecutor):
                     "status": item.status,
                     "ci_data": item.ci_data or {},
                 })
+                # M12: early exit for "first" mode once we have a match
+                if match_mode == "first":
+                    break
 
         result = {
             "ci_type_name": ci_type.name,
@@ -1467,30 +1500,41 @@ class SubWorkflowExecutor(BaseExecutor):
             return [self._interpolate_input(item, input_data) for item in template]
         return template
     
-    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], 
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any],
                      db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         """Execute sub-workflow synchronously."""
         from app.services.workflow_engine import workflow_engine
-        
+
         workflow_id = step_definition.get("workflow_id")
         if not workflow_id:
             raise ValueError("sub_workflow step requires 'workflow_id'")
-        
+
         # Interpolate input data
         raw_input = step_definition.get("input_data", {})
         resolved_input = self._interpolate_input(raw_input, input_data)
-        
+
+        # M16 fix: track parent run ID for audit trail.
+        # The WorkflowRun model doesn't have a dedicated parent_run_id column yet,
+        # so we store it in custom_data.  When the column is added via migration,
+        # this can be moved to the proper field.
+        parent_run_id = input_data.get("_workflow_run_id")
+
         # Create run data for sub-workflow
         from app.schemas.workflow import WorkflowRunCreate
         run_data = WorkflowRunCreate(
             workflow_id=workflow_id,
             input_data=resolved_input,
             triggered_by="sub_workflow",
-            parent_run_id=None  # Could track parent for auditing
         )
-        
+
         # Trigger sub-workflow
         sub_run = await workflow_engine.trigger_workflow(db, workflow_id, run_data)
+
+        # M16: record parent run ID on the sub-run for audit trail
+        if parent_run_id is not None:
+            sub_run.custom_data = dict(sub_run.custom_data or {})
+            sub_run.custom_data["parent_run_id"] = int(parent_run_id)
+            await db.commit()
         
         # Wait for completion (synchronous)
         timeout = step_definition.get("timeout_seconds", 300)

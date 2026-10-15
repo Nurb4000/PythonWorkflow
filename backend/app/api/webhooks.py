@@ -5,7 +5,7 @@ import hmac
 import hashlib
 import time
 from collections import defaultdict
-from fastapi import APIRouter, HTTPException, Header, Depends
+from fastapi import APIRouter, HTTPException, Header, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from typing import Optional
@@ -58,12 +58,17 @@ async def webhook_trigger(
     x_webhook_secret: Optional[str] = Header(None),
     x_forwarded_for: Optional[str] = Header(None),
     x_idempotency_key: Optional[str] = Header(None),
+    request: Request = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Trigger a workflow via webhook"""
 
-    # Rate limiting by source IP
-    client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
+    # M6 fix: key rate-limit on transport socket IP (proxy allowlist) or
+    # authenticated principal, not the spoofable X-Forwarded-For header.
+    if request and request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
     _check_rate_limit(f"webhook:{client_ip}")
 
     # FG5: Idempotency check
@@ -124,12 +129,16 @@ async def external_trigger(
     input_data: dict,
     x_api_key: Optional[str] = Header(None),
     x_forwarded_for: Optional[str] = Header(None),
+    request: Request = None,
     db: AsyncSession = Depends(get_db)
 ):
     """Trigger a workflow via external API"""
 
-    # Rate limiting by source IP
-    client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
+    # M6 fix: key rate-limit on transport socket IP, not spoofable X-Forwarded-For
+    if request and request.client:
+        client_ip = request.client.host
+    else:
+        client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
     _check_rate_limit(f"api_trigger:{client_ip}")
 
     # Validate API key against stored tokens if provided
