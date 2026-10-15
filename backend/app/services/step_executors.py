@@ -83,9 +83,52 @@ def _is_private_ip(ip) -> bool:
     return False
 
 
+def _is_json_response(response) -> bool:
+    """Check if response content-type indicates JSON (L6 fix).
+
+    Handles both exact matches and MIME parameters like charset.
+    """
+    ct = (response.headers.get("content-type") or "").lower()
+    return ct.startswith("application/json")
+
+
+def _parse_cron_field(field: str, name: str, min_val: int, max_val: int) -> int:
+    """Parse a single cron field into an integer value (L7 fix).
+
+    Supports:
+    - '*' → returns min_val (0)
+    - Exact number → returns the number
+    - '*/N' → returns 0 with a warning (step expressions not fully supported)
+    - 'N-M' → returns N with a warning (range expressions not fully supported)
+
+    Raises ValueError for invalid syntax.
+    """
+    if field == "*":
+        return min_val
+    try:
+        val = int(field)
+        if min_val <= val <= max_val:
+            return val
+        raise ValueError(
+            f"Cron {name} field {val} out of range [{min_val}-{max_val}]"
+        )
+    except ValueError as e:
+        if str(e).startswith("Cron"):
+            raise
+        # Handle step/range expressions with a warning
+        if "/" in field or "-" in field:
+            logger.warning(
+                f"Cron {name} field {field!r} uses step/range syntax "
+                f"(not fully supported); treating as 0. "
+                f"Use exact values for reliable behavior."
+            )
+            return min_val
+        raise ValueError(f"Invalid cron {name} field: {field!r}") from e
+
+
 class BaseExecutor:
     """Base class for step executors"""
-    
+
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         raise NotImplementedError
 
@@ -122,7 +165,7 @@ class APICallExecutor(BaseExecutor):
                 return {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
-                    "body": response.json() if response.headers.get("content-type") == "application/json" else response.text,
+                    "body": response.json() if _is_json_response(response) else response.text,
                     "executed_at": datetime.utcnow().isoformat()
                 }
             except Exception as e:
@@ -503,7 +546,7 @@ class WebhookExecutor(BaseExecutor):
                 return {
                     "status_code": response.status_code,
                     "headers": dict(response.headers),
-                    "body": response.json() if response.headers.get("content-type") == "application/json" else response.text,
+                    "body": response.json() if _is_json_response(response) else response.text,
                     "executed_at": datetime.utcnow().isoformat(),
                 }
             except Exception as e:
@@ -1040,16 +1083,15 @@ class ReportExecutor(BaseExecutor):
 
         C3 fix: delegates parameterization to execute_raw_sql which uses
         positional placeholders ($1, $2, ...) resolved by the DB driver.
+        L8 fix: removed duplicate validate_readonly_sql call (execute_raw_sql validates internally).
         """
-        from app.services.query_executor import execute_raw_sql, validate_readonly_sql
+        from app.services.query_executor import execute_raw_sql
 
         sql = step_definition.get("sql_query", "").strip()
         limit = min(step_definition.get("sql_limit", 100), 10000)
 
         if not sql:
             raise ValueError("SQL query is required for sql_query report type")
-
-        validate_readonly_sql(sql)
 
         if db is None:
             return {
@@ -1179,8 +1221,9 @@ class ProgrammableDelayExecutor(BaseExecutor):
             parts = cron_expr.split()
             if len(parts) == 5:
                 # minute hour day month day_of_week
-                minutes = int(parts[0]) if parts[0] != '*' else 0
-                hours = int(parts[1]) if parts[1] != '*' else 0
+                # L7 fix: validate cron fields and give clear error for unsupported syntax
+                minutes = _parse_cron_field(parts[0], "minute", 0, 59)
+                hours = _parse_cron_field(parts[1], "hour", 0, 23)
                 delay_seconds = minutes * 60 + hours * 3600
                 if delay_seconds > 0:
                     await asyncio.sleep(delay_seconds)
@@ -1190,6 +1233,11 @@ class ProgrammableDelayExecutor(BaseExecutor):
                     "cron_expression": cron_expr,
                     "executed_at": datetime.utcnow().isoformat(),
                 }
+            else:
+                raise ValueError(
+                    f"Cron expression must have 5 fields (minute hour day month day_of_week), "
+                    f"got {len(parts)}: {cron_expr!r}"
+                )
         
         else:
             raise ValueError(f"Unknown delay type: {delay_type}")

@@ -149,6 +149,18 @@ def _eval_node(node: ast.AST, data: Dict[str, Any]) -> Any:
         except TypeError as e:
             raise SafeEvalError(f"Call failed on {func}: {e}") from e
 
+    # I10 fix: support walrus operator (:=) by assigning to data dict
+    if isinstance(node, ast.NamedExpr):
+        target = _eval_node(node.target, data)
+        value = _eval_node(node.value, data)
+        # Only allow assignment to 'data' dict keys
+        if isinstance(target, ast.Name) and target.id == "data":
+            data[value] = _unwrap(value) if isinstance(value, _RestrictedProxy) else value
+            return value
+        raise SafeEvalError(
+            f"Walrus operator target must be a data key, got {type(target).__name__}"
+        )
+
     raise SafeEvalError(f"AST node type {type(node).__name__} not supported")
 
 

@@ -825,7 +825,16 @@ class WorkflowEngine:
 
     async def _execute_branching_sync(self, db, run, run_id: int, workflow: Workflow, step_instances):
         """Execute a workflow following explicit connections synchronously.
-        This avoids session management issues that occur with parallel execution."""
+
+        This avoids session management issues that occur with parallel execution.
+
+        I9 note: The ``visited`` set is shared across all path traversals.  If two
+        independent branches converge on the same target step, only the first path
+        executes it.  This prevents infinite loops in cyclic graphs but means that
+        steps are executed at most once per run (DAG semantics).  For multi-execution
+        semantics (step runs once per incoming edge), a work-queue model tracking
+        (path, step_id) pairs would be needed.
+        """
         instance_lookup = {inst.step_id: inst for inst in step_instances}
         step_lookup = {s.id: s for s in workflow.steps}
         visited = set()

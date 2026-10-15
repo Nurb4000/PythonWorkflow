@@ -101,12 +101,16 @@ class SchedulerService:
         try:
             parts = schedule.cron_expression.split()
             if len(parts) == 5:
+                # I11 fix: pass timezone to CronTrigger so schedules fire in the
+                # configured timezone instead of defaulting to UTC.
+                from app.core.config import settings
                 trigger = CronTrigger(
                     minute=parts[0],
                     hour=parts[1],
                     day=parts[2],
                     month=parts[3],
-                    day_of_week=parts[4]
+                    day_of_week=parts[4],
+                    timezone=settings.scheduler_timezone,
                 )
                 
                 self.scheduler.add_job(
