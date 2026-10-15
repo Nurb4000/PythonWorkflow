@@ -73,18 +73,33 @@ def validate_readonly_sql(sql: str) -> None:
                 raise ValueError(f"Query contains disallowed keyword: {keyword}")
 
 
-def interpolate_sql(sql: str, input_data: Dict[str, Any]) -> str:
-    """Replace $input.field references in raw SQL with actual values."""
-    def replace_match(match):
+def interpolate_sql(sql: str, input_data: Dict[str, Any]) -> tuple[str, dict]:
+    """Replace $input.field references in raw SQL with positional placeholders.
+
+    Returns (sql_with_placeholders, params_dict) where params_dict maps
+    placeholder names ($1, $2, ...) to their resolved values.  This allows
+    the database driver to handle proper escaping / type coercion instead of
+    naive string concatenation.
+
+    If a field is missing from input_data, the original ``$input.field`` token
+    is left in place (the driver will raise at execution time).
+    """
+    params: dict[str, Any] = {}
+    counter = 0
+
+    def replace_match(match: re.Match) -> str:
+        nonlocal counter
         field = match.group(1)
-        value = input_data.get(field, match.group(0))
-        if isinstance(value, str):
-            escaped = value.replace("'", "''")
-            return "'" + escaped + "'"
-        elif value is None:
-            return "NULL"
-        return str(value)
-    return re.sub(r"\$input\.(\w+)", replace_match, sql)
+        value = input_data.get(field)  # None means "missing" — keep original token
+        if value is None and field not in input_data:
+            return match.group(0)  # leave $input.field as-is
+        counter += 1
+        placeholder = f"${counter}"
+        params[placeholder] = value
+        return placeholder
+
+    new_sql = re.sub(r"\$input\.(\w+)", replace_match, sql)
+    return new_sql, params
 
 
 async def execute_visual_query(
@@ -135,17 +150,24 @@ async def execute_raw_sql(
     input_data: Dict[str, Any],
     max_rows: int = 10000,
 ) -> Dict[str, Any]:
-    """Execute a validated raw SQL query with $input.* interpolation.
+    """Execute a validated raw SQL query with $input.* parameterized substitution.
 
     Shared entry point for read-only SQL execution used by both executors.
+    C3 fix: uses positional placeholders ($1, $2, ...) resolved by the driver
+    instead of naive string interpolation.
     """
     if not sql.strip():
         raise ValueError("SQL query is required")
 
     validate_readonly_sql(sql)
-    interpolated = interpolate_sql(sql, input_data)
+    param_sql, params = interpolate_sql(sql, input_data)
 
-    result = await db.execute(sa_text(interpolated).limit(max_rows))
+    # Build bound parameters for SQLAlchemy text()
+    bound = sa_text(param_sql).limit(max_rows)
+    if params:
+        bound = bound.bindparams(**params)
+
+    result = await db.execute(bound)
 
     columns = list(result.keys()) if result.returns_rows else []
     rows = []

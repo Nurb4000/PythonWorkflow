@@ -16,12 +16,18 @@ logger = logging.getLogger(__name__)
 def _is_safe_url(url: str, allow_loopback: bool = False) -> bool:
     """Check if URL is safe (not private/loopback).
 
+    C4 fix: DNS-resolves hostnames and inspects all A/AAAA records.
+    Blocks private, loopback, link-local, and reserved addresses.
+    For literal IP hosts, checks directly without DNS.
+    For hostname hosts, resolves via socket.getaddrinfo and validates each record.
+
     Args:
         url: The URL to check
         allow_loopback: If True, allow localhost/loopback URLs (for tests)
     """
     from urllib.parse import urlparse
     import ipaddress
+    import socket
 
     parsed = urlparse(url)
     host = parsed.hostname
@@ -29,38 +35,52 @@ def _is_safe_url(url: str, allow_loopback: bool = False) -> bool:
     if not host:
         return False
 
-    # If loopback is explicitly allowed, only block truly private ranges (not loopback)
-    if allow_loopback:
-        try:
-            ip = ipaddress.ip_address(host)
-            if ip.is_reserved:
-                return False
-            private_networks = [
-                ipaddress.ip_network("10.0.0.0/8"),
-                ipaddress.ip_network("172.16.0.0/12"),
-                ipaddress.ip_network("192.168.0.0/16"),
-            ]
-            for network in private_networks:
-                if ip in network:
-                    return False
-            return True
-        except ValueError:
-            return True
+    # Block localhost/loopback hostnames (unless explicitly allowed)
+    loopback_hosts = {"localhost", "127.0.0.1", "::1", "0.0.0.0"}
+    if host.lower() in loopback_hosts:
+        return allow_loopback
 
-    # Block localhost/loopback hostnames
-    loopback_hosts = ("localhost", "127.0.0.1", "::1", "0.0.0.0")
-    if host in loopback_hosts:
-        return False
-
+    # Try parsing as a literal IP address first
     try:
         ip = ipaddress.ip_address(host)
-        if ip.is_private or ip.is_loopback or ip.is_reserved:
-            return False
+        if _is_private_ip(ip):
+            return allow_loopback  # treat private IPs like loopback when flag is set
+        return True  # public IP
     except ValueError:
-        if not host.endswith(".com") and not host.endswith(".org") and not host.endswith(".net"):
-            logger.info(f"Request to non-standard hostname: {host}")
+        pass  # not a literal IP — resolve via DNS
+
+    # DNS resolution: check all A/AAAA records
+    try:
+        addr_infos = socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+    except (socket.gaierror, socket.timeout):
+        logger.info(f"SSRF check: hostname {host!r} failed DNS resolution — blocked")
+        return False
+
+    for info in addr_infos:
+        ip_str = info[4][0]  # address tuple (ip, port, ...)
+        try:
+            ip = ipaddress.ip_address(ip_str)
+            if _is_private_ip(ip):
+                logger.info(f"SSRF check: {host!r} resolved to private IP {ip_str} — blocked")
+                return False
+        except ValueError:
+            continue  # unexpected address format
 
     return True
+
+
+def _is_private_ip(ip) -> bool:
+    """Return True if the IP falls in a private, loopback, link-local, or reserved range."""
+    import ipaddress
+    if ip.is_loopback:
+        return True
+    if ip.is_private:
+        return True
+    if ip.is_reserved:
+        return True
+    if ip.is_link_local:
+        return True
+    return False
 
 
 class BaseExecutor:
@@ -333,13 +353,19 @@ class ConditionExecutor(BaseExecutor):
             expression = (routes[0].get("expression") or "").strip() or "True"
         else:
             expression = (step_definition.get("expression") or "").strip() or "True"
-        
+
+        # C2 fix: use shared AST-based safe evaluator instead of raw eval
+        from app.services.safe_eval import safe_eval, SafeEvalError
         try:
-            result = eval(expression, {"__builtins__": {}}, {"data": input_data})
+            result = safe_eval(expression, input_data)
             return {
                 "condition_met": bool(result),
                 "executed_at": datetime.utcnow().isoformat()
             }
+        except SafeEvalError as e:
+            raise ValueError(
+                f"Condition evaluation failed for expression {expression!r}: {e}"
+            ) from e
         except Exception as e:
             raise ValueError(
                 f"Condition evaluation failed for expression {expression!r}: "
@@ -463,24 +489,275 @@ class WebhookExecutor(BaseExecutor):
                 raise ValueError(f"Webhook call failed: {str(e)}")
 
 
+# ---------------------------------------------------------------------------
+# C1 fix: Restricted namespace that blocks dangerous dunder attributes.
+# Wraps every value returned from the sandbox so that attribute traversal
+# (e.g. obj.__class__.__bases__) hits a gate before reaching the real object.
+# ---------------------------------------------------------------------------
+
+_DANGEROUS_ATTRS = frozenset({
+    "__class__", "__bases__", "__subclasses__", "__mro__",
+    "__globals__", "__closure__", "__code__", "__builtins__",
+    "__dict__", "__getattribute__", "__setattr__", "__reduce__",
+    "__reduce_ex__", "__setstate__", "__getstate__",
+})
+
+
+class _RestrictedProxy:
+    """Wrap an object so that dangerous dunder attributes are blocked.
+
+    Uses ``__getattribute__`` (not ``__getattr__``) so that *every* attribute
+    access — including built-in dunders like ``__class__`` — passes through the
+    gate before reaching the wrapped object.
+
+    For ``isinstance`` / ``issubclass`` compatibility, ``__class__`` returns a
+    synthetic class object whose ``__bases__`` and ``__subclasses__`` are also
+    gated.
+    """
+
+    __slots__ = ("_obj",)
+
+    def __init__(self, obj: Any):
+        object.__setattr__(self, "_obj", obj)
+
+    def __getattribute__(self, name: str) -> Any:
+        # Let the proxy's own internal attributes pass through
+        if name == "_obj":
+            return object.__getattribute__(self, "_obj")
+        # Proxy methods used by the sandbox's custom builtins
+        if name in ("_getattr", "_hasattr", "_setattr"):
+            return object.__getattribute__(self, name)
+        if name == "__class__":
+            # Return a synthetic class that preserves isinstance() but gates
+            # further traversal (__bases__, __subclasses__).
+            obj = object.__getattribute__(self, "_obj")
+            return _SyntheticClass(type(obj))
+        if name in _DANGEROUS_ATTRS:
+            obj = object.__getattribute__(self, "_obj")
+            raise AttributeError(
+                f"'{type(obj).__name__}' sandbox attribute '{name}' blocked"
+            )
+        # Delegate to the wrapped object
+        obj = object.__getattribute__(self, "_obj")
+        val = getattr(obj, name)
+        return _wrap(val)
+
+    def __getitem__(self, key: Any) -> Any:
+        obj = object.__getattribute__(self, "_obj")
+        return _wrap(obj[key])
+
+    def __iter__(self):
+        obj = object.__getattribute__(self, "_obj")
+        return (_wrap(item) for item in obj)
+
+    def __len__(self) -> int:
+        obj = object.__getattribute__(self, "_obj")
+        return len(obj)
+
+    def __bool__(self) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return bool(obj)
+
+    def __eq__(self, other: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return obj == _unwrap(other)
+
+    def __ne__(self, other: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return obj != _unwrap(other)
+
+    def __lt__(self, other: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return obj < _unwrap(other)
+
+    def __le__(self, other: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return obj <= _unwrap(other)
+
+    def __gt__(self, other: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return obj > _unwrap(other)
+
+    def __ge__(self, other: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return obj >= _unwrap(other)
+
+    def __contains__(self, item: Any) -> bool:
+        obj = object.__getattribute__(self, "_obj")
+        return item in obj
+
+    def __add__(self, other: Any) -> Any:
+        obj = object.__getattribute__(self, "_obj")
+        return _wrap(obj + _unwrap(other))
+
+    def __sub__(self, other: Any) -> Any:
+        obj = object.__getattribute__(self, "_obj")
+        return _wrap(obj - _unwrap(other))
+
+    def __mul__(self, other: Any) -> Any:
+        obj = object.__getattribute__(self, "_obj")
+        return _wrap(obj * _unwrap(other))
+
+    def __truediv__(self, other: Any) -> Any:
+        obj = object.__getattribute__(self, "_obj")
+        return _wrap(obj / _unwrap(other))
+
+    def __mod__(self, other: Any) -> Any:
+        obj = object.__getattribute__(self, "_obj")
+        return _wrap(obj % _unwrap(other))
+
+    def __str__(self) -> str:
+        obj = object.__getattribute__(self, "_obj")
+        return str(obj)
+
+    def __repr__(self) -> str:
+        obj = object.__getattribute__(self, "_obj")
+        return repr(obj)
+
+    def __call__(self, *args: Any, **kwargs: Any) -> Any:
+        """Allow calling proxied callables (e.g., bound methods like str.upper())."""
+        obj = object.__getattribute__(self, "_obj")
+        result = obj(*(_unwrap(a) for a in args), **{k: _unwrap(v) for k, v in kwargs.items()})
+        return _wrap(result)
+
+    # --- Custom getattr/hasattr/setattr that route through the proxy gate ---
+
+    def _getattr(self, name: str, default: tuple) -> Any:
+        """Called by the sandbox's builtins.getattr(obj, attr, default)."""
+        if name in _DANGEROUS_ATTRS:
+            if default:
+                return _wrap(default[0])
+            raise AttributeError(
+                f"'{type(self._obj).__name__}' sandbox attribute '{name}' blocked"
+            )
+        val = getattr(self._obj, name, *default)
+        return _wrap(val)
+
+    def _hasattr(self, name: str) -> bool:
+        """Called by the sandbox's builtins.hasattr(obj, attr)."""
+        try:
+            self._getattr(name, ())
+            return True
+        except AttributeError:
+            return False
+
+    def _setattr(self, name: str, value: Any) -> None:
+        """Called by the sandbox's builtins.setattr(obj, attr, value)."""
+        if name in _DANGEROUS_ATTRS:
+            raise AttributeError(
+                f"'{type(self._obj).__name__}' sandbox attribute '{name}' blocked"
+            )
+        setattr(self._obj, name, _unwrap(value))
+
+
+class _SyntheticClass:
+    """A lightweight class wrapper that preserves isinstance() but gates
+    __bases__ / __subclasses__ / __mro__ traversal.
+
+    Used as the return value for ``_RestrictedProxy.__class__`` so that
+    ``isinstance(proxy, int)`` still works while blocking the classic
+    ``().__class__.__bases__[0].__subclasses__()`` escape chain.
+    """
+
+    __slots__ = ("_real_cls",)
+
+    def __init__(self, real_cls: type):
+        object.__setattr__(self, "_real_cls", real_cls)
+
+    def __getattribute__(self, name: str) -> Any:
+        if name == "_real_cls":
+            return object.__getattribute__(self, "_real_cls")
+        real = object.__getattribute__(self, "_real_cls")
+        if name in ("__bases__", "__subclasses__", "__mro__", "__mro_entries__"):
+            raise AttributeError(
+                f"sandbox attribute '{name}' blocked on {real.__name__}"
+            )
+        return getattr(real, name)
+
+    def __instancecheck__(self, instance: Any) -> bool:
+        real = object.__getattribute__(self, "_real_cls")
+        # For isinstance(proxy, int): unwrap the proxy and check against real class
+        if isinstance(instance, _RestrictedProxy):
+            return isinstance(instance._obj, real)
+        return isinstance(instance, real)
+
+    def __subclasscheck__(self, subclass: type) -> bool:
+        real = object.__getattribute__(self, "_real_cls")
+        return issubclass(subclass, real)
+
+    def __str__(self) -> str:
+        real = object.__getattribute__(self, "_real_cls")
+        return str(real)
+
+    def __repr__(self) -> str:
+        real = object.__getattribute__(self, "_real_cls")
+        return repr(real)
+
+
+def _wrap(obj: Any) -> Any:
+    """Wrap an object in a RestrictedProxy.
+
+    All values (including primitives) are wrapped so that attribute access
+    on *any* sandbox value passes through the gate.
+    """
+    if obj is None:
+        return obj  # None.__class__ is rarely useful; leave it bare
+    return _RestrictedProxy(obj)
+
+
+def _unwrap(obj: Any) -> Any:
+    """Unwrap a RestrictedProxy to get the real object."""
+    if isinstance(obj, _RestrictedProxy):
+        return obj._obj
+    return obj
+
+
+def _sandbox_isinstance(obj: Any, cls_tuple: Any) -> bool:
+    """isinstance that unwraps proxies before checking.
+
+    Allows ``isinstance(proxy_wrapping_int, int)`` to return True.
+    The class argument is also unwrapped so that ``isinstance(x, proxy_wrapping_int)``
+    works when the class itself comes from the sandbox.
+    """
+    real_obj = _unwrap(obj)
+    if isinstance(cls_tuple, _RestrictedProxy):
+        cls_tuple = cls_tuple._obj
+    # Handle single class or tuple of classes
+    if isinstance(cls_tuple, tuple):
+        cls_tuple = tuple(_unwrap(c) if isinstance(c, _RestrictedProxy) else c for c in cls_tuple)
+    return isinstance(real_obj, cls_tuple)
+
+
 class CustomCodeExecutor(BaseExecutor):
     """Execute custom Python code in a thread with timeout (P2.4).
-    
-    Trust boundary:
-    - Code runs in a restricted namespace with only `input_data` and `output` available.
-    - No access to __builtins__, sys, os, or other dangerous modules.
-    - Execution is bounded by a timeout (default 30s, configurable via step_definition["timeout"]).
-    - Code is run in a separate thread to prevent blocking the async event loop.
+
+    Trust boundary (C1 fix):
+    - Code runs in a restricted namespace with only ``input_data`` and
+      ``output`` available.
+    - All values returned from the sandbox are wrapped in ``_RestrictedProxy``
+      which blocks dangerous dunder attributes (``__class__``, ``__bases__``,
+      ``__subclasses__``, ``__globals__``, etc.).
+    - Builtins are restricted to a safe subset; ``getattr``/``hasattr``/
+      ``setattr`` route through the proxy so dunder traversal is caught.
+    - Execution is bounded by a timeout (default 30s, configurable via
+      step_definition["timeout"]).
+    - Code is run in a separate thread to prevent blocking the async event
+      loop.
     """
-    
+
     DEFAULT_TIMEOUT = 30
-    
+
     def _run_code(self, code: str, input_data: Dict[str, Any], timeout: int) -> Dict[str, Any]:
         """Synchronous code execution in restricted namespace."""
-        local_vars = {"input_data": input_data, "output": {}}
-        
-        # Restrict builtins to safe subset
-        safe_builtins = {
+        # Wrap input_data so that every value accessed by the user code is
+        # proxied through _RestrictedProxy.
+        wrapped_input = {k: _wrap(v) for k, v in (input_data or {}).items()}
+        output_dict: Dict[str, Any] = {}
+        local_vars = {"input_data": wrapped_input, "output": output_dict}
+
+        # Restrict builtins to safe subset.  getattr/hasattr/setattr are
+        # customised so they route through the proxy gate.
+        safe_builtins: Dict[str, Any] = {
             "len": len,
             "str": str,
             "int": int,
@@ -502,11 +779,12 @@ class CustomCodeExecutor(BaseExecutor):
             "sum": sum,
             "abs": abs,
             "round": round,
-            "isinstance": isinstance,
+            "isinstance": _sandbox_isinstance,
             "issubclass": issubclass,
-            "hasattr": hasattr,
-            "getattr": getattr,
-            "setattr": setattr,
+            # Custom getattr/hasattr/setattr that route through the proxy gate
+            "getattr": lambda obj, attr, *default: _RestrictedProxy(obj)._getattr(attr, default),
+            "hasattr": lambda obj, attr: _RestrictedProxy(obj)._hasattr(attr),
+            "setattr": lambda obj, attr, value: _RestrictedProxy(obj)._setattr(attr, value),
             "print": print,
             "type": type,
             "repr": repr,
@@ -536,25 +814,26 @@ class CustomCodeExecutor(BaseExecutor):
             "OverflowError": OverflowError,
             "FloatingPointError": FloatingPointError,
         }
-        
+
         exec(code, {"__builtins__": safe_builtins}, local_vars)
-        
-        return local_vars.get("output", {})
-    
+
+        # Unwrap output values before returning
+        return {k: _unwrap(v) for k, v in (output_dict or {}).items()}
+
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         code = step_definition.get("code", "")
         if not code:
             raise ValueError("Custom code step requires 'code'")
-        
+
         timeout = step_definition.get("timeout", self.DEFAULT_TIMEOUT)
-        
+
         # Run in thread to avoid blocking event loop
         loop = asyncio.get_running_loop()
         try:
             output = await loop.run_in_executor(None, lambda: self._run_code(code, input_data, timeout))
         except Exception as e:
             raise ValueError(f"Custom code execution failed: {str(e)}")
-        
+
         return {
             **output,
             "executed_at": datetime.utcnow().isoformat(),
@@ -577,10 +856,13 @@ class CalculationExecutor(BaseExecutor):
         expression = step_definition.get("expression", "")
         if not expression:
             raise ValueError("Calculation step requires an 'expression'")
-        
-        # Use the same strict eval as condition steps (P1)
+
+        # C2 fix: use shared AST-based safe evaluator instead of raw eval
+        from app.services.safe_eval import safe_eval, SafeEvalError
         try:
-            result = eval(expression, {"__builtins__": {}}, {"data": input_data})
+            result = safe_eval(expression, input_data)
+        except SafeEvalError as e:
+            raise ValueError(f"Calculation failed for expression {expression!r}: {e}") from e
         except Exception as e:
             raise ValueError(f"Calculation failed for expression {expression!r}: {type(e).__name__}: {e}")
 
@@ -732,8 +1014,12 @@ class ReportExecutor(BaseExecutor):
                 await session.close()
 
     async def _execute_sql(self, title: str, step_definition: Dict[str, Any], input_data: Dict[str, Any], db: Optional[AsyncSession]) -> Dict[str, Any]:
-        """Execute raw SQL via shared query_executor service (Phase 4)."""
-        from app.services.query_executor import execute_raw_sql, validate_readonly_sql, interpolate_sql
+        """Execute raw SQL via shared query_executor service (Phase 4).
+
+        C3 fix: delegates parameterization to execute_raw_sql which uses
+        positional placeholders ($1, $2, ...) resolved by the DB driver.
+        """
+        from app.services.query_executor import execute_raw_sql, validate_readonly_sql
 
         sql = step_definition.get("sql_query", "").strip()
         limit = min(step_definition.get("sql_limit", 100), 10000)
@@ -742,13 +1028,12 @@ class ReportExecutor(BaseExecutor):
             raise ValueError("SQL query is required for sql_query report type")
 
         validate_readonly_sql(sql)
-        interpolated = interpolate_sql(sql, input_data)
 
         if db is None:
             return {
                 "report_type": "sql_query",
                 "title": title,
-                "sql": interpolated,
+                "sql": sql,
                 "limit": limit,
                 "columns": [],
                 "rows": [],
@@ -758,11 +1043,11 @@ class ReportExecutor(BaseExecutor):
             }
 
         try:
-            result = await execute_raw_sql(db, interpolated, {}, max_rows=limit)
+            result = await execute_raw_sql(db, sql, input_data, max_rows=limit)
             return {
                 "report_type": "sql_query",
                 "title": title,
-                "sql": interpolated,
+                "sql": sql,
                 "limit": limit,
                 "columns": result.get("columns", []),
                 "rows": result.get("items", []),
@@ -816,14 +1101,17 @@ class AIConditionExecutor(BaseExecutor):
             return await self._evaluate_expression(fallback_expression, input_data)
     
     async def _evaluate_expression(self, expression: str, input_data: Dict[str, Any]) -> Dict[str, Any]:
-        """Evaluate an expression safely."""
+        """Evaluate an expression using the shared AST-based safe evaluator (C2 fix)."""
+        from app.services.safe_eval import safe_eval, SafeEvalError
         try:
-            result = eval(expression, {"__builtins__": {}}, {"data": input_data})
+            result = safe_eval(expression, input_data)
             return {
                 "condition_met": bool(result),
                 "expression": expression,
                 "executed_at": datetime.utcnow().isoformat(),
             }
+        except SafeEvalError as e:
+            raise ValueError(f"AI condition evaluation failed: {e}") from e
         except Exception as e:
             raise ValueError(f"AI condition evaluation failed: {str(e)}")
 

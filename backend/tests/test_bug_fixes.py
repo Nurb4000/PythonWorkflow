@@ -295,7 +295,8 @@ class TestH10_WebhookSSRF:
     def test_is_safe_url_allows_public(self):
         from app.services.step_executors import _is_safe_url
 
-        assert _is_safe_url("https://api.example.com/webhook") is True
+        # C4 fix: DNS resolution is required; use domains that actually resolve
+        assert _is_safe_url("https://google.com/webhook") is True
         assert _is_safe_url("https://hooks.slack.com/services/T00/B00/xxx") is True
 
 
