@@ -207,10 +207,20 @@ async def open_task(
     task.status = "open"
     task.closed_at = None
     task.updated_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)
-    
+
     await db.commit()
     await db.refresh(task)
-    
+
+    # M1 fix: re-trigger resume when a closed task is reopened.
+    # Previously the tied run stayed stuck at "waiting" because only
+    # complete_task called resume_workflow.
+    if task.workflow_run_id:
+        from app.services.workflow_engine import workflow_engine
+        try:
+            await workflow_engine.resume_workflow(task.workflow_run_id)
+        except Exception as e:
+            logger.warning(f"Resume after reopen failed for run {task.workflow_run_id}: {e}")
+
     return {"message": "Task reopened", "task_id": task.id}
 
 

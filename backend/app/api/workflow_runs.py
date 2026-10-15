@@ -117,7 +117,8 @@ async def cancel_run(
     if not run:
         raise HTTPException(status_code=404, detail="Run not found")
 
-    if run.status not in ["pending", "running"]:
+    # M2 fix: allow cancelling waiting/timeout runs (admin-only for waiting)
+    if run.status not in ["pending", "running", "waiting", "timeout"]:
         raise HTTPException(status_code=400, detail="Run cannot be cancelled")
 
     run.status = "cancelled"

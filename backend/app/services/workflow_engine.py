@@ -423,10 +423,14 @@ class WorkflowEngine:
                 stmt = select(WorkflowRun).where(WorkflowRun.id == run_id)
                 result = await db.execute(stmt)
                 run = result.scalar_one()
-            
+
                 # Update status to running
                 run.status = "running"
-                run.started_at = datetime.utcnow()
+                # M3 fix: only set started_at on the initial trigger, not on resume.
+                # Previously every resume_workflow call overwrote started_at to now(),
+                # resetting the timeout clock and allowing infinite evasion.
+                if run.started_at is None:
+                    run.started_at = datetime.utcnow()
                 await db.commit()
                 
                 # Load all workflow steps
@@ -491,7 +495,9 @@ class WorkflowEngine:
                 if run.status == "running":
                     run.status = "completed"
 
-                if run.status in ("completed", "failed"):
+                # I3/I13 fix: include "timeout" and "cancelled" in the terminal set
+                # so that completed_at is stamped for all non-running final states.
+                if run.status in ("completed", "failed", "timeout", "cancelled"):
                     run.completed_at = datetime.utcnow()
                     # SLA resolution tracking (Phase 5)
                     if run.sla_resolution_target_hours is not None and run.sla_resolution_met is None and run.started_at:
