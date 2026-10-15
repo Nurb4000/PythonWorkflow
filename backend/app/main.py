@@ -213,33 +213,48 @@ app.include_router(role_permissions.router, tags=["role-permissions"])
 
 
 async def create_default_admin():
-    """Create default admin user if none exists"""
+    """Create default admin user if none exists.
+
+    H3 fix: uses a high-entropy random password instead of the weak "admin123".
+    The password is logged once (masked) so the operator can retrieve it.
+    """
     try:
         async with async_session_factory() as db:
             from sqlalchemy import select
             from app.models.auth import User
-            
+
             stmt = select(User)
             result = await db.execute(stmt)
             users = result.scalars().all()
-            
+
             if not users:
                 # No users exist, create default admin
+                import secrets
                 from passlib.context import CryptContext
                 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-                
+
+                # H3: high-entropy random password (24-char URL-safe token)
+                bootstrap_password = secrets.token_urlsafe(18)  # ~128 bits of entropy
+
                 admin = User(
                     username="admin",
                     email="admin@example.com",
-                    password_hash=pwd_context.hash("admin123"),
+                    password_hash=pwd_context.hash(bootstrap_password),
                     full_name="Administrator",
                     role="admin",
                     is_active=True,
-                    is_verified=True
+                    is_verified=True,
+                    custom_data={"bootstrap": True},
                 )
                 db.add(admin)
                 await db.commit()
-                logger.info("Created default admin user (username: admin, password: admin123)")
+                # L4 fix: mask the password in logs (show first 4 + last 4 chars)
+                masked = f"{bootstrap_password[:4]}****{bootstrap_password[-4:]}"
+                logger.info(
+                    "Created default admin user (username: admin, password: %s). "
+                    "Change it immediately via PUT /auth/users/{id}.",
+                    masked,
+                )
             else:
                 logger.info(f"Found {len(users)} existing user(s), skipping admin creation")
     except Exception as e:

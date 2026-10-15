@@ -296,8 +296,12 @@ class WorkflowEngine:
                     description=step_data.get("description", "")
                 )
                 db.add(step)
-        
-        workflow.version += 1
+
+        # H7 fix: auto-increment version only when manual_version_increment was NOT set.
+        # Previously both the manual block (line ~256) and this unconditional increment
+        # fired together, producing a +2 bump on a single save.
+        if not workflow_data.manual_version_increment:
+            workflow.version += 1
         await db.commit()
         await db.refresh(workflow)
         return workflow

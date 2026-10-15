@@ -188,6 +188,17 @@ async def change_password(
     return {"message": "Password changed successfully"}
 
 
+# H1 fix: allowlist of roles a self-registering user can claim.
+# Admins assign higher roles via PUT /auth/users/{id}.
+_ALLOWED_SELF_REGISTER_ROLES = frozenset({"user"})
+
+# H8 fix: fields to exclude from custom_data on registration.
+# The full JSON body was previously stored as-is, leaking password/role/email.
+_RESERVED_REGISTRATION_FIELDS = frozenset({
+    "username", "email", "password", "full_name", "role",
+})
+
+
 @router.post("/auth/register")
 async def register(
     request: Request,
@@ -198,10 +209,24 @@ async def register(
     role: str = "user",
     db: AsyncSession = Depends(get_db)
 ):
-    """Register a new user (admin creates users, self-service defaults to 'user' role)"""
+    """Register a new user (admin creates users, self-service defaults to 'user' role).
+
+    H1 fix: role is validated against an allowlist; unknown roles default to 'user'.
+    H8 fix: custom_data excludes reserved fields (password, role, email, username).
+    """
     try:
         body = await request.json()
-        custom_data = body if body else None
+
+        # H1: validate role against allowlist — unknown roles become "user"
+        if role not in _ALLOWED_SELF_REGISTER_ROLES:
+            role = "user"
+
+        # H8: extract only non-reserved fields as custom_data
+        custom_data = None
+        if body:
+            filtered = {k: v for k, v in body.items() if k not in _RESERVED_REGISTRATION_FIELDS}
+            if filtered:
+                custom_data = filtered
 
         user = await auth_service.create_user(
             db=db,
@@ -212,7 +237,7 @@ async def register(
             full_name=full_name or username,
             custom_data=custom_data
         )
-        
+
         return {
             "message": "User created successfully",
             "user": {

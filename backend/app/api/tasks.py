@@ -274,6 +274,13 @@ async def take_task(
     if task.status not in ["open", "review"]:
         raise HTTPException(status_code=400, detail="Task must be in 'open' or 'review' status to take ownership")
 
+    # H5 fix: guard against double-take — reject if already owned by someone else
+    if task.assigned_to_user_id is not None and task.assigned_to_user_id != current_user.id:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Task already taken by user #{task.assigned_to_user_id}"
+        )
+
     task.status = "owned"
     task.assigned_to_user_id = current_user.id
     task.updated_at = __import__('datetime', fromlist=['datetime']).datetime.now(__import__('datetime', fromlist=['timezone']).timezone.utc)

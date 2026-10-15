@@ -149,8 +149,10 @@ async def ldap_authenticate(
                     username=username,
                     email=user_data.get("email", ""),
                     full_name=user_data.get("full_name", username),
-                    password="ldap_auth",  # Placeholder, not used for login
-                    role="user"
+                    # H4 fix: high-entropy random temp password instead of "ldap_auth"
+                    password=secrets.token_urlsafe(18),
+                    role="user",
+                    custom_data={"source": "ldap"},
                 )
             else:
                 # Update existing user with LDAP data
