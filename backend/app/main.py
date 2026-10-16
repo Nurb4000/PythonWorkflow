@@ -13,7 +13,7 @@ from fastapi.middleware.gzip import GZipMiddleware
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
-from app.core.database import init_db, close_db, async_session_factory
+from app.core.database import init_db, close_db, async_session_factory, engine
 from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions
 from app.services.scheduler import scheduler_service
 
@@ -103,8 +103,14 @@ DEMO_METADATA = {
 _demo_seeded = False
 
 
-def _check_migrations() -> None:
-    """E3: Compare current Alembic revision against head and warn if pending."""
+async def _check_migrations() -> None:
+    """Warn at startup if the DB is behind the alembic head (E3 / I7).
+
+    I7 fix: previously referenced an undefined ``engine`` name, which raised a
+    NameError that was silently swallowed by the bare ``except`` — so the check
+    never actually ran. ``engine`` is now imported from ``app.core.database``
+    and the connection is awaited properly.
+    """
     try:
         from alembic.config import Config
         from alembic.runtime.migration import MigrationContext
@@ -114,7 +120,7 @@ def _check_migrations() -> None:
         script = ScriptDirectory.from_config(alembic_cfg)
         head_revision = script.get_current_head()
 
-        with engine.connect() as conn:
+        async with engine.connect() as conn:
             context = MigrationContext.configure(conn)
             current_revision = context.get_current_revision()
 
@@ -126,7 +132,7 @@ def _check_migrations() -> None:
         elif not current_revision:
             logger.info("No Alembic revision found in database (may be fresh install).")
     except Exception as e:
-        logger.debug(f"Migration check skipped: {e}")
+        logger.warning(f"Migration check skipped: {e}")
 
 
 @asynccontextmanager
@@ -145,8 +151,8 @@ async def lifespan(fastapi_app: FastAPI):
     async with async_session_factory() as db:
         await sql_view_service.sync_views(db)
     await scheduler_service.start_email_monitor()
-    # E3: Check migration version at startup
-    _check_migrations()
+    # E3/I7: Check migration version at startup (actually runs now)
+    await _check_migrations()
     asyncio.create_task(seed_marketplace_demos())
     logger.info("Application started")
     yield

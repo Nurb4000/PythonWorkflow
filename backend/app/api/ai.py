@@ -94,6 +94,39 @@ class AssistCITypeRequest(BaseModel):
     current_schema: Optional[Dict[str, Any]] = None
 
 
+# Defined before its route (assist_task, /ai/assist-task) is registered so
+# FastAPI can resolve the request-body model at import time.
+class AssistTaskRequest(BaseModel):
+    action: str = Field(..., description="suggest or improve")
+    description: Optional[str] = None
+    current_config: Optional[Dict[str, Any]] = None
+
+class AssistLdapRequest(BaseModel):
+    action: str = Field(..., description="generate or validate")
+    description: Optional[str] = None
+    current_filter: Optional[str] = None
+
+
+class AssistMarketplaceRequest(BaseModel):
+    action: str = Field(..., description="generate or improve")
+    description: Optional[str] = None
+    current_item: Optional[Dict[str, Any]] = None
+
+
+class AssistEmailTemplateRequest(BaseModel):
+    action: str = Field(..., description="generate or improve")
+    description: Optional[str] = None
+    current_template: Optional[Dict[str, Any]] = None
+class ValidateStandardsRequest(BaseModel):
+    content_type: str = Field(..., description="name, field_key, or step_config")
+    content: Any = Field(..., description="Content to validate")
+
+
+
+
+
+
+
 # ---------------------------------------------------------------------------
 # Existing endpoints (preserved)
 # ---------------------------------------------------------------------------
@@ -575,28 +608,6 @@ async def assist_email_template(
         raise HTTPException(status_code=500, detail=f"AI email template assist failed: {str(e)}")
 
 
-class AssistTaskRequest(BaseModel):
-    action: str = Field(..., description="suggest or improve")
-    description: Optional[str] = None
-    current_config: Optional[Dict[str, Any]] = None
-
-
-class AssistLdapRequest(BaseModel):
-    action: str = Field(..., description="generate or validate")
-    description: Optional[str] = None
-    current_filter: Optional[str] = None
-
-
-class AssistMarketplaceRequest(BaseModel):
-    action: str = Field(..., description="generate or improve")
-    description: Optional[str] = None
-    current_item: Optional[Dict[str, Any]] = None
-
-
-class AssistEmailTemplateRequest(BaseModel):
-    action: str = Field(..., description="generate or improve")
-    description: Optional[str] = None
-    current_template: Optional[Dict[str, Any]] = None
 
 
 @router.post("/ai/validate-standards")
@@ -622,8 +633,3 @@ async def validate_standards(
         raise HTTPException(status_code=400, detail=f"Unknown content_type: {request.content_type}")
     
     return result
-
-
-class ValidateStandardsRequest(BaseModel):
-    content_type: str = Field(..., description="name, field_key, or step_config")
-    content: Any = Field(..., description="Content to validate")
