@@ -42,6 +42,12 @@ class Settings(BaseSettings):
     # AI provider selection (llama_cpp or openai)
     ai_provider: str = "llama_cpp"
     
+    # M7 fix: per-user AI usage throttle. Caps the number of paid LLM requests
+    # a single user may make within a rolling window to prevent unbounded cost
+    # from chaining generate/assist calls. Tune via env vars.
+    ai_requests_per_window: int = 100
+    ai_request_window_seconds: int = 3600
+    
     # LDAP configuration (optional)
     ldap_server_url: str = ""  # e.g., ldap://ldap.example.com:389
     ldap_base_dn: str = ""  # e.g., dc=example,dc=com

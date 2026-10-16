@@ -7,10 +7,34 @@ from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
 from app.services.ai_service import ai_service
+from app.services.ai_usage_service import ai_usage, AIUsageLimitError
 from app.api.auth import get_current_developer
 from app.models.auth import User
 
 router = APIRouter()
+
+
+# M7 fix: enforce the per-user AI usage throttle on every paid-LLM endpoint.
+# FastAPI resolves `get_current_developer` once per request and shares the same
+# user object with the endpoint, so this adds no extra database lookups.
+async def require_ai_quota(
+    user: User = Depends(get_current_developer),
+) -> User:
+    """Reject the request with 429 when *user* has hit their AI quota."""
+    try:
+        ai_usage.enforce(user.id)
+    except AIUsageLimitError as e:
+        window = int(e.window_seconds)
+        remaining = int(ai_usage.remaining(user.id))
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "AI usage limit exceeded. Try again in ~{}s ({} requests "
+                "remaining in the next window)."
+            ).format(window, remaining),
+            headers={"Retry-After": str(window)},
+        )
+    return user
 
 
 # ---------------------------------------------------------------------------
@@ -79,6 +103,7 @@ async def generate_step(
     description: str = Query(..., description="Natural language description of the step"),
     context: Optional[dict] = None,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Generate a workflow step from natural language description"""
     try:
@@ -99,6 +124,7 @@ async def generate_workflow(
     description: str = Query(..., description="Natural language description of the workflow"),
     template_name: Optional[str] = None,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Generate a complete workflow from natural language description"""
     try:
@@ -118,6 +144,7 @@ async def generate_workflow(
 async def generate_form(
     description: str = Query(..., description="Natural language description of the form"),
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Generate a form schema from natural language description"""
     try:
@@ -171,6 +198,7 @@ async def ai_health():
 async def assist_node(
     request: AssistNodeRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Generate, explain, fix, or optimize a workflow node configuration"""
     valid_actions = {"generate", "explain", "fix", "optimize"}
@@ -206,6 +234,7 @@ async def assist_node(
 async def assist_query(
     request: AssistQueryRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Generate, explain, or fix SQL queries for the data explorer"""
     valid_actions = {"generate", "explain", "fix"}
@@ -241,6 +270,7 @@ async def assist_query(
 async def assist_form(
     request: AssistFormRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Suggest or improve form fields"""
     valid_actions = {"suggest_fields", "improve_schema"}
@@ -273,6 +303,7 @@ async def assist_form(
 async def assist_report(
     request: AssistReportRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with report definition creation and improvement"""
     valid_actions = {"generate", "improve"}
@@ -305,6 +336,7 @@ async def assist_report(
 async def assist_cron(
     request: AssistCronRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Generate cron expression from natural language description"""
     try:
@@ -325,6 +357,7 @@ async def assist_cron(
 async def assist_webhook(
     request: AssistWebhookRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with webhook configuration"""
     valid_actions = {"generate", "validate"}
@@ -357,6 +390,7 @@ async def assist_webhook(
 async def explain_error(
     request: ExplainErrorRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Diagnose a workflow run failure"""
     try:
@@ -380,6 +414,7 @@ async def explain_error(
 async def assist_ci_type(
     request: AssistCITypeRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with CI type schema generation and validation"""
     valid_actions = {"generate", "validate"}
@@ -412,6 +447,7 @@ async def assist_ci_type(
 async def assist_task(
     request: AssistTaskRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with task assignment and priority configuration"""
     valid_actions = {"suggest", "improve"}
@@ -444,6 +480,7 @@ async def assist_task(
 async def assist_ldap(
     request: AssistLdapRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with LDAP filter generation and validation"""
     valid_actions = {"generate", "validate"}
@@ -476,6 +513,7 @@ async def assist_ldap(
 async def assist_marketplace(
     request: AssistMarketplaceRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with marketplace item descriptions and categorization"""
     valid_actions = {"generate", "improve"}
@@ -508,6 +546,7 @@ async def assist_marketplace(
 async def assist_email_template(
     request: AssistEmailTemplateRequest,
     user: Any = Depends(get_current_developer),
+    require_ai_quota: None = Depends(require_ai_quota),
 ):
     """Assist with email template generation and improvement"""
     valid_actions = {"generate", "improve"}
