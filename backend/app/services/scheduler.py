@@ -99,11 +99,25 @@ class SchedulerService:
         
         # Create trigger based on cron expression
         try:
+            from app.core.config import settings
+
             parts = schedule.cron_expression.split()
-            if len(parts) == 5:
-                # I11 fix: pass timezone to CronTrigger so schedules fire in the
-                # configured timezone instead of defaulting to UTC.
-                from app.core.config import settings
+            # I1 fix: accept both standard 5-field crons (minute hour day month
+            # weekday) and 6-field crons that also specify seconds. Previously any
+            # expression that was not exactly 5 fields was silently ignored, so the
+            # job was never registered. CronTrigger validates each field and raises
+            # on malformed expressions instead of firing at the wrong time.
+            if len(parts) == 6:
+                trigger = CronTrigger(
+                    second=parts[0],
+                    minute=parts[1],
+                    hour=parts[2],
+                    day=parts[3],
+                    month=parts[4],
+                    day_of_week=parts[5],
+                    timezone=settings.scheduler_timezone,
+                )
+            elif len(parts) == 5:
                 trigger = CronTrigger(
                     minute=parts[0],
                     hour=parts[1],
@@ -112,20 +126,27 @@ class SchedulerService:
                     day_of_week=parts[4],
                     timezone=settings.scheduler_timezone,
                 )
-                
-                self.scheduler.add_job(
-                    run_workflow,
-                    trigger=trigger,
-                    id=f"schedule_{schedule.id}",
-                    replace_existing=True
+            else:
+                raise ValueError(
+                    f"Invalid cron expression '{schedule.cron_expression}': "
+                    f"expected 5 or 6 fields, got {len(parts)}"
                 )
-                
-                # Calculate next run time
-                next_run = trigger.get_next_fire_time(None, datetime.utcnow())
+
+            self.scheduler.add_job(
+                run_workflow,
+                trigger=trigger,
+                id=f"schedule_{schedule.id}",
+                replace_existing=True
+            )
+
+            # Recompute the next fire time from the resolved trigger so the stored
+            # next_run_at reflects the actual schedule rather than a stale estimate.
+            next_run = trigger.get_next_fire_time(None, datetime.utcnow())
+            if next_run is not None:
                 schedule.next_run_at = next_run
-                
+
             logger.info(f"Added schedule job for workflow {schedule.workflow_id}")
-            
+
         except Exception as e:
             logger.error(f"Failed to add schedule job: {str(e)}")
     
@@ -241,8 +262,10 @@ class SchedulerService:
                     elapsed_hours = (now - start).total_seconds() / 3600
                     target_hours = run.sla_response_target_hours
 
-                    # Check if breached (>100% of target)
-                    if elapsed_hours >= target_hours:
+                    # I2 fix: breach only when strictly past the target (>100%).
+                    # Using >= wrongly flagged a run that responded exactly at
+                    # its deadline as breached.
+                    if elapsed_hours > target_hours:
                         run.sla_response_met = False
                         breached_ids.append(run.id)
 
