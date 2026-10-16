@@ -267,6 +267,11 @@ Use the knowledge base patterns for guidance. If upstream data shapes are provid
         full_prompt = f"{kb_context}\n\n{system_prompt}\n\n{user_prompt}"
         response = await self._call_ai(full_prompt)
         result = self._parse_response(response)
+        # M8 fix: binding check — reject AI-generated configs that hardcode secrets.
+        from app.services.ai_standards_enforcer import ai_standards_enforcer
+        verdict = ai_standards_enforcer.validate_step_config(result)
+        if not verdict["valid"]:
+            raise ValueError("AI-generated step fails AI security standards: " + "; ".join(verdict["issues"]))
         return {"action": "generate", "config": result}
 
     async def _node_explain(self, kb_context: str, step_type: str, current_config: Dict) -> Dict[str, Any]:
@@ -707,6 +712,11 @@ Rules:
         for field in required_fields:
             if field not in step.get("definition", {}):
                 raise ValueError(f"Missing required field '{field}' for step type '{step['step_type']}'")
+        # M8 fix: reject generated steps that hardcode secrets or loopback URLs.
+        from app.services.ai_standards_enforcer import ai_standards_enforcer
+        verdict = ai_standards_enforcer.validate_step_config(step)
+        if not verdict["valid"]:
+            raise ValueError("Generated step fails AI security standards: " + "; ".join(verdict["issues"]))
 
     def _validate_workflow(self, workflow: Dict[str, Any]) -> None:
         """Validate a generated workflow"""
