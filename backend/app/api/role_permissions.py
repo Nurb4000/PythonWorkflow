@@ -8,7 +8,7 @@ from typing import List, Optional
 
 from app.core.database import get_db
 from app.models.auth import User
-from app.api.auth import get_current_admin
+from app.api.auth import get_current_admin, get_current_user
 from app.models.role_permissions import RolePermission, role_permission_service
 
 router = APIRouter(prefix="/admin/role-permissions", tags=["role-permissions"])

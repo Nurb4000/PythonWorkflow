@@ -14,6 +14,9 @@ try:
 except ImportError:
     HAS_LDAP3 = False
     logger.warning("ldap3 not installed. LDAP features disabled.")
+    # Define stubs so type annotations work even when ldap3 is missing
+    Server = None  # type: ignore
+    Connection = None  # type: ignore
 
 
 class LDAPService:

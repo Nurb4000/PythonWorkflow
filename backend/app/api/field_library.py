@@ -9,7 +9,7 @@ from typing import List, Optional
 from app.core.database import get_db
 from app.models.field_library import FieldDefinition
 from app.models.auth import User
-from app.api.auth import get_current_admin, get_current_developer
+from app.api.auth import get_current_admin, get_current_developer, get_current_user
 
 router = APIRouter(prefix="/field-library", tags=["field-library"])
 

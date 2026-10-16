@@ -1,6 +1,8 @@
 """
 API endpoints for AI-powered generation and assistance
 """
+from __future__ import annotations
+
 from fastapi import APIRouter, HTTPException, Depends, Query
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List

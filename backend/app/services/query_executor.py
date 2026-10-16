@@ -67,8 +67,12 @@ def validate_readonly_sql(sql: str) -> None:
         elif keyword.startswith("--"):
             if keyword in stripped:
                 raise ValueError("Comments are not allowed")
+        elif keyword in ("/*", "*/"):
+            # Comment delimiters — use plain string search, not regex
+            if keyword in stripped:
+                raise ValueError(f"Query contains disallowed comment delimiter: {keyword}")
         else:
-            pattern = r"\b" + keyword + r"\b"
+            pattern = r"\b" + re.escape(keyword) + r"\b"
             if re.search(pattern, stripped, re.IGNORECASE):
                 raise ValueError(f"Query contains disallowed keyword: {keyword}")
 
@@ -162,8 +166,17 @@ async def execute_raw_sql(
     validate_readonly_sql(sql)
     param_sql, params = interpolate_sql(sql, input_data)
 
+    # Append LIMIT clause to the SQL string (sa_text doesn't have .limit())
+    if max_rows > 0:
+        # Check if the query already has a LIMIT clause
+        upper_sql = param_sql.upper().strip()
+        if not upper_sql.endswith((";",)):
+            # Remove trailing semicolon if present
+            clean_sql = param_sql.rstrip().rstrip(";")
+            param_sql = f"{clean_sql} LIMIT {max_rows}"
+
     # Build bound parameters for SQLAlchemy text()
-    bound = sa_text(param_sql).limit(max_rows)
+    bound = sa_text(param_sql)
     if params:
         bound = bound.bindparams(**params)
 

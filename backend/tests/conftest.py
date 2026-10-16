@@ -15,7 +15,7 @@ import os
 
 import pytest_asyncio
 from sqlalchemy import text
-from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 
 from app.core.database import Base
 
@@ -58,3 +58,15 @@ async def db_engine():
         yield engine
     finally:
         await engine.dispose()
+
+
+@pytest_asyncio.fixture()
+async def db_session(db_engine):
+    """Async database session for tests that need a session (not just an engine).
+
+    Provides a transactional session that is rolled back after each test,
+    so the schema remains pristine for the next test.
+    """
+    factory = async_sessionmaker(db_engine, class_=AsyncSession, expire_on_commit=False)
+    async with factory() as session:
+        yield session
