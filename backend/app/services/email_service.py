@@ -22,12 +22,23 @@ logger = logging.getLogger(__name__)
 SMTP_SETTING_KEYS = ("smtp_host", "smtp_port", "smtp_username", "smtp_password", "smtp_from", "smtp_tls")
 
 
-def _build_msg(from_addr: str, to: str, subject: str, body: str) -> EmailMessage:
+def _build_msg(
+    from_addr: str, to: str, subject: str, body: str, html_body: str | None = None
+) -> EmailMessage:
+    """Build an email message.
+
+    I12 fix: supports multipart/alternative (text + HTML) when html_body is provided.
+    Falls back to plain text when only body is given.
+    """
     msg = EmailMessage()
     msg["From"] = from_addr
     msg["To"] = to
     msg["Subject"] = subject
     msg.set_content(body)
+
+    if html_body:
+        msg.add_alternative(html_body, subtype="html")
+
     return msg
 
 
@@ -139,10 +150,19 @@ def notify_admin(subject: str, body: str) -> bool:
     return _send(msg)
 
 
-def send_email(to: str, subject: str, body: str, from_addr: str | None = None) -> dict:
-    """Send a workflow email. Returns result dict (never raises)."""
+def send_email(
+    to: str,
+    subject: str,
+    body: str,
+    from_addr: str | None = None,
+    html_body: str | None = None,
+) -> dict:
+    """Send a workflow email. Returns result dict (never raises).
+
+    I12 fix: accepts optional html_body for multipart/alternative messages.
+    """
     addr_from = from_addr or settings.smtp_from
-    msg = _build_msg(addr_from, to, subject, body)
+    msg = _build_msg(addr_from, to, subject, body, html_body=html_body)
     result = _smtp_deliver(msg)
     return {
         "to": to,

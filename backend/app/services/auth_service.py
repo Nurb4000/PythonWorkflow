@@ -314,12 +314,17 @@ class AuthService:
     
     async def create_api_token(self, db: AsyncSession, user_id: int, name: str, 
                               permissions: List[str]) -> APIToken:
-        """Create an API token for a user"""
-        import hashlib
+        """Create an API token for a user.
+
+        L2 fix: uses bcrypt (via passlib) instead of unsalted SHA256 so that
+        a DB breach doesn't allow offline brute-force of the raw tokens.
+        """
         import secrets
-        
+
         token = secrets.token_urlsafe(32)
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        # bcrypt hash with automatic salt — much slower than SHA256,
+        # making offline enumeration of stolen hashes practical only at small scale.
+        token_hash = pwd_context.hash(token)
         
         api_token = APIToken(
             user_id=user_id,
@@ -338,14 +343,20 @@ class AuthService:
         return {"token": token, "api_token": api_token}
     
     async def verify_api_token(self, db: AsyncSession, token: str) -> Optional[User]:
-        """Verify an API token and return the user"""
-        import hashlib
-        
-        token_hash = hashlib.sha256(token.encode()).hexdigest()
-        
-        stmt = select(APIToken).where(APIToken.token_hash == token_hash, APIToken.is_active == True)
+        """Verify an API token and return the user.
+
+        L2 fix: iterates active tokens and verifies each with bcrypt.
+        Acceptable overhead since verification happens once per request.
+        """
+        stmt = select(APIToken).where(APIToken.is_active == True)
         result = await db.execute(stmt)
-        api_token = result.scalar_one_or_none()
+        api_tokens = result.scalars().all()
+
+        api_token = None
+        for t in api_tokens:
+            if pwd_context.verify(token, t.token_hash):
+                api_token = t
+                break
         
         if not api_token:
             return None

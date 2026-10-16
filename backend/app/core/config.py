@@ -13,7 +13,9 @@ logger = logging.getLogger(__name__)
 class Settings(BaseSettings):
     # Application
     app_name: str = "Instant Workflow"
-    debug: bool = True
+    # L3 fix: default to False; set DEBUG=True explicitly for development.
+    # When False, the JWT secret key validator raises on the default value.
+    debug: bool = False
     
     # Database (PostgreSQL only)
     database_url: str = "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db"
@@ -62,8 +64,7 @@ class Settings(BaseSettings):
         if self.secret_key == "change-me-in-production":
             # H2 fix: raise in production (debug=False), warn in dev
             if not self.debug:
-                from pydantic import ValidationError
-                raise ValidationError(
+                raise ValueError(
                     "SECRET_KEY is still the default value. "
                     "Set SECRET_KEY env var for production deployments."
                 )

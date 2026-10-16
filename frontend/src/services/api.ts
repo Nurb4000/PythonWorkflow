@@ -12,6 +12,9 @@ const api = axios.create({
 })
 
 // Add auth token to requests — prefer cookie (set by backend), fall back to localStorage
+// L5 note: localStorage is accessible to any script running on the page (XSS exposure).
+// The withCredentials flag enables cookie-based auth as an alternative. When the backend
+// sets HttpOnly cookies, the browser sends them automatically and localStorage can be removed.
 api.interceptors.request.use((config) => {
   const token = localStorage.getItem('token')
   if (token && !config.headers.Authorization) {
