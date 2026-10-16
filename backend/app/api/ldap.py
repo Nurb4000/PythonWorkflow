@@ -3,6 +3,7 @@ LDAP configuration and sync API endpoints.
 """
 from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
+from pydantic import BaseModel
 from typing import Optional
 
 from app.core.database import get_db
@@ -11,6 +12,16 @@ from app.api.auth import get_current_admin
 from app.services.ldap_service import ldap_service
 
 router = APIRouter(prefix="/admin/ldap", tags=["ldap"])
+
+
+# M9 fix: test-connection parameters (including the bind password) are now sent
+# in the JSON request body instead of as Query strings, so the secret is no
+# longer exposed in the URL / server logs.
+class TestLdapConnectionRequest(BaseModel):
+    ldap_server_url: str
+    ldap_base_dn: str
+    ldap_bind_dn: str
+    ldap_bind_password: str = ""
 
 
 @router.get("/config")
@@ -50,39 +61,56 @@ async def update_ldap_config(
     current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
-    """Update LDAP configuration (admin only)."""
-    from app.api.system_settings import settings
-    
-    settings.ldap_server_url = ldap_server_url
-    settings.ldap_base_dn = ldap_base_dn
-    settings.ldap_bind_dn = ldap_bind_dn
+    """Update LDAP configuration (admin only).
+
+M9 fix: the whole config — including the bind password — is persisted to the
+system_settings table so it survives restarts (previously it was written only
+to the in-memory settings singleton and silently reset on restart). The bind
+password is only overwritten when a non-empty value is supplied.
+"""
+    from app.api.system_settings import get_setting, set_setting
+
+    await set_setting(db, "ldap_server_url", ldap_server_url)
+    await set_setting(db, "ldap_base_dn", ldap_base_dn)
+    await set_setting(db, "ldap_bind_dn", ldap_bind_dn)
     if ldap_bind_password:
-        settings.ldap_bind_password = ldap_bind_password
-    settings.ldap_user_filter = ldap_user_filter
-    settings.ldap_username_attribute = ldap_username_attribute
-    settings.ldap_email_attribute = ldap_email_attribute
-    settings.ldap_fullname_attribute = ldap_fullname_attribute
-    settings.ldap_sync_enabled = ldap_sync_enabled
-    settings.ldap_sync_interval_hours = ldap_sync_interval_hours
-    
+        await set_setting(db, "ldap_bind_password", ldap_bind_password)
+    await set_setting(db, "ldap_user_filter", ldap_user_filter)
+    await set_setting(db, "ldap_username_attribute", ldap_username_attribute)
+    await set_setting(db, "ldap_email_attribute", ldap_email_attribute)
+    await set_setting(db, "ldap_fullname_attribute", ldap_fullname_attribute)
+    await set_setting(db, "ldap_sync_enabled", "true" if ldap_sync_enabled else "false")
+    await set_setting(db, "ldap_sync_interval_hours", str(ldap_sync_interval_hours))
+
+    # Re-apply onto the runtime settings object for the current process.
+    from app.core.config import settings as app_settings
+    app_settings.ldap_server_url = ldap_server_url
+    app_settings.ldap_base_dn = ldap_base_dn
+    app_settings.ldap_bind_dn = ldap_bind_dn
+    if ldap_bind_password:
+        app_settings.ldap_bind_password = ldap_bind_password
+    app_settings.ldap_user_filter = ldap_user_filter
+    app_settings.ldap_username_attribute = ldap_username_attribute
+    app_settings.ldap_email_attribute = ldap_email_attribute
+    app_settings.ldap_fullname_attribute = ldap_fullname_attribute
+    app_settings.ldap_sync_enabled = ldap_sync_enabled
+    app_settings.ldap_sync_interval_hours = ldap_sync_interval_hours
+
     return {"message": "LDAP configuration updated"}
 
 
 @router.post("/test-connection")
 async def test_ldap_connection(
-    ldap_server_url: str = Query(...),
-    ldap_base_dn: str = Query(...),
-    ldap_bind_dn: str = Query(...),
-    ldap_bind_password: str = Query(...),
+    request: TestLdapConnectionRequest,
     current_user: User = Depends(get_current_admin),
     db: AsyncSession = Depends(get_db)
 ):
     """Test LDAP connection (admin only)."""
     result = await ldap_service.test_connection(
-        ldap_server_url,
-        ldap_base_dn,
-        ldap_bind_dn,
-        ldap_bind_password
+        request.ldap_server_url,
+        request.ldap_base_dn,
+        request.ldap_bind_dn,
+        request.ldap_bind_password
     )
     return result
 

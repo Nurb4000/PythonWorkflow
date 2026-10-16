@@ -136,6 +136,10 @@ async def lifespan(fastapi_app: FastAPI):
     await create_default_admin()
     from app.services.email_service import load_smtp_overrides
     await load_smtp_overrides()
+    # M9 fix: re-apply DB-persisted LDAP config (incl. bind password) at startup
+    # so admin edits survive restarts instead of resetting to env defaults.
+    from app.services.ldap_service import load_ldap_overrides
+    await load_ldap_overrides()
     await scheduler_service.initialize(async_session_factory)
     from app.services.sql_view_service import sql_view_service
     async with async_session_factory() as db:

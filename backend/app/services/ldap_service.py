@@ -5,6 +5,8 @@ import logging
 from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
+from app.core.config import settings
+
 logger = logging.getLogger(__name__)
 
 try:
@@ -241,3 +243,68 @@ class LDAPService:
 
 # Singleton instance
 ldap_service = LDAPService()
+
+
+# M9 fix: LDAP config (including the bind password) is persisted to the
+# system_settings table and re-applied onto the runtime settings object at
+# startup, so an admin edit survives a restart instead of being silently
+# reset to the env/config defaults.
+LDAP_SETTING_KEYS = (
+    "ldap_server_url",
+    "ldap_base_dn",
+    "ldap_bind_dn",
+    "ldap_bind_password",
+    "ldap_user_filter",
+    "ldap_username_attribute",
+    "ldap_email_attribute",
+    "ldap_fullname_attribute",
+    "ldap_sync_enabled",
+    "ldap_sync_interval_hours",
+)
+
+
+async def load_ldap_overrides() -> None:
+    """Apply DB-persisted LDAP settings onto the runtime ``settings`` object.
+
+    Called once at application startup (see app.main). Mirrors
+    ``email_service.load_smtp_overrides``; never blocks startup on DB errors.
+    """
+    from sqlalchemy import select
+
+    from app.core.database import async_session_factory
+    from app.models.system_settings import SystemSetting
+
+    try:
+        async with async_session_factory() as db:
+            stmt = select(SystemSetting).where(SystemSetting.key.in_(LDAP_SETTING_KEYS))
+            rows = {r.key: r.value for r in (await db.execute(stmt)).scalars().all()}
+    except Exception as e:  # never block startup on config loading
+        logger.error("Could not load LDAP settings overrides: %s", e)
+        return
+
+    def _db(key: str):
+        return rows.get(key)
+
+    if _db("ldap_server_url") is not None:
+        settings.ldap_server_url = _db("ldap_server_url")
+    if _db("ldap_base_dn") is not None:
+        settings.ldap_base_dn = _db("ldap_base_dn")
+    if _db("ldap_bind_dn") is not None:
+        settings.ldap_bind_dn = _db("ldap_bind_dn")
+    if _db("ldap_bind_password") is not None and _db("ldap_bind_password") != "":
+        settings.ldap_bind_password = _db("ldap_bind_password")
+    if _db("ldap_user_filter") is not None:
+        settings.ldap_user_filter = _db("ldap_user_filter")
+    if _db("ldap_username_attribute") is not None:
+        settings.ldap_username_attribute = _db("ldap_username_attribute")
+    if _db("ldap_email_attribute") is not None:
+        settings.ldap_email_attribute = _db("ldap_email_attribute")
+    if _db("ldap_fullname_attribute") is not None:
+        settings.ldap_fullname_attribute = _db("ldap_fullname_attribute")
+    if _db("ldap_sync_enabled") is not None:
+        settings.ldap_sync_enabled = _db("ldap_sync_enabled").lower() == "true"
+    if _db("ldap_sync_interval_hours"):
+        try:
+            settings.ldap_sync_interval_hours = int(_db("ldap_sync_interval_hours"))
+        except ValueError:
+            pass
