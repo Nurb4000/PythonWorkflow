@@ -136,6 +136,14 @@ class BaseExecutor:
 class APICallExecutor(BaseExecutor):
     """Execute HTTP API calls with SSRF protection (P6.1)."""
 
+    def _is_safe_url(self, url: str, allow_loopback: bool = False) -> bool:
+        """Check if URL is safe (not private/loopback) for SSRF protection.
+
+        This method delegates to the module-level _is_safe_url function so that
+        tests can patch it via patch.object(APICallExecutor, '_is_safe_url').
+        """
+        return _is_safe_url(url, allow_loopback=allow_loopback)
+
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         method = step_definition.get("method", "GET").upper()
         url = step_definition.get("url", "")
@@ -143,7 +151,7 @@ class APICallExecutor(BaseExecutor):
         body = step_definition.get("body")
         
         # P6.1: SSRF protection - block private/loopback URLs
-        if not _is_safe_url(url):
+        if not self._is_safe_url(url):
             raise ValueError(f"API call to private/loopback URL blocked for security: {url}")
         
         # Merge input data into request
