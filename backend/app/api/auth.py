@@ -10,7 +10,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.core.database import get_db
-from app.services.auth_service import auth_service
+from app.services.auth_service import auth_service, pwd_context
 from app.models.auth import User, Group
 from app.models.schemas import Workflow
 from app.schemas.workflow import AuditLogEntry
@@ -77,32 +77,31 @@ async def check_api_token_cmdb_permission(token: str = Depends(oauth2_scheme), d
     For JWT tokens (regular users), falls through to role-based checks.
     For API tokens, checks the permissions field on the APIToken record.
     """
-    import hashlib
     from app.models.auth import APIToken
 
-    # Try as API token first
-    token_hash = hashlib.sha256(token.encode()).hexdigest()
-    stmt = select(APIToken).where(APIToken.token_hash == token_hash, APIToken.is_active == True)
-    result = await db.execute(stmt)
-    api_token = result.scalar_one_or_none()
-
-    if api_token:
+    # L2 fix: verify API tokens with bcrypt instead of an unsalted SHA256 lookup.
+    # The previous SHA256 approach could never match the bcrypt-stored
+    # APIToken.token_hash values, silently breaking CMDB API-token auth; it also
+    # stored/compared tokens with a fast, unsalted hash.
+    result = await db.execute(select(APIToken).where(APIToken.is_active == True))
+    for api_token in result.scalars().all():
+        if not pwd_context.verify(token, api_token.token_hash):
+            continue
+        if api_token.expires_at and api_token.expires_at < datetime.utcnow():
+            raise HTTPException(status_code=401, detail="API token expired")
         permissions = [p.strip() for p in (api_token.permissions or "").split(",") if p.strip()]
         required_perm = "cmdb_write" if require_write else "cmdb_read"
         if required_perm not in permissions and "cmdb_all" not in permissions:
             raise HTTPException(status_code=403, detail=f"API token lacks '{required_perm}' permission")
-        # Update last used
         api_token.last_used_at = datetime.utcnow()
         await db.commit()
-        # Get user
         user_stmt = select(User).where(User.id == api_token.user_id)
-        user_result = await db.execute(user_stmt)
-        user = user_result.scalar_one_or_none()
+        user = (await db.execute(user_stmt)).scalar_one_or_none()
         if not user or not user.is_active:
             raise HTTPException(status_code=401, detail="User associated with token is inactive")
         return user
 
-    # Not an API token — fall back to regular JWT auth (role-based)
+    # Not a valid API token — fall back to regular JWT auth (role-based)
     return await get_current_user(token, db)
 
 

@@ -291,8 +291,10 @@ GET    /marketplace/categories       # Category catalog + tag cloud
 # Database (PostgreSQL only)
 DATABASE_URL=postgresql+asyncpg://user:pass@host:5432/db
 
-# Test database (used by make test-backend; auto-created if missing)
-TEST_DATABASE_URL=postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db_test
+# Test database (used by make test-backend; auto-created if missing).
+# Provide real credentials via your environment/secret manager, e.g.:
+#   TEST_DATABASE_URL=postgresql+asyncpg://${DB_USER}:${DB_PASSWORD}@postgres:5432/workflow_db_test
+TEST_DATABASE_URL=postgresql+asyncpg://user:pass@localhost:5432/workflow_db_test
 
 # SMTP (optional, for admin notices + email steps)
 SMTP_HOST=smtp.example.com

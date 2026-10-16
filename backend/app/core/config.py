@@ -17,8 +17,11 @@ class Settings(BaseSettings):
     # When False, the JWT secret key validator raises on the default value.
     debug: bool = False
     
-    # Database (PostgreSQL only)
-    database_url: str = "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db"
+    # Database (PostgreSQL only).
+    # L3 fix: no shipped credentials. In deployment DATABASE_URL is provided via
+    # environment variable / secret manager (docker-compose sets it); this
+    # placeholder only serves as a non-sensitive local fallback.
+    database_url: str = "postgresql+asyncpg://localhost:5432/workflow_db"
     
     @field_validator('database_url')
     @classmethod
