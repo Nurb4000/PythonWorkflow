@@ -92,6 +92,13 @@ async def upload_form_file(
                 status_code=413,
                 detail=f"File exceeds the {MAX_UPLOAD_BYTES // (1024 * 1024)} MB upload limit",
             )
+        # M1 fix: enforce extension allowlist + magic-byte verification.
+        from app.services.upload_validation import validate_upload, UploadValidationError
+        try:
+            filename = os.path.basename(file.filename or "")
+            validate_upload(filename, content)
+        except UploadValidationError as e:
+            raise HTTPException(status_code=400, detail=str(e))
         os.makedirs(UPLOAD_DIR, exist_ok=True)
         original = os.path.basename(file.filename or "file")
         stored = f"{uuid.uuid4().hex}_{original}"
