@@ -17,6 +17,53 @@ logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+# Canonical set of role names. Used to validate role/roles writes so an
+# administrator cannot introduce a rogue role or an inconsistent pair.
+KNOWN_ROLES = frozenset({"admin", "developer", "cmdb_manager", "staff", "user"})
+
+
+def reconcile_role_roles(role: Optional[str], roles: Optional[List[str]]) -> tuple[str, List[str]]:
+    """Return a consistent (role, roles) pair where ``role == roles[0]``.
+
+    I8 fix: the ``role`` scalar and ``roles`` array must never disagree. The
+    primary role is authoritative:
+
+    * If ``role`` is supplied it becomes ``roles[0]`` (and is prepended to any
+      provided/existing ``roles``); if ``roles`` is not supplied it is derived
+      as ``[role]``. This closes the demotion-bypass where an admin set
+      ``role="user"`` while a stale ``"admin"`` lingered in ``roles`` and the
+      OR-based ``has_role`` check still granted admin.
+    * If only ``roles`` is supplied, ``roles[0]`` becomes the primary ``role``.
+    * Every returned role is validated against :data:`KNOWN_ROLES`.
+    """
+    if role is not None and role not in KNOWN_ROLES:
+        raise ValueError(f"Invalid role: {role!r}")
+
+    if roles is not None:
+        cleaned: List[str] = []
+        for r in roles:
+            if r not in cleaned:
+                cleaned.append(r)
+        for r in cleaned:
+            if r not in KNOWN_ROLES:
+                raise ValueError(f"Invalid role in roles list: {r!r}")
+    else:
+        cleaned = None
+
+    if role is not None:
+        # Primary role is authoritative: put it first, keep any extra roles.
+        final_roles = [role] + [r for r in cleaned if r != role] if cleaned else [role]
+    elif cleaned:
+        # Only the array was provided; its first entry is the primary role.
+        final_roles = cleaned
+        role = cleaned[0]
+    else:
+        # Nothing supplied here — caller should not reach us with both None.
+        final_roles = ["user"]
+        role = "user"
+
+    return role, final_roles
+
 
 class AuthService:
     """Handle user authentication and authorization"""
@@ -58,14 +105,15 @@ class AuthService:
         # Hash password
         password_hash = pwd_context.hash(password)
 
-        # Default roles to [role] if not specified
-        roles = [role] if role else ["user"]
+        # I8 fix: derive a consistent (role, roles) pair — primary role is
+        # always roles[0], so the two fields can never disagree.
+        role, roles = reconcile_role_roles(role or "user", None)
 
         user = User(
             username=username,
             email=email,
             password_hash=password_hash,
-            role=role or "user",
+            role=role,
             roles=roles,
             full_name=full_name or username,
             is_active=True,
@@ -89,8 +137,20 @@ class AuthService:
         if not user:
             raise ValueError(f"User {user_id} not found")
 
-        # Update allowed fields
-        allowed_fields = ['email', 'full_name', 'role', 'roles', 'is_active', 'mfa_enabled']
+        # I8 fix: reconcile the primary ``role`` scalar with the ``roles`` array
+        # so they can never disagree. ``role`` is authoritative — setting it
+        # derives ``roles`` (closing the demotion-bypass where a stale admin
+        # entry lingered in ``roles``), and any provided ``roles`` must list the
+        # primary role first.
+        role = kwargs.pop("role", None)
+        roles = kwargs.pop("roles", None)
+        if role is not None or roles is not None:
+            role, roles = reconcile_role_roles(role, roles)
+            user.role = role
+            user.roles = roles
+
+        # Update remaining allowed fields
+        allowed_fields = ['email', 'full_name', 'is_active', 'mfa_enabled']
         for field in allowed_fields:
             if field in kwargs:
                 setattr(user, field, kwargs[field])
