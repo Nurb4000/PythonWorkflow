@@ -13,6 +13,18 @@ PostgreSQL database so test behavior matches production exactly.
 """
 import os
 
+# Point the app's DB connection at the isolated test database *before* any app
+# module is imported. app.core.config reads DATABASE_URL via pydantic Settings,
+# and app.core.database builds async_session_factory from it at import time.
+# Without this, services that open their own sessions (e.g. load_ldap_overrides)
+# read from the production DATABASE_URL while fixtures write to TEST_DATABASE_URL,
+# so persisted overrides never surface and DB-backed tests see empty data.
+_TEST_DATABASE_URL = os.environ.get(
+    "TEST_DATABASE_URL",
+    "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db_test",
+)
+os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
+
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -20,10 +32,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_asyn
 from app.core.database import Base
 
 
-TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db_test",
-)
+TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 
 
 async def _create_database_if_missing() -> None:

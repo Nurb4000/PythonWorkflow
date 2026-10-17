@@ -18,12 +18,31 @@ Covers:
 """
 import time
 from datetime import datetime
+from pathlib import Path
+from typing import Optional
 
 import pytest
 from unittest.mock import AsyncMock, patch, MagicMock
 
 from app.services.auth_service import auth_service
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate
+
+
+def _frontend_root() -> Optional[Path]:
+    """Return the repo root if the ``frontend/`` dir is reachable from here.
+
+    The backend test container only mounts ``backend/`` (at ``/app``), so
+    ``frontend/`` is not present inside it. Tests that assert on frontend files
+    walk up from this file looking for a directory containing ``frontend/`` and
+    skip cleanly when none is found, rather than failing on a path that only
+    exists in a full checkout.
+    """
+    current = Path(__file__).resolve()
+    for _ in range(6):
+        current = current.parent
+        if (current / "frontend").is_dir():
+            return current
+    return None
 
 
 class TestC1_RolesVariable:
@@ -375,8 +394,12 @@ class TestH6_RateLimiting:
 
         key = "test_rl_2"
         _rate_buckets[key] = [time.monotonic()] * _RATE_LIMIT_MAX
-        with pytest.raises(HTTPException, match="Rate limit"):
+        with pytest.raises(HTTPException) as exc:
             _check_rate_limit(key)
+        # FastAPI's HTTPException.__str__ returns '' in this version, so assert on
+        # the structured attributes instead of the exception string.
+        assert exc.value.status_code == 429
+        assert "Rate limit" in str(exc.value.detail)
 
 
 class TestH7_ApiKeyValidation:
@@ -397,7 +420,7 @@ class TestH7_ApiKeyValidation:
         )
 
         # Call without API key — should raise 401
-        with pytest.raises(HTTPException, match="Missing X-Api-Key"):
+        with pytest.raises(HTTPException) as exc:
             await external_trigger(
                 workflow_id=wf.id,
                 input_data={"key": "val"},
@@ -405,6 +428,8 @@ class TestH7_ApiKeyValidation:
                 x_forwarded_for="1.2.3.4",
                 db=db_session,
             )
+        assert exc.value.status_code == 401
+        assert "X-Api-Key" in str(exc.value.detail)
 
     @pytest.mark.asyncio
     async def test_external_trigger_validates_api_key(self, db_session):
@@ -420,7 +445,7 @@ class TestH7_ApiKeyValidation:
         )
 
         # Call with invalid API key — should raise 401
-        with pytest.raises(HTTPException, match="Invalid API key"):
+        with pytest.raises(HTTPException) as exc:
             await external_trigger(
                 workflow_id=wf.id,
                 input_data={"key": "val"},
@@ -428,6 +453,8 @@ class TestH7_ApiKeyValidation:
                 x_forwarded_for="1.2.3.4",
                 db=db_session,
             )
+        assert exc.value.status_code == 401
+        assert "Invalid API key" in str(exc.value.detail)
 
 
 class TestM1_SqlEchoConfig:
@@ -695,8 +722,10 @@ class TestE4_ErrorBoundary:
     """E4: Frontend error boundary component exists."""
 
     def test_error_boundary_file_exists(self):
-        from pathlib import Path
-        eb_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "components" / "ErrorBoundary.tsx"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        eb_path = root / "frontend" / "src" / "components" / "ErrorBoundary.tsx"
         assert eb_path.exists()
 
 
@@ -729,18 +758,24 @@ class TestL8_FrontendTests:
     """L8: Frontend unit test scaffold exists."""
 
     def test_vitest_config_exists(self):
-        from pathlib import Path
-        config_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "vitest.config.ts"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        config_path = root / "frontend" / "vitest.config.ts"
         assert config_path.exists()
 
     def test_frontend_test_file_exists(self):
-        from pathlib import Path
-        test_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "App.test.tsx"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        test_path = root / "frontend" / "src" / "App.test.tsx"
         assert test_path.exists()
 
     def test_setup_tests_file_exists(self):
-        from pathlib import Path
-        setup_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "setupTests.ts"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        setup_path = root / "frontend" / "src" / "setupTests.ts"
         assert setup_path.exists()
 
 
@@ -748,8 +783,10 @@ class TestL6_CookieAuthSupport:
     """L6: Frontend supports cookie-based auth as alternative to localStorage."""
 
     def test_api_client_has_with_credentials(self):
-        from pathlib import Path
-        api_file = Path(__file__).resolve().parent.parent.parent / "frontend" / "src" / "services" / "api.ts"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        api_file = root / "frontend" / "src" / "services" / "api.ts"
         content = api_file.read_text()
         assert "withCredentials" in content
         assert "true" in content
@@ -779,20 +816,26 @@ class TestE9_BundleAnalysis:
     """E9: Frontend bundle analysis configuration."""
 
     def test_rollup_plugin_visualizer_in_package_json(self):
-        from pathlib import Path
-        pkg_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "package.json"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        pkg_path = root / "frontend" / "package.json"
         content = pkg_path.read_text()
         assert "rollup-plugin-visualizer" in content
 
     def test_build_analyze_script_exists(self):
-        from pathlib import Path
-        pkg_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "package.json"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        pkg_path = root / "frontend" / "package.json"
         content = pkg_path.read_text()
         assert "build:analyze" in content
 
     def test_vite_config_has_manual_chunks(self):
-        from pathlib import Path
-        config_path = Path(__file__).resolve().parent.parent.parent / "frontend" / "vite.config.ts"
+        root = _frontend_root()
+        if root is None:
+            pytest.skip("frontend/ not mounted in this test context")
+        config_path = root / "frontend" / "vite.config.ts"
         content = config_path.read_text()
         assert "manualChunks" in content
         assert "reactflow" in content

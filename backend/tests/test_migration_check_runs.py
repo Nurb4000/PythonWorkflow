@@ -30,6 +30,11 @@ def test_check_migrations_executes_connection_path(caplog):
         async def __aexit__(self, *exc):
             return False
 
+        # _check_migrations runs MigrationContext over a sync connection obtained
+        # via AsyncConnection.run_sync; emulate that by invoking the callable.
+        async def run_sync(self, fn, *args, **kwargs):
+            return fn("<sync_conn>", *args, **kwargs)
+
         def configure(self, *args, **kwargs):
             return FakeCtx()
 
