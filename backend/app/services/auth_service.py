@@ -2,6 +2,7 @@
 Authentication service for user management
 """
 import logging
+import secrets
 from typing import Optional, List
 from datetime import datetime, timedelta
 from jose import JWTError, jwt
@@ -10,7 +11,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.models.auth import User, Group, APIToken
+from app.models.auth import User, Group, APIToken, TokenRevocation
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -183,25 +184,75 @@ class AuthService:
         return True
     
     def create_access_token(self, data: dict, expires_delta: Optional[timedelta] = None) -> str:
-        """Create JWT access token"""
+        """Create JWT access token.
+
+        Each token carries a unique ``jti`` (JWT ID). Revocation (logout /
+        refresh-token rotation) works by recording that ``jti`` in the
+        ``token_revocations`` blocklist; see :meth:`verify_token`.
+        """
         to_encode = data.copy()
-        
+
         if expires_delta:
             expire = datetime.utcnow() + expires_delta
         else:
             expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
-        
-        to_encode.update({"exp": expire})
+
+        to_encode.update({"exp": expire, "jti": secrets.token_urlsafe(16)})
         encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
         return encoded_jwt
-    
-    def verify_token(self, token: str) -> Optional[dict]:
-        """Verify and decode JWT token"""
+
+    def decode_token(self, token: str) -> Optional[dict]:
+        """Pure JWT decode (signature + expiry). No revocation check.
+
+        Returns the payload, or None if the token is missing/malformed/expired.
+        """
         try:
-            payload = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-            return payload
+            return jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         except JWTError:
             return None
+
+    async def is_token_revoked(self, db: AsyncSession, jti: Optional[str]) -> bool:
+        """True if ``jti`` has been recorded in the revocation blocklist."""
+        if not jti:
+            return False
+        stmt = select(TokenRevocation.id).where(TokenRevocation.jti == jti)
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none() is not None
+
+    async def verify_token(self, db: AsyncSession, token: str) -> Optional[dict]:
+        """Verify a JWT: signature + expiry, then reject if revoked.
+
+        This is the single choke point for access-token authentication; callers
+        must go through it so revocation can never be bypassed. Returns the
+        payload, or None if the token is invalid, expired, or revoked.
+        """
+        payload = self.decode_token(token)
+        if payload is None:
+            return None
+        if await self.is_token_revoked(db, payload.get("jti")):
+            return None
+        return payload
+
+    async def revoke_token(
+        self,
+        db: AsyncSession,
+        jti: str,
+        user_id: Optional[int] = None,
+        reason: Optional[str] = None,
+    ) -> bool:
+        """Record ``jti`` in the revocation blocklist (idempotent).
+
+        Returns True if a row was written, False if one already existed.
+        """
+        if not jti:
+            return False
+        existing = await self.is_token_revoked(db, jti)
+        if existing:
+            return False
+        rec = TokenRevocation(jti=jti, user_id=user_id, reason=reason)
+        db.add(rec)
+        await db.commit()
+        return True
     
     async def get_user_by_id(self, db: AsyncSession, user_id: int) -> Optional[User]:
         """Get user by ID with groups"""

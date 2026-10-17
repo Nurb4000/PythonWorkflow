@@ -1,5 +1,5 @@
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task, Schedule
-from app.models.auth import User, Group, AuditLog, workflow_permissions
+from app.models.auth import User, Group, AuditLog, TokenRevocation, workflow_permissions
 from app.models.forms import Form, FormSubmission
 from app.models.system_settings import SystemSetting
 from app.models.custom_fields import CustomFieldDefinition

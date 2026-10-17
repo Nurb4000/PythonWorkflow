@@ -104,3 +104,21 @@ class APIToken(Base):
 
     # Relationships
     user = relationship("User")
+
+
+class TokenRevocation(Base):
+    """Server-side revocation blocklist for JWT access tokens.
+
+    Stateless JWTs can't be un-issued, so a logged-out (or rotated) token's
+    ``jti`` is recorded here and rejected by ``auth_service.verify_token`` until
+    the token's ``exp`` passes. Mirrors the DB-backed approach used by
+    :class:`APIToken`; no external cache/Redis dependency.
+    """
+
+    __tablename__ = "token_revocations"
+
+    id = Column(Integer, primary_key=True)
+    jti = Column(String(64), nullable=False, unique=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    reason = Column(String(255), nullable=True)
+    revoked_at = Column(DateTime(timezone=True), server_default=func.now())

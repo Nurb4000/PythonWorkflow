@@ -19,9 +19,19 @@ router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
 
 
+def create_access_token(data: dict, expires_delta: Optional[datetime] = None) -> str:
+    """Issue a signed JWT access token.
+
+    Thin wrapper so other routers (e.g. ldap) can mint tokens without reaching
+    into the service singleton directly. Delegates to ``auth_service`` so every
+    token gets a unique ``jti`` (required for server-side revocation / logout).
+    """
+    return auth_service.create_access_token(data, expires_delta=expires_delta)
+
+
 async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
     """Get current authenticated user"""
-    payload = auth_service.verify_token(token)
+    payload = await auth_service.verify_token(db, token)
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
     
@@ -157,6 +167,22 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
             "full_name": user.full_name
         }
     }
+
+
+@router.post("/auth/logout")
+async def logout(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)):
+    """Server-side token revocation (logout).
+
+    Records the token's ``jti`` in the revocation blocklist so it is rejected by
+    :func:`get_current_user` until its ``exp`` passes — even though the JWT is
+    still cryptographically valid. Idempotent: logging out an already-revoked
+    (or expired) token is a harmless no-op.
+    """
+    payload = auth_service.decode_token(token)
+    jti = payload.get("jti") if payload else None
+    if jti:
+        await auth_service.revoke_token(db, jti, reason="logout")
+    return {"success": True, "message": "Logged out"}
 
 
 @router.put("/auth/me/password")
