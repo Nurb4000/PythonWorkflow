@@ -94,3 +94,26 @@ async def test_drop_view_rejects_invalid_name(db_session):
     result = await sql_view_service.drop_view(db_session, 'bad";DROP TABLE users;--')
     assert result["success"] is False
     assert "Invalid view_name" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_non_int_form_id_is_rejected_not_interpolated(db_session):
+    """M10 residual: form_id is interpolated into the view DDL. A non-int id must
+    be rejected (not executed), so a crafted string can't inject into DDL."""
+    malicious = "1; DROP TABLE form_submissions;--"
+    result = await sql_view_service.ensure_form_view(db_session, malicious, "injecttest")
+    assert result["success"] is False
+    assert "Invalid form_id" in result["error"]
+    # Nothing was executed — the table still exists.
+    count = await db_session.execute(text("SELECT count(*) FROM form_submissions"))
+    assert count.scalar_one() is not None
+
+
+@pytest.mark.asyncio
+async def test_non_int_ci_type_id_is_rejected_not_interpolated(db_session):
+    """M10 residual: ci_type_id is interpolated into the view DDL. A non-int id
+    must be rejected rather than interpolated."""
+    malicious = "1; DROP TABLE configuration_items;--"
+    result = await sql_view_service.ensure_ci_type_view(db_session, malicious, "badkey")
+    assert result["success"] is False
+    assert "Invalid ci_type_id" in result["error"]

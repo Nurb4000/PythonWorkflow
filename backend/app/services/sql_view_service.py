@@ -30,6 +30,13 @@ class SqlViewService:
     
     async def ensure_form_view(self, db: AsyncSession, form_id: int, form_key: str) -> Dict[str, Any]:
         """Ensure a SQL VIEW exists for a form's submissions."""
+        # M10 (residual): form_id is interpolated into the view DDL (identifiers
+        # can't be parameterized). Cast defensively so a non-int form_id from any
+        # direct caller can't inject — FastAPI path params are already int-typed.
+        try:
+            form_id = int(form_id)
+        except (TypeError, ValueError):
+            return {"success": False, "error": f"Invalid form_id: {form_id!r}"}
         # Get form schema to determine columns
         from app.models.forms import Form
         stmt = text("SELECT id, name, schema_json FROM forms WHERE id = :id")
@@ -101,6 +108,12 @@ class SqlViewService:
     
     async def ensure_ci_type_view(self, db: AsyncSession, ci_type_id: int, ci_type_key: str) -> Dict[str, Any]:
         """Ensure a SQL VIEW exists for a CI type's items."""
+        # M10 (residual): ci_type_id is interpolated into the view DDL. Cast
+        # defensively so a non-int id from any direct caller can't inject.
+        try:
+            ci_type_id = int(ci_type_id)
+        except (TypeError, ValueError):
+            return {"success": False, "error": f"Invalid ci_type_id: {ci_type_id!r}"}
         from app.models.cmdb import CIType
         stmt = text("SELECT id, key, field_schema FROM ci_types WHERE id = :id")
         result = await db.execute(stmt, {"id": ci_type_id})
