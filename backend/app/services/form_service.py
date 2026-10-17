@@ -168,6 +168,17 @@ class FormService:
                     from app.services.data_query_service import QUERYABLE_TABLES
                     if ref_table in QUERYABLE_TABLES:
                         model = QUERYABLE_TABLES[ref_table][0]
+                        # M5 residual: only write to a column that actually exists on the
+                        # target model. `ref_column` is sourced from the (developer-authored)
+                        # form schema, so a typo or crafted schema could otherwise point the
+                        # writeback at the wrong/nonexistent column (or raise AttributeError).
+                        valid_columns = set(model.__table__.columns.keys())
+                        if ref_column not in valid_columns:
+                            logger.warning(
+                                f"Reference field '{field_name}' targets unknown column "
+                                f"{ref_table}.{ref_column}; skipping writeback"
+                            )
+                            continue
                         stmt = select(model).where(model.id == ref_record_id)
                         result = await db.execute(stmt)
                         record = result.scalar_one_or_none()
