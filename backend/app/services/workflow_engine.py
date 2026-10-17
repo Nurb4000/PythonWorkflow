@@ -515,7 +515,9 @@ class WorkflowEngine:
                         else:
                             break
                 else:
-                    # Graph mode: follow explicit connections with parallel fan-out
+                    # Graph mode: follow explicit connections. Branches are executed
+                    # sequentially via _execute_branching_sync; the visited set still
+                    # ensures each step runs at most once per run (DAG semantics).
                     await self._execute_branching_sync(db, run, run_id, workflow, step_instances)
                 
                 if run.status == "running":
@@ -818,9 +820,14 @@ class WorkflowEngine:
             await self._execute_workflow(run_id)
     
     async def _execute_branching(self, db, run, run_id: int, workflow: Workflow, step_instances):
-        """Execute a workflow following explicit connections, supporting parallel fan-out.
-        Each path runs in its own DB session so branches execute concurrently."""
-        # This method is kept for backward compatibility but now delegates to the sync version
+        """Execute a workflow following explicit connections.
+
+        Deprecated in favour of :meth:`_execute_branching_sync`; retained for
+        backward compatibility and now delegates to the synchronous implementation.
+        Branches are executed sequentially (not concurrently) to avoid per-path DB
+        session management issues; the ``visited`` set guarantees each step runs at
+        most once per run.
+        """
         await self._execute_branching_sync(db, run, run_id, workflow, step_instances)
 
     async def _execute_branching_sync(self, db, run, run_id: int, workflow: Workflow, step_instances):
