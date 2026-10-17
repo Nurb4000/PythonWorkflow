@@ -214,5 +214,28 @@ class SqlViewService:
             for row in rows
         ]
 
+    async def sync_views(self, db: AsyncSession) -> None:
+        """Re-create all active SQL views from their stored definitions.
+
+        Run on startup so views that were dropped at the database level (e.g.
+        after a manual ``DROP VIEW`` or a rolled-back migration) are rebuilt from
+        the ``definition_sql`` persisted in the ``sql_views`` table.
+        """
+        from sqlalchemy import select
+        from app.models.sql_views import SQLView
+
+        stmt = select(SQLView).where(SQLView.is_active.is_(True))
+        result = await db.execute(stmt)
+        views = result.scalars().all()
+
+        for view in views:
+            try:
+                await db.execute(text(view.definition_sql))
+                logger.info(f"Synced SQL view: {view.name}")
+            except Exception as e:
+                logger.warning(f"Failed to sync SQL view {view.name}: {e}")
+
+        await db.commit()
+
 
 sql_view_service = SqlViewService()

@@ -121,8 +121,14 @@ async def _check_migrations() -> None:
         head_revision = script.get_current_head()
 
         async with engine.connect() as conn:
-            context = MigrationContext.configure(conn)
-            current_revision = context.get_current_revision()
+            # MigrationContext requires a synchronous connection; run_sync hands
+            # us the underlying sync DBAPI-backed connection and expects a
+            # synchronous callable that returns the revision string.
+            def _configure(sync_conn):
+                context = MigrationContext.configure(sync_conn)
+                return context.get_current_revision()
+
+            current_revision = await conn.run_sync(_configure)
 
         if current_revision and current_revision != head_revision:
             logger.warning(

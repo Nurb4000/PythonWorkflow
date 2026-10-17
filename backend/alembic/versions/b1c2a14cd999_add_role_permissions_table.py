@@ -15,6 +15,21 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # custom_roles must exist before role_permissions (FK). It was missing from
+    # the migration history entirely, which made `alembic upgrade head` fail with
+    # UndefinedTableError and prevented the app from starting.
+    op.create_table(
+        'custom_roles',
+        sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
+        sa.Column('name', sa.String(100), nullable=False),
+        sa.Column('description', sa.Text(), server_default=''),
+        sa.Column('permissions', sa.JSON(), nullable=True),
+        sa.Column('is_active', sa.Boolean(), server_default='true'),
+        sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+        sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.func.now()),
+    )
+    op.create_index('ix_custom_roles_id', 'custom_roles', ['id'])
+    op.create_index('ix_custom_roles_name', 'custom_roles', ['name'], unique=True)
     op.create_table(
         'role_permissions',
         sa.Column('id', sa.Integer(), primary_key=True, autoincrement=True),
@@ -35,3 +50,6 @@ def upgrade() -> None:
 def downgrade() -> None:
     op.drop_index('ix_role_permissions_role_table', table_name='role_permissions')
     op.drop_table('role_permissions')
+    op.drop_index('ix_custom_roles_name', table_name='custom_roles')
+    op.drop_index('ix_custom_roles_id', table_name='custom_roles')
+    op.drop_table('custom_roles')
