@@ -1,8 +1,11 @@
 """
 Task API endpoints (P6.2: pagination support)
 """
+import logging
 from datetime import datetime, timezone
 from fastapi import APIRouter, HTTPException, Depends, Query, Body
+
+logger = logging.getLogger(__name__)
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, or_, and_, func
 from typing import List, Optional

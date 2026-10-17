@@ -143,10 +143,7 @@ class WorkflowEngine:
         validation_warnings = self.validate_input_refs(workflow_data.steps or [], entry_form_schema)
         if validation_warnings:
             logger.warning(f"Workflow '{norm_name}' has input validation warnings: {validation_warnings}")
-            # Store warnings in config for UI display (non-blocking)
-            workflow.config = workflow_data.config or {}
-            workflow.config["input_validation_warnings"] = validation_warnings
-        
+
         workflow = Workflow(
             name=norm_name,
             description=workflow_data.description,
@@ -162,6 +159,13 @@ class WorkflowEngine:
         )
         db.add(workflow)
         await db.flush()
+
+        # Store input-validation warnings in config for UI display (non-blocking).
+        # Assigned after `workflow` is constructed — previously referenced before
+        # assignment, raising NameError whenever a workflow had validation warnings.
+        if validation_warnings:
+            workflow.config = workflow.config or {}
+            workflow.config["input_validation_warnings"] = validation_warnings
 
         # Assign permitted groups (direct association-table insert avoids async lazy-load)
         if allowed_group_ids:

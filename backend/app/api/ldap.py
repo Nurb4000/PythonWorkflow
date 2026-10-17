@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Body
 from sqlalchemy.ext.asyncio import AsyncSession
 from pydantic import BaseModel
 from typing import Optional
+import secrets
 
 from app.core.database import get_db
 from app.models.auth import User

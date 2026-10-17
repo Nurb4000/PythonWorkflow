@@ -167,13 +167,12 @@ async def execute_raw_sql(
     param_sql, params = interpolate_sql(sql, input_data)
 
     # Append LIMIT clause to the SQL string (sa_text doesn't have .limit())
-    if max_rows > 0:
-        # Check if the query already has a LIMIT clause
-        upper_sql = param_sql.upper().strip()
-        if not upper_sql.endswith((";",)):
-            # Remove trailing semicolon if present
-            clean_sql = param_sql.rstrip().rstrip(";")
-            param_sql = f"{clean_sql} LIMIT {max_rows}"
+    # Only if the query doesn't already contain a LIMIT (otherwise Postgres
+    # sees "LIMIT n LIMIT m" and raises a syntax error).
+    if max_rows > 0 and not re.search(r"\bLIMIT\b", param_sql, re.IGNORECASE):
+        # Remove trailing semicolon if present
+        clean_sql = param_sql.rstrip().rstrip(";").rstrip()
+        param_sql = f"{clean_sql} LIMIT {max_rows}"
 
     # Build bound parameters for SQLAlchemy text()
     bound = sa_text(param_sql)
@@ -192,5 +191,5 @@ async def execute_raw_sql(
         "columns": columns,
         "items": rows,
         "total": len(rows),
-        "sql": interpolated,
+        "sql": param_sql,
     }

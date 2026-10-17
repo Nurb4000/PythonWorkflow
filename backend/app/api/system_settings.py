@@ -2,6 +2,7 @@
 Settings API endpoints for system configuration
 """
 import os
+import email
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File as FileParam, Request
 from fastapi.responses import FileResponse
