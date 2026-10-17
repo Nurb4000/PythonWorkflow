@@ -5,9 +5,24 @@ Generates read-only views that materialize form submissions and CI items as
 flat typed tables. Naming: v_form_<key>, v_ci_<key>. Regenerated on publish.
 Uses jsonb_to_record for JSONB extraction.
 """
+import logging
+import re
 from typing import Dict, Any, List
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import text
+
+logger = logging.getLogger(__name__)
+
+# M10 fix: SQL identifiers (column names, view names, JSONB path keys) cannot be
+# parameterized, so they must be validated against a strict allowlist before being
+# interpolated into DDL/DML. Only ASCII letters, digits and underscores are
+# permitted, and the identifier must not start with a digit.
+_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]{0,63}$")
+
+
+def is_valid_identifier(name: Any) -> bool:
+    """Return True if *name* is a safe SQL identifier (no injection possible)."""
+    return isinstance(name, str) and bool(_IDENTIFIER_RE.match(name))
 
 
 class SqlViewService:
@@ -30,9 +45,19 @@ class SqlViewService:
         if not properties:
             return {"success": True, "message": "No properties to create view for"}
         
+        # M10: form_key is interpolated into the view name (an identifier), so it
+        # must be a valid identifier too.
+        if not is_valid_identifier(form_key):
+            return {"success": False, "error": f"Invalid form_key: {form_key!r}"}
+
         # Build column definitions
         columns = []
         for field_name, field_def in properties.items():
+            if not is_valid_identifier(field_name):
+                logger.warning(
+                    "Skipping form field %r: not a valid SQL identifier", field_name
+                )
+                continue
             if isinstance(field_def, dict):
                 field_type = field_def.get("type", "text")
                 sql_type = self._map_json_schema_type(field_type)
@@ -48,6 +73,8 @@ class SqlViewService:
         # Extract data from JSONB submissions
         select_cols = []
         for field_name in properties.keys():
+            if not is_valid_identifier(field_name):
+                continue
             select_cols.append(f'jsonb_extract_path_text(data, \'{field_name}\') as "{field_name}"')
         
         select_sql = ", ".join(select_cols) if select_cols else "'unknown' as _placeholder"
@@ -83,21 +110,30 @@ class SqlViewService:
             return {"success": False, "error": f"CI type {ci_type_id} not found"}
         
         field_schema = row.field_schema or []
-        
+
+        # M10: ci_type_key is interpolated into the view name (an identifier).
+        if not is_valid_identifier(ci_type_key):
+            return {"success": False, "error": f"Invalid ci_type_key: {ci_type_key!r}"}
+
         columns = []
         select_cols = []
-        
+
         for field in field_schema:
             if isinstance(field, dict) and "key" in field:
                 field_key = field["key"]
+                if not is_valid_identifier(field_key):
+                    logger.warning(
+                        "Skipping CI type field %r: not a valid SQL identifier", field_key
+                    )
+                    continue
                 field_type = field.get("type", "text")
                 sql_type = self._map_json_schema_type(field_type)
                 columns.append(f'"{field_key}" {sql_type}')
                 select_cols.append(f'jsonb_extract_path_text(ci_data, \'{field_key}\') as "{field_key}"')
-        
+
         if not select_cols:
             return {"success": True, "message": "No valid fields in schema"}
-        
+
         select_sql = ", ".join(select_cols)
         view_name = f"v_ci_{ci_type_key}"
         
@@ -140,6 +176,11 @@ class SqlViewService:
     
     async def drop_view(self, db: AsyncSession, view_name: str) -> Dict[str, Any]:
         """Drop a generated view."""
+        # M10: view_name is interpolated into DDL as an identifier. Generated views
+        # are always v_form_<key>/v_ci_<key> with a validated <key>, so reject any
+        # caller-supplied name that is not itself a valid identifier.
+        if not is_valid_identifier(view_name):
+            return {"success": False, "error": f"Invalid view_name: {view_name!r}"}
         try:
             await db.execute(text(f'DROP VIEW IF EXISTS "{view_name}"'))
             await db.commit()
