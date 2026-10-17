@@ -1,7 +1,8 @@
 """
 Authentication API endpoints
 """
-from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query
+from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query, Body
+from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -17,6 +18,12 @@ from app.schemas.workflow import AuditLogEntry
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+
+class RefreshTokenRequest(BaseModel):
+    """Body for POST /auth/refresh and /auth/logout-refresh."""
+
+    refresh_token: str
 
 
 def create_access_token(data: dict, expires_delta: Optional[datetime] = None) -> str:
@@ -155,9 +162,14 @@ async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSessi
     access_token = auth_service.create_access_token(
         data={"sub": str(user.id), "role": user.role, "username": user.username}
     )
-    
+
+    # Issue a refresh token the client can use to mint new access tokens without
+    # re-entering credentials (feature gap #1b: refresh-token rotation).
+    refresh_token = await auth_service.issue_refresh_token(db, user.id)
+
     return {
         "access_token": access_token,
+        "refresh_token": refresh_token,
         "token_type": "bearer",
         "user": {
             "id": user.id,
@@ -183,6 +195,49 @@ async def logout(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends
     if jti:
         await auth_service.revoke_token(db, jti, reason="logout")
     return {"success": True, "message": "Logged out"}
+
+
+@router.post("/auth/refresh")
+async def refresh(body: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    """Exchange a refresh token for a new access (+ rotated) refresh token.
+
+    Does not require a valid access token — that is the whole point. On any
+    invalid/expired/leaked token we return 401 with a generic message so we do
+    not leak which tokens are valid.
+    """
+    result = await auth_service.rotate_refresh_token(db, body.refresh_token)
+    if result is None:
+        raise HTTPException(
+            status_code=401,
+            detail="Invalid or expired refresh token",
+            headers={"WWW-Authenticate": "Bearer"},
+        )
+    return {
+        "access_token": result["access_token"],
+        "refresh_token": result["refresh_token"],
+        "token_type": "bearer",
+        "user": result["user"],
+    }
+
+
+@router.post("/auth/logout-refresh")
+async def logout_refresh(body: RefreshTokenRequest, db: AsyncSession = Depends(get_db)):
+    """Revoke a single refresh token (sign out this device/session)."""
+    revoked = await auth_service.revoke_single_refresh_token(db, body.refresh_token)
+    return {"success": revoked, "message": "Refresh token revoked" if revoked else "No active refresh token to revoke"}
+
+
+@router.post("/auth/logout-all")
+async def logout_all(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """Revoke every active refresh token for the current user (sign out everywhere)."""
+    count = await auth_service.revoke_all_user_refresh_tokens(db, current_user.id)
+    return {"success": True, "message": f"Revoked {count} refresh token(s)"}
+
+
+@router.get("/auth/sessions")
+async def list_sessions(current_user: User = Depends(get_current_user), db: AsyncSession = Depends(get_db)):
+    """List the current user's active refresh tokens (sessions)."""
+    return {"sessions": await auth_service.list_active_refresh_tokens(db, current_user.id)}
 
 
 @router.put("/auth/me/password")

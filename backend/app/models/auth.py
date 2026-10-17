@@ -122,3 +122,35 @@ class TokenRevocation(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     reason = Column(String(255), nullable=True)
     revoked_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RefreshToken(Base):
+    """Server-side refresh token (feature gap #1b).
+
+    Opaque, bcrypt-hashed, DB-backed like :class:`APIToken` — the plaintext is
+    handed to the client once and never stored. Each successful rotation issues a
+    successor that links back via ``previous_token_index``; because every token is
+    single-use by construction, replaying a presented token (detected by an active
+    successor) is treated as a leak and revokes the whole chain. ``is_active`` is
+    only cleared by explicit logout/revocation, never by rotation itself.
+    """
+
+    __tablename__ = "refresh_tokens"
+
+    id = Column(Integer, primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    # Deterministic HMAC-SHA256 of the plaintext token. bcrypt() is salted and
+    # non-deterministic, so this column is what lets us look a presented token up
+    # by value and link a rotated token to its successor (leak/replay detection).
+    token_index = Column(String(64), nullable=False, unique=True, index=True)
+    # bcrypt hash of the plaintext, used only to verify a presented token.
+    token_hash = Column(String(255), nullable=True)
+    # token_index of the token this one was rotated from (null for the first in
+    # a chain). An active successor here means the parent was replayed -> leak.
+    previous_token_index = Column(String(64), nullable=True)
+    expires_at = Column(DateTime(timezone=True), nullable=False)
+    is_active = Column(Boolean, default=True, nullable=False)
+    last_used_at = Column(DateTime(timezone=True))
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    user = relationship("User")

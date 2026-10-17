@@ -67,6 +67,12 @@ class Settings(BaseSettings):
     secret_key: str = "change-me-in-production"
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 1440
+    # Refresh-token rotation (feature gap #1b). Opaque, DB-backed, bcrypt-hashed
+    # tokens that outlive the access token. Each successful rotation issues a new
+    # refresh token and retires the presented one; replaying a retired token is
+    # treated as a leak and revokes the whole chain for the user.
+    refresh_token_expire_days: int = 7
+    refresh_token_rotation: bool = True
 
     @model_validator(mode="after")
     def check_secret_key(self):

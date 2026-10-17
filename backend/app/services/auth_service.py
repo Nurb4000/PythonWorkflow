@@ -1,26 +1,53 @@
 """
 Authentication service for user management
 """
+import hashlib
+import hmac
 import logging
 import secrets
-from typing import Optional, List
-from datetime import datetime, timedelta
+from typing import Optional, List, Dict, Any
+from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
 from passlib.context import CryptContext
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
-from app.models.auth import User, Group, APIToken, TokenRevocation
+from app.models.auth import User, Group, APIToken, TokenRevocation, RefreshToken
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 
+
+def _utcnow() -> datetime:
+    """Timezone-aware ``UTC now``.
+
+    Postgres ``timestamptz`` columns round-trip as tz-aware datetimes, so all
+    expiry comparisons must use an aware "now" — mixing in naive
+    ``datetime.utcnow()`` raises ``TypeError`` (offset-naive vs offset-aware).
+    """
+    return datetime.now(timezone.utc)
+
 # Canonical set of role names. Used to validate role/roles writes so an
 # administrator cannot introduce a rogue role or an inconsistent pair.
 KNOWN_ROLES = frozenset({"admin", "developer", "cmdb_manager", "staff", "user"})
+
+
+def refresh_token_index(raw_token: str) -> str:
+    """Deterministic HMAC-SHA256 index of a plaintext refresh token.
+
+    bcrypt() salts each hash, so the stored ``token_hash`` can't be used to look
+    a presented token up by value. This stable index (tied to the app secret)
+    enables indexed lookup and predecessor/successor linkage for rotation and
+    replay detection without ever storing the plaintext.
+    """
+    return hmac.new(
+        settings.secret_key.encode("utf-8"),
+        raw_token.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
 
 
 def reconcile_role_roles(role: Optional[str], roles: Optional[List[str]]) -> tuple[str, List[str]]:
@@ -253,7 +280,154 @@ class AuthService:
         db.add(rec)
         await db.commit()
         return True
-    
+
+    async def issue_refresh_token(self, db: AsyncSession, user_id: int) -> str:
+        """Create a fresh refresh token for a user and return its plaintext.
+
+        Only the bcrypt hash and a deterministic HMAC index are persisted; the
+        plaintext is shown to the client exactly once.
+        """
+        raw = secrets.token_urlsafe(32)
+        now = _utcnow()
+        db.add(
+            RefreshToken(
+                user_id=user_id,
+                token_index=refresh_token_index(raw),
+                token_hash=pwd_context.hash(raw),
+                previous_token_index=None,
+                expires_at=now + timedelta(days=settings.refresh_token_expire_days),
+                is_active=True,
+            )
+        )
+        await db.commit()
+        return raw
+
+    async def _get_refresh_by_index(self, db: AsyncSession, raw_token: str) -> Optional[RefreshToken]:
+        stmt = select(RefreshToken).where(RefreshToken.token_index == refresh_token_index(raw_token))
+        result = await db.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def rotate_refresh_token(
+        self, db: AsyncSession, raw_token: Optional[str]
+    ) -> Optional[Dict[str, Any]]:
+        """Exchange a valid refresh token for a new access + refresh pair.
+
+        Implements RFC 8693-style rotation: a successor is issued that links back
+        to the presented token via ``previous_token_index``. Because each token is
+        single-use by construction, presenting the same token again is caught by
+        the successor check -> a leak -> the whole chain is revoked and None is
+        returned. Returns None for any invalid/expired/mismatched/revoked token so
+        callers can answer 401 uniformly.
+        """
+        if not raw_token or not settings.refresh_token_rotation:
+            return None
+
+        presented = await self._get_refresh_by_index(db, raw_token)
+        if presented is None or not presented.is_active or presented.expires_at < _utcnow():
+            return None
+
+        stored = presented.token_hash
+        if not stored or not pwd_context.verify(raw_token, stored):
+            return None
+
+        user_row = await self.get_user_by_id(db, presented.user_id)
+        if user_row is None or not user_row.is_active:
+            return None
+
+        # Leak / replay detection: an active successor means this token was
+        # already rotated away yet is being presented again.
+        succ_stmt = select(RefreshToken.id).where(
+            RefreshToken.previous_token_index == presented.token_index,
+            RefreshToken.is_active.is_(True),
+        )
+        succ = await db.execute(succ_stmt)
+        if succ.scalar_one_or_none() is not None:
+            await self.revoke_all_user_refresh_tokens(db, presented.user_id)
+            logger.warning("Refresh-token replay/leak detected for user %s", presented.user_id)
+            return None
+
+        # Do NOT flip ``is_active`` here. Rotation is single-use by design: the
+        # successor created below links back to this token, so presenting this
+        # token again is caught by the leak check above and revokes the whole
+        # chain. ``is_active`` is only cleared by explicit logout/revocation.
+        new_raw = secrets.token_urlsafe(32)
+        db.add(
+            RefreshToken(
+                user_id=presented.user_id,
+                token_index=refresh_token_index(new_raw),
+                token_hash=pwd_context.hash(new_raw),
+                previous_token_index=presented.token_index,
+                expires_at=_utcnow() + timedelta(days=settings.refresh_token_expire_days),
+                is_active=True,
+            )
+        )
+        await db.commit()
+
+        access_token = self.create_access_token(
+            data={"sub": str(user_row.id), "role": user_row.role, "username": user_row.username}
+        )
+        return {
+            "access_token": access_token,
+            "refresh_token": new_raw,
+            "user": {"id": user_row.id, "username": user_row.username, "role": user_row.role},
+        }
+
+    async def revoke_single_refresh_token(self, db: AsyncSession, raw_token: Optional[str]) -> bool:
+        """Retire a single refresh token (single-session logout)."""
+        if not raw_token:
+            return False
+        presented = await self._get_refresh_by_index(db, raw_token)
+        if presented is None or not presented.is_active:
+            return False
+        presented.is_active = False
+        await db.commit()
+        return True
+
+    async def revoke_all_user_refresh_tokens(self, db: AsyncSession, user_id: int) -> int:
+        """Retire every active refresh token for a user. Returns count revoked."""
+        stmt = select(RefreshToken).where(
+            RefreshToken.user_id == user_id, RefreshToken.is_active.is_(True)
+        )
+        result = await db.execute(stmt)
+        records = result.scalars().all()
+        for rec in records:
+            rec.is_active = False
+        if records:
+            await db.commit()
+        return len(records)
+
+    async def list_active_refresh_tokens(self, db: AsyncSession, user_id: int) -> List[Dict[str, Any]]:
+        """Return metadata for a user's *live* refresh tokens (session listing).
+
+        A token is "live" while it is active, unexpired, and has not itself been
+        rotated away (no active successor links back to it). Rotated-away parents
+        stay ``is_active`` so their replay can be detected as a leak, but they must
+        not appear as usable sessions here.
+        """
+        rotated_away = (
+            select(RefreshToken.previous_token_index)
+            .where(RefreshToken.is_active.is_(True), RefreshToken.previous_token_index.isnot(None))
+            .scalar_subquery()
+        )
+        stmt = select(RefreshToken).where(
+            RefreshToken.user_id == user_id,
+            RefreshToken.is_active.is_(True),
+            RefreshToken.expires_at > _utcnow(),
+            RefreshToken.token_index.notin_(rotated_away),
+        ).order_by(RefreshToken.created_at.desc())
+        result = await db.execute(stmt)
+        records = result.scalars().all()
+        return [
+            {
+                "id": rec.id,
+                "created_at": rec.created_at,
+                "last_used_at": rec.last_used_at,
+                "expires_at": rec.expires_at,
+                "is_successor": rec.previous_token_index is not None,
+            }
+            for rec in records
+        ]
+
     async def get_user_by_id(self, db: AsyncSession, user_id: int) -> Optional[User]:
         """Get user by ID with groups"""
         stmt = (
@@ -472,8 +646,9 @@ class AuthService:
         if not api_token:
             return None
         
-        # Check expiration
-        if api_token.expires_at and api_token.expires_at < datetime.utcnow():
+        # Check expiration (expires_at is a timestamptz -> tz-aware; compare
+        # against an aware "now" or Postgres-naive values raise TypeError).
+        if api_token.expires_at and api_token.expires_at < _utcnow():
             return None
         
         # Update last used
