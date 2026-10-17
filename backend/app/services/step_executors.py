@@ -1631,7 +1631,15 @@ class SubWorkflowExecutor(BaseExecutor):
             }
     
     async def _wait_for_run_completion(self, db: AsyncSession, run_id: int, timeout: int):
-        """Poll until run completes, fails, or times out."""
+        """Poll until run completes, fails, times out, or pauses at a human step.
+
+        Mirrors the engine's own terminal set (workflow_engine._execute_workflow):
+        a sub-run may legitimately end in ``timeout`` (its own timeout fired) or
+        sit at ``waiting`` (paused at a human_task/approval step). Both are real
+        outcomes for a synchronous wait — treat them as terminal so the parent
+        reports the true state instead of spinning until a spurious parent-side
+        timeout.
+        """
         import asyncio
         from app.models.schemas import WorkflowRun
         from sqlalchemy import select as sa_select
@@ -1647,7 +1655,7 @@ class SubWorkflowExecutor(BaseExecutor):
             if not run:
                 raise ValueError(f"Sub-workflow run {run_id} not found")
             
-            if run.status in ("completed", "failed", "cancelled"):
+            if run.status in ("completed", "failed", "cancelled", "timeout", "waiting"):
                 return  # Done
             
             elapsed = asyncio.get_event_loop().time() - start
