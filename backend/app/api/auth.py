@@ -11,7 +11,7 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.core.database import get_db
-from app.services.auth_service import auth_service, pwd_context
+from app.services.auth_service import auth_service, pwd_context, _utcnow, _as_aware
 from app.models.auth import User, Group
 from app.models.schemas import Workflow
 from app.schemas.workflow import AuditLogEntry
@@ -104,7 +104,7 @@ async def check_api_token_cmdb_permission(token: str = Depends(oauth2_scheme), d
     for api_token in result.scalars().all():
         if not pwd_context.verify(token, api_token.token_hash):
             continue
-        if api_token.expires_at and api_token.expires_at < datetime.utcnow():
+        if api_token.expires_at and _as_aware(api_token.expires_at) < _utcnow():
             raise HTTPException(status_code=401, detail="API token expired")
         permissions = [p.strip() for p in (api_token.permissions or "").split(",") if p.strip()]
         required_perm = "cmdb_write" if require_write else "cmdb_read"

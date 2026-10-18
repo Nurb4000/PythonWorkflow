@@ -12,6 +12,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.config import settings
 from app.services.scheduler import scheduler_service
+from app.services.auth_service import _utcnow, _as_aware
 from app.models.schemas import Workflow
 
 router = APIRouter()
@@ -153,8 +154,7 @@ async def external_trigger(
         api_token = result.scalar_one_or_none()
         if not api_token:
             raise HTTPException(status_code=401, detail="Invalid API key")
-        from datetime import datetime
-        if api_token.expires_at and api_token.expires_at < datetime.utcnow():
+        if api_token.expires_at and _as_aware(api_token.expires_at) < _utcnow():
             raise HTTPException(status_code=401, detail="API key expired")
     else:
         raise HTTPException(status_code=401, detail="Missing X-Api-Key header")

@@ -91,6 +91,48 @@ async def test_expired_token_rejected(db_session):
 
 
 @pytest.mark.asyncio
+async def test_aware_expiry_expired_token_rejected(db_session):
+    """An APIToken whose expires_at is a tz-aware datetime (as Postgres returns a
+    timestamptz column) must still be rejected as expired — not crash with a
+    naive/aware TypeError in the comparison."""
+    from fastapi import HTTPException
+    from datetime import timezone
+
+    user = await _make_user(db_session)
+    api_token = APIToken(
+        user_id=user.id, name="aware-expired",
+        token_hash=pwd_context.hash("aware-expired-token"),
+        permissions="cmdb_read", is_active=True,
+        expires_at=datetime.now(timezone.utc) - timedelta(days=1),
+    )
+    db_session.add(api_token)
+    await db_session.commit()
+    # Before the fix this raised TypeError (offset-naive vs offset-aware); now it
+    # correctly surfaces as a 401.
+    with pytest.raises(HTTPException) as exc:
+        await check_api_token_cmdb_permission("aware-expired-token", db_session)
+    assert exc.value.status_code == 401
+
+
+@pytest.mark.asyncio
+async def test_aware_expiry_valid_token_passes(db_session):
+    """A tz-aware, not-yet-expired token must authenticate normally."""
+    from datetime import timezone
+
+    user = await _make_user(db_session)
+    api_token = APIToken(
+        user_id=user.id, name="aware-valid",
+        token_hash=pwd_context.hash("aware-valid-token"),
+        permissions="cmdb_read", is_active=True,
+        expires_at=datetime.now(timezone.utc) + timedelta(days=1),
+    )
+    db_session.add(api_token)
+    await db_session.commit()
+    resolved = await check_api_token_cmdb_permission("aware-valid-token", db_session)
+    assert resolved.id == user.id
+
+
+@pytest.mark.asyncio
 async def test_unknown_token_falls_back_to_jwt(db_session):
     # A token that matches no API-token row falls through to JWT auth, which
     # raises 401 for a bogus bearer token.

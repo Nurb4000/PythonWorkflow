@@ -65,6 +65,20 @@ def _utcnow() -> datetime:
     """
     return datetime.now(timezone.utc)
 
+
+def _as_aware(dt: Optional[datetime]) -> Optional[datetime]:
+    """Coerce a possibly-naive datetime to tz-aware (treating naive as UTC).
+
+    Postgres ``timestamptz`` columns *should* round-trip as aware, but this driver
+    can return naive datetimes for values that were inserted as naive (e.g. the
+    ``expires_at`` set by :meth:`create_api_token`). Comparing aware vs naive
+    raises ``TypeError``, so both sides of an expiry check are normalized to aware
+    before comparison — regardless of how the value was stored or loaded.
+    """
+    if dt is None or dt.tzinfo is None:
+        return dt.replace(tzinfo=timezone.utc) if dt is not None else None
+    return dt
+
 # Canonical set of role names. Used to validate role/roles writes so an
 # administrator cannot introduce a rogue role or an inconsistent pair.
 KNOWN_ROLES = frozenset({"admin", "developer", "cmdb_manager", "staff", "user"})
