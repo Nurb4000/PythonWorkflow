@@ -1,7 +1,7 @@
 """
 D4: Hygiene reports — find duplicates, unreferenced content, broken refs.
 """
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 from typing import List, Dict, Any
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_
@@ -10,8 +10,18 @@ from sqlalchemy import select, func, or_
 class HygieneService:
     """Find data quality issues across the platform."""
     
-    async def find_near_duplicates(self, db: AsyncSession, model, name_col, threshold: float = 0.8) -> List[Dict]:
-        """Find items with similar names (simple prefix match for now)."""
+    async def find_near_duplicates(
+        self, db: AsyncSession, model=None, name_col="name", threshold: float = 0.8
+    ) -> List[Dict]:
+        """Find items with similar names (simple prefix match for now).
+
+        ``model`` defaults to ``Form`` so ``get_hygiene_report`` can call this with
+        just a session; callers may pass another ORM model to check its names.
+        """
+        if model is None:
+            from app.models.forms import Form
+
+            model = Form
         stmt = select(model).order_by(model.name)
         result = await db.execute(stmt)
         items = result.scalars().all()
@@ -32,9 +42,9 @@ class HygieneService:
     async def find_unreferenced_forms(self, db: AsyncSession, days_inactive: int = 90) -> List[Dict]:
         """Find forms with no runs in N days."""
         from app.models.forms import Form
-        from app.models.schemas import WorkflowRun
+        from app.models.schemas import WorkflowRun, Workflow
         
-        cutoff = datetime.utcnow() - timedelta(days=days_inactive)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_inactive)
         
         stmt = select(Form).where(Form.is_active == True)
         result = await db.execute(stmt)
@@ -42,10 +52,12 @@ class HygieneService:
         
         unreferenced = []
         for form in forms:
-            # Check if any workflow uses this form as entry_form
-            wf_stmt = select(WorkflowRun).where(
-                WorkflowRun.entry_form_id == form.id,
-                WorkflowRun.created_at > cutoff
+            # Check if any workflow uses this form as entry_form and has runs
+            # after the cutoff. entry_form_id lives on Workflow, not WorkflowRun.
+            wf_stmt = (
+                select(WorkflowRun)
+                .join(Workflow, WorkflowRun.workflow_id == Workflow.id)
+                .where(Workflow.entry_form_id == form.id, WorkflowRun.created_at > cutoff)
             )
             wf_result = await db.execute(wf_stmt)
             if wf_result.scalars().first() is None:
@@ -97,16 +109,12 @@ class HygieneService:
             "generated_at": datetime.utcnow().isoformat()
         }
 
-
-hygiene_service = HygieneService()
-
-
     async def find_stale_drafts(self, db: AsyncSession, days_inactive: int = 30) -> List[Dict]:
         """Find workflows/forms with no runs in N days that are still drafts."""
         from app.models.schemas import Workflow, WorkflowRun
         from app.models.forms import Form
         
-        cutoff = datetime.utcnow() - timedelta(days=days_inactive)
+        cutoff = datetime.now(timezone.utc) - timedelta(days=days_inactive)
         
         # Stale workflow drafts
         wf_stmt = select(Workflow).where(
@@ -213,3 +221,6 @@ hygiene_service = HygieneService()
         # This is a simplified version — would need version history tracking
         # For now, return empty list
         return []
+
+
+hygiene_service = HygieneService()
