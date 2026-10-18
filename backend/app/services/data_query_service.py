@@ -201,10 +201,11 @@ async def execute_visual_query(
     model = QUERYABLE_TABLES[table_name][0]
     stmt = select(model)
 
-    # Build filter conditions
+    # Build filter conditions.
+    # NOTE: values are bound via SQLAlchemy column operators (_apply_operator /
+    # the _jsonb_* helpers), so there is no separate ``params`` dict here — do
+    # not reintroduce a ``params``/``param_idx`` pair; it is dead code.
     conditions = []
-    params: Dict[str, Any] = {}
-    param_idx = 0
 
     for f in (filters or []):
         field = f.get("field", "")
@@ -229,9 +230,11 @@ async def execute_visual_query(
                 # For numeric operators on custom fields, cast to text comparison
                 conditions.append(_jsonb_eq(model, field, value))
         elif rel_chain:
-            # Relationship chain filter
+            # Relationship chain filter. ``_build_relationship_filter`` returns
+            # None when the chain can't be resolved (unknown table/FK), so guard
+            # with ``is not None`` — a SQLAlchemy clause can't be coerced to bool.
             cond = _build_relationship_filter(model, table_name, rel_chain, field, operator, value)
-            if cond:
+            if cond is not None:
                 conditions.append(cond)
         else:
             # Native column filter
