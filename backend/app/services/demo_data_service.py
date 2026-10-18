@@ -539,13 +539,29 @@ async def seed_demo_form(db: AsyncSession) -> Optional[int]:
 
 
 async def seed_all_demo_data(db: AsyncSession) -> Dict[str, any]:
-    """Seed all demo data: categories, services, groups, CMDB, KB articles, and forms."""
-    category_ids = await _seed_categories(db)
-    service_ids = await _seed_services(db, category_ids)
-    group_ids = await _seed_groups(db)
-    ci_type_ids = await seed_cmdb_demo_data(db)
-    kb_count = await seed_kb_demo_data(db, service_ids)
-    form_id = await seed_demo_form(db)
+    """Seed all demo data: categories, services, groups, CMDB, KB articles, and forms.
+
+    Self-contained: every ``seed_*`` helper only ``flush()``s (assigning IDs) but
+    never commits, so this orchestrator performs a single atomic commit once all
+    helpers succeed. On any partial failure the pending flushes are rolled back so
+    callers can never observe flushed-but-uncommitted demo data — either everything
+    is committed or nothing is. Callers no longer need to invoke ``commit_demo_data``.
+    """
+    try:
+        category_ids = await _seed_categories(db)
+        service_ids = await _seed_services(db, category_ids)
+        group_ids = await _seed_groups(db)
+        ci_type_ids = await seed_cmdb_demo_data(db)
+        kb_count = await seed_kb_demo_data(db, service_ids)
+        form_id = await seed_demo_form(db)
+    except Exception:
+        # Roll back the half-flushed batch so a partial seed never leaks
+        # flushed-but-uncommitted rows into the caller's transaction.
+        await db.rollback()
+        raise
+
+    await db.commit()
+    logger.info("Demo data committed")
 
     return {
         "categories": category_ids,
@@ -643,8 +659,3 @@ async def _seed_groups(db: AsyncSession) -> Dict[str, int]:
 
     return result
 
-
-async def commit_demo_data(db: AsyncSession) -> None:
-    """Commit pending demo data changes. Call after seed_* functions."""
-    await db.commit()
-    logger.info("Demo data committed")

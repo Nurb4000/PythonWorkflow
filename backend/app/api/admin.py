@@ -537,10 +537,11 @@ async def seed_demo_data(
     Idempotent — safe to call multiple times; existing records are preserved.
     Admin-only.
     """
-    from app.services.demo_data_service import seed_all_demo_data, commit_demo_data
+    from app.services.demo_data_service import seed_all_demo_data
 
+    # seed_all_demo_data commits atomically on success (and rolls back on partial
+    # failure), so no separate commit_demo_data call is needed.
     result = await seed_all_demo_data(db)
-    await commit_demo_data(db)
 
     return {
         "success": True,
