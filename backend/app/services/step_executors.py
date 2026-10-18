@@ -305,13 +305,16 @@ class DatabaseQueryExecutor(BaseExecutor):
 
         # M14 fix: actually execute the parameterized query instead of returning
         # a simulated result.  Convert positional placeholders ($1, $2, ...) to
-        # SQLAlchemy named parameters (:p1, :p2, ...) for bindparams().
+        # SQLAlchemy named parameters (:p1, :p2, ...). The bind *name* must be
+        # colon-free (``bindparams(p1=...)``) — including the colon here (the old
+        # ``":p{i}"`` key) made bindparams raise ArgumentError, so any real
+        # parameterized DB query silently broke.
         named_sql = sql
         named_params: dict[str, Any] = {}
         for i, val in enumerate(params, 1):
             placeholder = f"${i}"
-            named = f":p{i}"
-            named_sql = named_sql.replace(placeholder, named)
+            named = f"p{i}"
+            named_sql = named_sql.replace(placeholder, f":{named}")
             named_params[named] = val
 
         logger.info(f"DatabaseQueryExecutor: {named_sql} with {len(named_params)} params")

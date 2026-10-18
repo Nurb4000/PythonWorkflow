@@ -78,15 +78,22 @@ def validate_readonly_sql(sql: str) -> None:
 
 
 def interpolate_sql(sql: str, input_data: Dict[str, Any]) -> tuple[str, dict]:
-    """Replace $input.field references in raw SQL with positional placeholders.
+    """Replace $input.field references in raw SQL with SQLAlchemy named params.
 
-    Returns (sql_with_placeholders, params_dict) where params_dict maps
-    placeholder names ($1, $2, ...) to their resolved values.  This allows
-    the database driver to handle proper escaping / type coercion instead of
-    naive string concatenation.
+    Returns (sql_with_placeholders, params_dict) where the SQL uses ``:p1``,
+    ``:p2`` ... placeholders and ``params_dict`` maps the colon-free bind names
+    (``p1``, ``p2`` ...) to their resolved values — exactly what
+    ``sqlalchemy.text().bindparams()`` expects. A bare ``$1`` key (asyncpg
+    positional style) is *not* a valid bind name and raises ``ArgumentError``,
+    which is how the pre-fix code silently broke every present-field raw-SQL
+    report. Values are always bound (never inlined), so a missing field can't be
+    worked around by string concatenation either.
 
-    If a field is missing from input_data, the original ``$input.field`` token
-    is left in place (the driver will raise at execution time).
+    A referenced field that is absent from ``input_data`` is a misconfiguration
+    in the workflow step: leaving the raw ``$input.field`` token in the SQL would
+    either produce a cryptic Postgres syntax error (unquoted) or silently
+    compare against the literal text (inside a string literal). Fail fast with a
+    clear error naming the missing field instead.
     """
     params: dict[str, Any] = {}
     counter = 0
@@ -94,13 +101,16 @@ def interpolate_sql(sql: str, input_data: Dict[str, Any]) -> tuple[str, dict]:
     def replace_match(match: re.Match) -> str:
         nonlocal counter
         field = match.group(1)
-        value = input_data.get(field)  # None means "missing" — keep original token
-        if value is None and field not in input_data:
-            return match.group(0)  # leave $input.field as-is
+        if field not in input_data:
+            raise ValueError(
+                f"Missing required input field '{field}' referenced in query "
+                f"(input_data keys: {sorted(input_data) or 'none'})"
+            )
+        value = input_data[field]
         counter += 1
-        placeholder = f"${counter}"
-        params[placeholder] = value
-        return placeholder
+        named = f"p{counter}"
+        params[named] = value
+        return f":{named}"
 
     new_sql = re.sub(r"\$input\.(\w+)", replace_match, sql)
     return new_sql, params
