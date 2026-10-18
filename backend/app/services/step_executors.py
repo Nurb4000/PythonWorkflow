@@ -1043,10 +1043,12 @@ class ReportExecutor(BaseExecutor):
         limit = min(visual_query.get("limit", 100) or step_definition.get("sql_limit", 100), 10000)
 
         session = db
+        owned_session = False
         if not session:
             session = async_session_factory()
             if hasattr(session, '__aenter__'):
                 session = await session.__aenter__()
+            owned_session = True
 
         try:
             result = await run_visual(
@@ -1060,34 +1062,27 @@ class ReportExecutor(BaseExecutor):
                 limit=limit,
                 offset=0,
             )
-
-            return {
-                "report_type": "sql_query",
-                "title": title,
-                "visual_query": True,
-                "table": table,
-                "columns": [],
-                "rows": result.get("items", []),
-                "row_count": result.get("total", 0),
-                "limit": limit,
-                "executed_at": datetime.utcnow().isoformat(),
-            }
-        except Exception as e:
-            return {
-                "report_type": "sql_query",
-                "title": title,
-                "visual_query": True,
-                "table": table,
-                "columns": [],
-                "rows": [],
-                "row_count": 0,
-                "limit": limit,
-                "error": str(e),
-                "executed_at": datetime.utcnow().isoformat(),
-            }
         finally:
-            if not db and hasattr(session, 'close'):
+            # Release a session we opened ourselves; the caller's session is
+            # owned by the engine.
+            if owned_session and hasattr(session, 'close'):
                 await session.close()
+
+        # L2: let execution errors propagate so the engine marks the step failed
+        # instead of silently returning an error dict. The engine treats a
+        # returned dict as success and spreads it into run.input_data, so a
+        # failing visual-query report was previously swallowed.
+        return {
+            "report_type": "sql_query",
+            "title": title,
+            "visual_query": True,
+            "table": table,
+            "columns": [],
+            "rows": result.get("items", []),
+            "row_count": result.get("total", 0),
+            "limit": limit,
+            "executed_at": datetime.utcnow().isoformat(),
+        }
 
     async def _execute_sql(self, title: str, step_definition: Dict[str, Any], input_data: Dict[str, Any], db: Optional[AsyncSession]) -> Dict[str, Any]:
         """Execute raw SQL via shared query_executor service (Phase 4).

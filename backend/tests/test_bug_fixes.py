@@ -636,6 +636,26 @@ class TestL2_ReportExecutorErrorHandling:
             # L2 fix: ReportExecutor now raises ValueError consistently on errors
             pass
 
+    @pytest.mark.asyncio
+    async def test_visual_query_report_raises_on_error(self, db_session):
+        """L2: a visual-query report that fails must raise (not return an error
+        dict). The engine treats a returned dict as success and spreads it into
+        run.input_data, so swallowing the error here would leave a failed report
+        looking like a completed step."""
+        from app.services.step_executors import ReportExecutor
+
+        executor = ReportExecutor()
+        with pytest.raises(ValueError):
+            await executor.execute(
+                input_data={},
+                step_definition={
+                    "report_type": "table",
+                    "title": "Test",
+                    "visual_query": {"table": "nonexistent_table_xyz", "filters": []},
+                },
+                db=db_session,
+            )
+
 
 class TestE1_RequestIdMiddleware:
     """E1: Request ID middleware is registered."""
