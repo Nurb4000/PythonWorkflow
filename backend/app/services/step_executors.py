@@ -1618,7 +1618,7 @@ class SubWorkflowExecutor(BaseExecutor):
                 "run_id": final_run.id,
                 "status": final_run.status,
                 "result_data": final_run.result_data or {},
-                "duration_seconds": (final_run.completed_at - final_run.started_at).total_seconds() if final_run.completed_at and final_run.started_at else None
+                "duration_seconds": final_run.duration_seconds
             }
         else:
             return {

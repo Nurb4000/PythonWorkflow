@@ -1,6 +1,8 @@
 """
 Database models for the workflow system
 """
+from datetime import datetime, timezone
+from typing import Optional
 from sqlalchemy import Column, Integer, String, Text, DateTime, JSON, ForeignKey, Boolean, Table, Index, text as sa_text, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
@@ -95,6 +97,26 @@ class WorkflowRun(Base):
     sla_response_met = Column(Boolean, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 5: True=met, False=breached, None=not yet evaluated
     sla_resolution_met = Column(Boolean, nullable=True)  # SERVICE_MANAGEMENT_PLAN Phase 5
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    @property
+    def duration_seconds(self) -> Optional[float]:
+        """Wall-clock seconds from start to completion, or None if incomplete.
+
+        ``started_at``/``completed_at`` are ``timestamptz`` columns that can load
+        back as naive or tz-aware depending on how they were inserted (a naive
+        ``utcnow()`` vs an aware ``func.now()``/timeout path). Subtracting mixed
+        flavors raises ``TypeError``, so both operands are normalized to UTC-aware
+        before the arithmetic.
+        """
+        if not self.started_at or not self.completed_at:
+            return None
+        started = self.started_at
+        if started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        completed = self.completed_at
+        if completed.tzinfo is None:
+            completed = completed.replace(tzinfo=timezone.utc)
+        return (completed - started).total_seconds()
 
     # Relationships
     workflow = relationship("Workflow", back_populates="runs")

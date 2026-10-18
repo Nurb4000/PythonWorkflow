@@ -186,8 +186,8 @@ async def get_run_stats(
     # Calculate average duration
     durations = []
     for run in runs:
-        if run.started_at and run.completed_at:
-            duration = (run.completed_at - run.started_at).total_seconds()
+        duration = run.duration_seconds
+        if duration is not None:
             durations.append(duration)
     
     avg_duration = sum(durations) / len(durations) if durations else 0.0
