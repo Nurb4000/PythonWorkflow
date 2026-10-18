@@ -1047,6 +1047,42 @@ class TestTimeout:
         assert run.status == "completed"
 
 
+class TestTimeoutTimezone:
+    """Regression for the naive-vs-tz-aware ``TypeError`` in ``_check_timeout``.
+
+    ``WorkflowRun.started_at`` is a ``timestamptz`` column. On a resumed run the
+    value is re-loaded from the DB as tz-aware, while the first-run in-memory
+    value is naive. ``(datetime.utcnow() - aware_started_at)`` raised
+    ``TypeError`` and crashed every timeout check on a resumed run.
+    """
+
+    @pytest.mark.asyncio
+    async def test_aware_started_at_not_timed_out(self, engine, session):
+        from datetime import datetime, timedelta, timezone
+        started = datetime.now(timezone.utc) - timedelta(seconds=1)
+        run = SimpleNamespace(timeout_seconds=3600, started_at=started)
+        # Must not raise TypeError (offset-naive minus offset-aware).
+        assert await engine._check_timeout(session, run) is False
+
+    @pytest.mark.asyncio
+    async def test_naive_started_at_not_timed_out(self, engine, session):
+        from datetime import datetime, timedelta
+        started = datetime.utcnow() - timedelta(seconds=1)
+        run = SimpleNamespace(timeout_seconds=3600, started_at=started)
+        assert await engine._check_timeout(session, run) is False
+
+    @pytest.mark.asyncio
+    async def test_aware_started_at_timed_out(self, engine, session, monkeypatch):
+        from datetime import datetime, timedelta, timezone
+        started = datetime.now(timezone.utc) - timedelta(seconds=7200)  # 2h ago
+        run = SimpleNamespace(id=999, timeout_seconds=60, started_at=started)
+        monkeypatch.setattr(we_module, "notify_admin", lambda *a, **k: None)
+        assert await engine._check_timeout(session, run) is True
+        assert run.status == "timeout"
+        # completed_at stamped as tz-aware too.
+        assert run.completed_at.tzinfo is not None
+
+
 class TestRetries:
     @pytest.mark.asyncio
     async def test_step_retry_on_failure(self, engine, session):

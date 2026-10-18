@@ -428,12 +428,19 @@ class WorkflowEngine:
         """Check if the run has exceeded its timeout. Returns True if timed out."""
         if run.timeout_seconds <= 0:
             return False
-        
-        elapsed = (datetime.utcnow() - run.started_at).total_seconds()
+
+        started = run.started_at
+        # ``started_at`` is a timestamptz column. On the first run it is set in
+        # memory as a naive datetime; on a resumed run it is re-loaded from the
+        # DB as tz-aware. Normalize to aware so the subtraction below can't raise
+        # ``TypeError: can't compare offset-naive and offset-aware datetimes``.
+        if started is not None and started.tzinfo is None:
+            started = started.replace(tzinfo=timezone.utc)
+        elapsed = (datetime.now(timezone.utc) - started).total_seconds()
         if elapsed > run.timeout_seconds:
             run.status = "timeout"
             run.error_message = f"Run timed out after {run.timeout_seconds} seconds (elapsed: {elapsed:.1f}s)"
-            run.completed_at = datetime.utcnow()
+            run.completed_at = datetime.now(timezone.utc)
             await db.commit()
             
             notify_admin(
