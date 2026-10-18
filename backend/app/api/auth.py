@@ -256,9 +256,7 @@ async def change_password(
     if len(new_password) < 8:
         raise HTTPException(status_code=400, detail="New password must be at least 8 characters")
 
-    from passlib.context import CryptContext
-    pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
-
+    # pwd_context is imported at module level (native bcrypt via auth_service).
     if not pwd_context.verify(old_password, current_user.password_hash):
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 

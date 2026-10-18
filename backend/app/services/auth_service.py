@@ -8,7 +8,7 @@ import secrets
 from typing import Optional, List, Dict, Any
 from datetime import datetime, timedelta, timezone
 from jose import JWTError, jwt
-from passlib.context import CryptContext
+import bcrypt
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
 from sqlalchemy.orm import selectinload
@@ -18,7 +18,42 @@ from app.core.config import settings
 
 logger = logging.getLogger(__name__)
 
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# Native bcrypt backend. passlib is dropped because bcrypt 4.x removed the
+# low-level C API passlib depends on (it emits "(trapped) error reading bcrypt
+# version" and can no longer detect the backend version). Hashing/verifying
+# directly against `bcrypt` removes that fragility while staying fully
+# compatible with existing `$2b$` hashes produced by passlib or any other tool.
+BCRYPT_ROUNDS = 12
+
+
+def _hash_password(password: str) -> str:
+    return bcrypt.hashpw(password.encode("utf-8"), bcrypt.gensalt(rounds=BCRYPT_ROUNDS)).decode("utf-8")
+
+
+def _verify_password(password: str, hashed: str) -> bool:
+    try:
+        return bcrypt.checkpw(password.encode("utf-8"), hashed.encode("utf-8"))
+    except (ValueError, TypeError):
+        # Malformed/None stored hash — mirrors passlib's verify() returning False.
+        return False
+
+
+class NativePwdContext:
+    """Minimal CryptContext-compatible shim backed by native bcrypt.
+
+    Exposes the same ``hash``/``verify`` surface the old passlib context did so
+    call sites (and existing tests) can keep using ``pwd_context.hash(...)`` /
+    ``pwd_context.verify(...)`` unchanged.
+    """
+
+    def hash(self, password: str) -> str:
+        return _hash_password(password)
+
+    def verify(self, password: str, hashed: str) -> bool:
+        return _verify_password(password, hashed)
+
+
+pwd_context = NativePwdContext()
 
 
 def _utcnow() -> datetime:
@@ -601,8 +636,8 @@ class AuthService:
                               permissions: List[str]) -> APIToken:
         """Create an API token for a user.
 
-        L2 fix: uses bcrypt (via passlib) instead of unsalted SHA256 so that
-        a DB breach doesn't allow offline brute-force of the raw tokens.
+        L2 fix: uses bcrypt instead of unsalted SHA256 so that a DB breach
+        doesn't allow offline brute-force of the raw tokens.
         """
         import secrets
 

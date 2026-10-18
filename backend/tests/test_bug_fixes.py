@@ -143,14 +143,13 @@ class TestC4_CreatedByParameter:
     async def test_update_workflow_deprecation_sets_deprecated_by(self, db_session):
         from app.services.workflow_engine import WorkflowEngine
         from app.models.auth import User
-        from passlib.context import CryptContext
+        from app.services.auth_service import pwd_context
 
         # Seed users so foreign key constraints are satisfied
-        pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
         user1 = User(id=1, username="test_user1", email="t1@test.com",
-                      password_hash=pwd_ctx.hash("pass"), role="user")
+                     password_hash=pwd_context.hash("pass"), role="user")
         user2 = User(id=42, username="test_user2", email="t2@test.com",
-                      password_hash=pwd_ctx.hash("pass"), role="admin")
+                      password_hash=pwd_context.hash("pass"), role="admin")
         db_session.add(user1)
         db_session.add(user2)
         await db_session.flush()
@@ -173,12 +172,11 @@ class TestC4_CreatedByParameter:
     async def test_update_workflow_without_created_by(self, db_session):
         from app.services.workflow_engine import WorkflowEngine
         from app.models.auth import User
-        from passlib.context import CryptContext
+        from app.services.auth_service import pwd_context
 
         # Seed user so foreign key constraints are satisfied
-        pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
         user1 = User(id=1, username="test_user1", email="t1@test.com",
-                      password_hash=pwd_ctx.hash("pass"), role="user")
+                     password_hash=pwd_context.hash("pass"), role="user")
         db_session.add(user1)
         await db_session.flush()
 
@@ -579,12 +577,11 @@ class TestFG1_AuditTrail:
         from app.api.workflows import _log_audit
         from app.models.auth import AuditLog, User
         from sqlalchemy import select as sa_select
-        from passlib.context import CryptContext
+        from app.services.auth_service import pwd_context
 
         # Seed user so foreign key constraint is satisfied
-        pwd_ctx = CryptContext(schemes=["bcrypt"], deprecated="auto")
         user = User(id=1, username="audit_test", email="audit@test.com",
-                     password_hash=pwd_ctx.hash("pass"), role="admin")
+                     password_hash=pwd_context.hash("pass"), role="admin")
         db_session.add(user)
         await db_session.flush()
 

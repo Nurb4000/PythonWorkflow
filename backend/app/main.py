@@ -246,8 +246,7 @@ async def create_default_admin():
             if not users:
                 # No users exist, create default admin
                 import secrets
-                from passlib.context import CryptContext
-                pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+                from app.services.auth_service import pwd_context
 
                 # H3: high-entropy random password (24-char URL-safe token)
                 bootstrap_password = secrets.token_urlsafe(18)  # ~128 bits of entropy
