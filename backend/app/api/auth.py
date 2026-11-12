@@ -414,9 +414,19 @@ async def update_user(
 ):
     """Update user (admin only)"""
     import json
+    # Keys handled as explicit query params above. Anything else in the JSON
+    # body is treated as custom_data, but these reserved keys must be stripped so
+    # they are not silently persisted into custom_data and later echoed back by
+    # list_users (findings #3).
+    _RESERVED_UPDATE_KEYS = frozenset(
+        {"email", "full_name", "role", "roles", "is_active", "mfa_enabled", "password"}
+    )
     try:
         body = await request.json()
-        custom_data = body if body else None
+        if body:
+            custom_data = {k: v for k, v in body.items() if k not in _RESERVED_UPDATE_KEYS}
+        else:
+            custom_data = None
 
         # Parse roles JSON array if provided
         parsed_roles = None
