@@ -46,6 +46,9 @@ class User(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
     last_login = Column(DateTime(timezone=True))
+    # Timestamp of the most recent password change. Access tokens issued before
+    # this instant are treated as revoked on password change (findings #2).
+    password_changed_at = Column(DateTime(timezone=True), nullable=True)
     custom_data = Column(JSON, default=dict)  # Custom field extensions
 
     # Relationships (defined after all models are loaded)

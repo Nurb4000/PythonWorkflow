@@ -5,14 +5,14 @@ from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query,
 from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
 from sqlalchemy.ext.asyncio import AsyncSession
-from sqlalchemy import select
+from sqlalchemy import select, update
 from sqlalchemy.orm import selectinload
 from typing import Optional, List
 from datetime import datetime
 
 from app.core.database import get_db
 from app.services.auth_service import auth_service, pwd_context, _utcnow, _as_aware
-from app.models.auth import User, Group
+from app.models.auth import User, Group, APIToken
 from app.models.schemas import Workflow
 from app.schemas.workflow import AuditLogEntry
 
@@ -261,6 +261,16 @@ async def change_password(
         raise HTTPException(status_code=400, detail="Current password is incorrect")
 
     current_user.password_hash = pwd_context.hash(new_password)
+    # Invalidate every session/token issued before this moment (findings #2):
+    # - access tokens: verify_token rejects any token with iat < password_changed_at
+    # - refresh tokens: retire all active refresh tokens for the user
+    # - API tokens: deactivate all of the user's API tokens
+    current_user.password_changed_at = _utcnow()
+
+    await auth_service.revoke_all_user_refresh_tokens(db, current_user.id)
+    await db.execute(
+        update(APIToken).where(APIToken.user_id == current_user.id).values(is_active=False)
+    )
     await db.commit()
 
     return {"message": "Password changed successfully"}
@@ -348,7 +358,7 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
 async def check_setup_required(db: AsyncSession = Depends(get_db)):
     """Check if setup is required (no users exist)"""
     from app.models.auth import User
-    from sqlalchemy import select
+    from sqlalchemy import select, update
     
     stmt = select(User)
     result = await db.execute(stmt)

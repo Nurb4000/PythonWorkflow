@@ -273,7 +273,14 @@ class AuthService:
         else:
             expire = datetime.utcnow() + timedelta(minutes=settings.access_token_expire_minutes)
 
-        to_encode.update({"exp": expire, "jti": secrets.token_urlsafe(16)})
+        issued_at = datetime.utcnow()
+        to_encode.update(
+            {
+                "exp": expire,
+                "iat": issued_at,
+                "jti": secrets.token_urlsafe(16),
+            }
+        )
         encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
         return encoded_jwt
 
@@ -287,13 +294,41 @@ class AuthService:
         except JWTError:
             return None
 
-    async def is_token_revoked(self, db: AsyncSession, jti: Optional[str]) -> bool:
-        """True if ``jti`` has been recorded in the revocation blocklist."""
+    async def is_token_revoked(
+        self,
+        db: AsyncSession,
+        jti: Optional[str],
+        payload: Optional[dict] = None,
+    ) -> bool:
+        """True if ``jti`` has been recorded in the revocation blocklist.
+
+        Also returns True when the token was issued before the owning user's
+        ``password_changed_at`` (findings #2): changing a password invalidates
+        every access token that was outstanding at the time, even though JWTs
+        are stateless. ``payload`` must carry ``sub`` (user id) and ``iat``
+        (issued-at); both are present on tokens issued by :meth:`create_access_token`.
+        """
         if not jti:
             return False
         stmt = select(TokenRevocation.id).where(TokenRevocation.jti == jti)
         result = await db.execute(stmt)
-        return result.scalar_one_or_none() is not None
+        if result.scalar_one_or_none() is not None:
+            return True
+
+        # User-scoped revocation: an access token issued before the password was
+        # last changed is treated as revoked.
+        if payload is not None:
+            sub = payload.get("sub")
+            iat = payload.get("iat")
+            if sub is not None and iat is not None:
+                user_id = int(sub)
+                row = await db.execute(
+                    select(User.password_changed_at).where(User.id == user_id)
+                )
+                changed_at = row.scalar_one_or_none()
+                if changed_at is not None and iat < changed_at:
+                    return True
+        return False
 
     async def verify_token(self, db: AsyncSession, token: str) -> Optional[dict]:
         """Verify a JWT: signature + expiry, then reject if revoked.
@@ -305,7 +340,7 @@ class AuthService:
         payload = self.decode_token(token)
         if payload is None:
             return None
-        if await self.is_token_revoked(db, payload.get("jti")):
+        if await self.is_token_revoked(db, payload.get("jti"), payload):
             return None
         return payload
 
