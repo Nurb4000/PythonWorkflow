@@ -27,10 +27,22 @@ async def export_table(
     if table_name not in QUERYABLE_TABLES:
         raise HTTPException(status_code=400, detail=f"Unknown table: {table_name}")
 
+    # Enforce table-level view access (same guard as /data-query/build). Without
+    # this any developer could dump any queryable table; combined with the
+    # secret-column denylist in the service this closes findings #26.
+    from app.services.query_security_service import query_security_service
+    has_access = await query_security_service.validate_query_access(
+        db, current_user, table_name, "view"
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail=f"Access denied to table: {table_name}")
+
     col_list = [c.strip() for c in columns.split(",")] if columns else None
 
     try:
-        csv_content = await export_table_to_csv(db, table_name, col_list, limit)
+        csv_content = await export_table_to_csv(
+            db, table_name, col_list, limit, current_user=current_user
+        )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -57,6 +69,14 @@ async def export_query(
     if table_name not in QUERYABLE_TABLES:
         raise HTTPException(status_code=400, detail=f"Unknown table: {table_name}")
 
+    # Enforce table-level view access before running the query/export.
+    from app.services.query_security_service import query_security_service
+    has_access = await query_security_service.validate_query_access(
+        db, current_user, table_name, "view"
+    )
+    if not has_access:
+        raise HTTPException(status_code=403, detail=f"Access denied to table: {table_name}")
+
     try:
         csv_content = await export_query_to_csv(
             db,
@@ -66,6 +86,7 @@ async def export_query(
             sort_by=query_body.get("sort_by"),
             sort_order=query_body.get("sort_order", "asc"),
             limit=min(query_body.get("limit", 10000), 100000),
+            current_user=current_user,
         )
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))

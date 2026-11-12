@@ -17,6 +17,34 @@ from app.models.cmdb import CIType, ConfigurationItem, CIRelationship, CIHistory
 
 logger = logging.getLogger(__name__)
 
+# Columns that must NEVER leave the server through an export path, regardless of
+# whether a caller explicitly requests them or has table view access. This is a
+# hard denylist (defense in depth) on top of the per-user field-level RBAC applied
+# by ``filter_query_results``. See findings #26.
+_SECRET_EXPORT_COLUMNS: frozenset = frozenset(
+    {
+        "password_hash",
+        "ldap_dn",
+        "custom_data",
+        "refresh_token",
+        "api_token",
+        "token",
+        "secret",
+        "private_key",
+        "auth_token",
+    }
+)
+
+
+def strip_secret_export_columns(columns: List[str]) -> List[str]:
+    """Return ``columns`` with any secret/sensitive column removed.
+
+    Pure helper so the denylist can be unit-tested without a database and reused
+    by every CSV export path. Order is preserved.
+    """
+    return [c for c in columns if c not in _SECRET_EXPORT_COLUMNS]
+
+
 # Registry of queryable tables: table_name -> (ORM model, display name)
 QUERYABLE_TABLES: Dict[str, tuple] = {
     "tasks": (Task, "Tasks"),
@@ -485,8 +513,15 @@ async def export_table_to_csv(
     table_name: str,
     columns: Optional[List[str]] = None,
     limit: int = 10000,
+    current_user: Any = None,
 ) -> str:
-    """Export a table to CSV string."""
+    """Export a table to CSV string.
+
+    Secret columns (``password_hash``, ``ldap_dn``, ``custom_data``, tokens, …)
+    are always stripped even when explicitly requested (findings #26). When
+    ``current_user`` is provided, field-level RBAC further trims the columns to
+    those the user is allowed to see.
+    """
     if table_name not in QUERYABLE_TABLES:
         raise ValueError(f"Unknown table: {table_name}")
 
@@ -494,21 +529,34 @@ async def export_table_to_csv(
     all_cols = [c.name for c in model.__table__.columns]
     export_cols = columns or all_cols
     export_cols = [c for c in export_cols if c in all_cols]
+    # Hard denylist: never export sensitive columns, even if explicitly requested.
+    export_cols = strip_secret_export_columns(export_cols)
 
     stmt = select(model).limit(limit)
     result = await db.execute(stmt)
     rows = result.scalars().all()
 
+    def _serialize(value: Any) -> Any:
+        return value.isoformat() if hasattr(value, "isoformat") else value
+
+    # Build dict rows so field-level RBAC can trim columns consistently with the
+    # query export path.
+    row_dicts = [{c: _serialize(row.__getattribute__(c)) for c in export_cols} for row in rows]
+
+    if current_user is not None:
+        from app.services.query_security_service import query_security_service
+        row_dicts = await query_security_service.filter_query_results(
+            db, current_user, table_name, row_dicts, "view"
+        )
+
+    # Header must match whatever columns survived filtering.
+    written_cols = list(row_dicts[0].keys()) if row_dicts else export_cols
+
     output = io.StringIO()
     writer = csv.writer(output)
-    writer.writerow(export_cols)
-
-    for row in rows:
-        writer.writerow([
-            row.__getattribute__(c).isoformat() if hasattr(row.__getattribute__(c), 'isoformat')
-            else row.__getattribute__(c)
-            for c in export_cols
-        ])
+    writer.writerow(written_cols)
+    for d in row_dicts:
+        writer.writerow([d.get(c) for c in written_cols])
 
     return output.getvalue()
 
@@ -521,8 +569,15 @@ async def export_query_to_csv(
     sort_by: Optional[str] = None,
     sort_order: str = "asc",
     limit: int = 10000,
+    current_user: Any = None,
 ) -> str:
-    """Execute a visual query and export results to CSV."""
+    """Execute a visual query and export results to CSV.
+
+    ``execute_visual_query`` returns every column (field-level RBAC is normally
+    applied by the endpoint), so here we (1) trim to the caller's visible fields
+    when ``current_user`` is given and (2) strip secret columns unconditionally
+    (findings #26).
+    """
     result = await execute_visual_query(
         db, table_name, filters, logic, sort_by, sort_order, limit, 0
     )
@@ -530,12 +585,25 @@ async def export_query_to_csv(
     if not result["items"]:
         return ""
 
-    columns = list(result["items"][0].keys())
+    items = result["items"]
+    if current_user is not None:
+        from app.services.query_security_service import query_security_service
+        items = await query_security_service.filter_query_results(
+            db, current_user, table_name, items, "view"
+        )
+
+    # Hard denylist: drop sensitive keys from every row.
+    items = [
+        {k: v for k, v in item.items() if k not in _SECRET_EXPORT_COLUMNS}
+        for item in items
+    ]
+
+    columns = list(items[0].keys())
     output = io.StringIO()
     writer = csv.writer(output)
     writer.writerow(columns)
 
-    for item in result["items"]:
+    for item in items:
         writer.writerow([
             val.isoformat() if hasattr(val, 'isoformat') else val
             for val in item.values()
