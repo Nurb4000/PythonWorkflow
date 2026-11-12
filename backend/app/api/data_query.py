@@ -78,12 +78,14 @@ async def run_visual_query(
             custom_field_scope_id=query_body.get("custom_field_scope_id"),
         )
         
-        # Filter results based on visible fields
-        if "results" in result:
-            result["results"] = await query_security_service.filter_query_results(
-                db, current_user, table_name, result["results"], "view"
+        # Filter results based on visible fields. execute_visual_query returns
+        # its rows under the "items" key (not "results"), so guard on that to
+        # actually apply field-level RBAC (findings #11).
+        if "items" in result:
+            result["items"] = await query_security_service.filter_query_results(
+                db, current_user, table_name, result["items"], "view"
             )
-        
+
         return result
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e))
