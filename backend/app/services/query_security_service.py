@@ -65,7 +65,7 @@ class QuerySecurityService:
         """Get list of tables user has view access to."""
         from app.models.role_permissions import RolePermission
         from sqlalchemy import select
-        
+
         # Get all permissions for user's roles
         stmt = select(RolePermission.table_name).where(
             RolePermission.role_id.in_([r.id for r in user.roles]) if user.roles else [],
@@ -74,8 +74,23 @@ class QuerySecurityService:
         )
         result = await db.execute(stmt)
         tables = result.scalars().all()
-        
+
         return list(set(tables)) if tables else []
+
+    # --- Passthroughs to RolePermissionService -------------------------------
+    # Several callers (CMDB list/detail, form detail) reach for these on
+    # ``query_security_service``. They are defined on ``role_permission_service``,
+    # so expose thin delegators here to keep a single entry point and avoid the
+    # AttributeError -> HTTP 500 that occurred when the method was missing
+    # (findings #14 / #18).
+
+    async def get_visible_fields(self, db, user, table_name: str) -> list:
+        from app.models.role_permissions import role_permission_service
+        return await role_permission_service.get_visible_fields(db, user, table_name)
+
+    async def get_editable_fields(self, db, user, table_name: str) -> list:
+        from app.models.role_permissions import role_permission_service
+        return await role_permission_service.get_editable_fields(db, user, table_name)
 
 
 query_security_service = QuerySecurityService()
