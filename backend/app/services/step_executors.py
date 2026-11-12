@@ -2,8 +2,11 @@
 Step executors for different workflow step types
 """
 import asyncio
+import functools
 import logging
+import multiprocessing as mp
 import re
+import resource
 from typing import Dict, Any, Optional
 import httpx
 from datetime import datetime
@@ -804,6 +807,28 @@ def _sandbox_isinstance(obj: Any, cls_tuple: Any) -> bool:
     return isinstance(real_obj, cls_tuple)
 
 
+def _custom_code_worker(code: str, input_data: Dict[str, Any], result_q, timeout: int) -> None:
+    """Run custom code inside a child process and report the result via ``result_q``.
+
+    Resource limits (CPU time + address space) are applied *inside* the child so a
+    runaway step cannot exhaust host resources. See findings/PythonWorkflow-Findings.md #1.
+    """
+    try:
+        # Hard CPU-time ceiling with a small grace margin above the configured
+        # timeout; an address-space cap bounds memory-based DoS.
+        resource.setrlimit(resource.RLIMIT_CPU, (timeout + 5, timeout + 5))
+        resource.setrlimit(resource.RLIMIT_AS, (512 * 1024 * 1024, 512 * 1024 * 1024))
+    except (ValueError, OSError):
+        # Limits are best-effort; some environments restrict what we can set.
+        pass
+
+    try:
+        data = CustomCodeExecutor()._run_code(code, input_data, timeout)
+        result_q.put(("ok", data))
+    except BaseException as exc:  # noqa: BLE001 - re-raised in the parent
+        result_q.put(("err", exc))
+
+
 class CustomCodeExecutor(BaseExecutor):
     """Execute custom Python code in a thread with timeout (P2.4).
 
@@ -862,7 +887,11 @@ class CustomCodeExecutor(BaseExecutor):
             "hasattr": lambda obj, attr: _RestrictedProxy(obj)._hasattr(attr),
             "setattr": lambda obj, attr, value: _RestrictedProxy(obj)._setattr(attr, value),
             "print": print,
-            "type": type,
+            # NOTE: ``type`` is intentionally omitted. Exposing the real
+            # ``type`` builtin lets user code obtain a genuine class object
+            # (e.g. ``type("")`` -> ``str``) whose ``__subclasses__`` /
+            # ``__mro__`` are not proxied, enabling the classic sandbox-escape
+            # chain to reach ``os.system``. See findings/PythonWorkflow-Findings.md #1.
             "repr": repr,
             "ord": ord,
             "chr": chr,
@@ -903,10 +932,32 @@ class CustomCodeExecutor(BaseExecutor):
 
         timeout = step_definition.get("timeout", self.DEFAULT_TIMEOUT)
 
-        # Run in thread to avoid blocking event loop
+        # Run in a child process so we can enforce a *hard* wall-clock timeout
+        # (terminate a runaway / infinite-loop step) and apply per-process
+        # resource limits. run_in_executor keeps the event loop free while the
+        # blocking Process.join(timeout) runs in a thread-pool worker.
+        def _run_blocking():
+            ctx = mp.get_context("fork")
+            result_q = ctx.Queue()
+            proc = ctx.Process(target=_custom_code_worker, args=(code, input_data, result_q, timeout))
+            proc.start()
+            proc.join(timeout)
+            if proc.is_alive():
+                proc.terminate()
+                proc.join()
+                raise TimeoutError(
+                    f"Custom code step exceeded timeout of {timeout}s and was terminated"
+                )
+            status, payload = result_q.get()
+            if status == "err":
+                raise payload
+            return payload
+
         loop = asyncio.get_running_loop()
         try:
-            output = await loop.run_in_executor(None, lambda: self._run_code(code, input_data, timeout))
+            output = await loop.run_in_executor(None, _run_blocking)
+        except TimeoutError:
+            raise
         except Exception as e:
             raise ValueError(f"Custom code execution failed: {str(e)}")
 
