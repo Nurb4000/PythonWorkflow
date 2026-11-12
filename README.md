@@ -46,7 +46,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Timeout & Retries**: Configurable run timeouts and per-step retry logic
 - **Failure Hooks**: HTTP callbacks on step/run failure
 
-### Executors (13 types)
+### Executors (16 types)
 | Type | Description |
 |------|-------------|
 | `api_call` | HTTP requests with SSRF protection |
@@ -62,6 +62,9 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 | `report` | Renders table/graph reports |
 | `readonly_form` | Displays read-only forms |
 | `programmable_delay` | SQL WAITFOR/SELECT SLEEP/cron delays |
+| `cmdb_lookup` | Look up CMDB configuration items by type and field criteria |
+| `cmdb_update` | Update a CMDB configuration item by ID or lookup |
+| `sub_workflow` | Synchronous sub-workflow invocation (call, wait, merge result) |
 
 ### Human-in-the-Loop
 - **Task System**: Open → Owned → Completed → Closed lifecycle
@@ -168,7 +171,7 @@ Services:
 - Frontend: http://localhost:9000
 - Backend API: http://localhost:6000
 - API Docs: http://localhost:6000/docs
-- Default admin login (created on first run): `admin` / `admin123`
+- Default admin user (created on first run if no users exist): username `admin`, password a high-entropy random `token_urlsafe(18)` (~128 bits) that is logged **once, masked** (`first4****last4`). Retrieve it from the startup logs and change immediately via `PUT /auth/users/{id}`. If the startup log is not captured, there is no way to recover the password.
 
 ### Local Development
 
@@ -357,7 +360,7 @@ PythonWorkflow/
 ## Next Steps
 
 - **P7**: Production deployment hardening (secrets management, rate limiting, audit logging)
-- **P8**: Advanced features (sub-workflows, parallel branches with synchronization, error handling patterns)
+- **P8**: Advanced features — **sub-workflows are now shipped** (`sub_workflow` executor: synchronous call-wait-merge); remaining work is parallel branches with synchronization and standardized error-handling patterns
 - **P9**: Performance optimization (connection pooling, query optimization, caching)
 
 See `docs/` for reference documentation (`docker-deployment.md`, `scheduling.md`, `entry-forms-and-tasks.md`) and the active plan (`incident-change-plan.md`). Completed feature plans are removed once shipped; notable history lives in `CHANGELOG.md`.
