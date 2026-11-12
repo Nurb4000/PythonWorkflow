@@ -125,10 +125,23 @@ def resolve_project_root() -> Path:
     Walks up from the app package so it works both in the dev checkout
     (``<repo>/backend/app/...``) and inside the container where the code is
     mounted at ``/app/...`` and the knowledge base sits at ``/app/knowledge-base``.
+
+    Robustness (findings #36): prefer a ``knowledge-base`` that actually has
+    content. Without this, a stray *empty* ``backend/knowledge-base/`` directory
+    in a dev checkout shadows the real repo-root ``knowledge-base/`` and the
+    resolver returns the wrong root — so ``template_service`` and ``ai_service``
+    silently load zero templates / KB prompts (no error). Falls back to the
+    closest ``knowledge-base`` dir, then the historical default, if none are
+    populated.
     """
     current = Path(__file__).resolve().parent  # app/core
+    fallback = None
     while current != current.parent:
-        if (current / "knowledge-base").is_dir():
-            return current
+        kb = current / "knowledge-base"
+        if kb.is_dir():
+            if any(kb.iterdir()):  # populated knowledge-base wins
+                return current
+            if fallback is None:  # remember the closest empty one as a fallback
+                fallback = current
         current = current.parent
-    return Path(__file__).resolve().parent.parent.parent.parent
+    return fallback or Path(__file__).resolve().parent.parent.parent.parent
