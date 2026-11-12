@@ -41,13 +41,23 @@ def _check_rate_limit(key: str) -> None:
 
 
 def verify_webhook_secret(x_webhook_secret: Optional[str]) -> None:
-    """Verify webhook secret if configured."""
+    """Verify the webhook secret.
+
+    Fail closed (findings #30): if no secret is configured, reject the trigger
+    instead of silently allowing unauthenticated workflow triggering. Previously
+    an empty ``WEBHOOK_SECRET`` meant anyone who knew a ``workflow_id`` could run
+    any active workflow anonymously — including ``custom_code`` steps (finding #1,
+    OS command execution) or network/DB steps (exfiltration, SSRF, DoS).
+    """
     if not settings.webhook_secret:
-        return  # Secret not configured, skip verification
-    
+        raise HTTPException(
+            status_code=401,
+            detail="Webhook secret not configured; set WEBHOOK_SECRET to enable webhooks",
+        )
+
     if not x_webhook_secret:
         raise HTTPException(status_code=401, detail="Missing webhook secret")
-    
+
     if not hmac.compare_digest(x_webhook_secret, settings.webhook_secret):
         raise HTTPException(status_code=403, detail="Invalid webhook secret")
 

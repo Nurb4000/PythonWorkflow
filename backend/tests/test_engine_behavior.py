@@ -911,19 +911,26 @@ class TestHumanStep:
 class TestWebhooks:
     @pytest.mark.asyncio
     async def test_webhook_secret_verification_without_config(self, monkeypatch):
-        """Test webhook secret verification when not configured."""
+        """Test webhook secret verification when not configured.
+
+        Findings #30: verification now FAILS CLOSED. With no WEBHOOK_SECRET set,
+        triggers are rejected with 401 rather than silently allowed — so anyone
+        who knew a workflow_id could not run workflows anonymously.
+        """
         from app.api.webhooks import verify_webhook_secret
         from fastapi import HTTPException
-        
+
         # Clear the secret
         monkeypatch.setattr("app.api.webhooks.settings.webhook_secret", "")
-        
-        # Should not raise any exception
-        try:
+
+        # Must raise 401 (fail closed), whether or not a secret is presented.
+        with pytest.raises(HTTPException) as none_exc:
             verify_webhook_secret(None)
+        assert none_exc.value.status_code == 401
+
+        with pytest.raises(HTTPException) as present_exc:
             verify_webhook_secret("any-value")
-        except HTTPException:
-            pytest.fail("Should not raise when secret not configured")
+        assert present_exc.value.status_code == 401
     
     @pytest.mark.asyncio
     async def test_webhook_secret_verification_invalid(self, monkeypatch):

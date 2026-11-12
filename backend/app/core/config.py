@@ -107,7 +107,8 @@ class Settings(BaseSettings):
     smtp_tls: bool = True
     admin_notify_email: str = ""
     
-    # Webhook authentication (leave empty to disable secret verification)
+    # Webhook authentication. Verification now fails closed: if this is empty,
+    # POST /webhook/{workflow_id} rejects triggers with 401 (findings #30).
     webhook_secret: str = ""
     
     class Config:
