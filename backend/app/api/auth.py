@@ -619,6 +619,9 @@ async def set_user_groups(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/auth/groups/{group_id}/users/{user_id}")
 async def add_user_to_group(
     group_id: int,
     user_id: int,
