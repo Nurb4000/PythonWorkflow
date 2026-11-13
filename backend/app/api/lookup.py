@@ -12,6 +12,27 @@ from app.services.lookup_service import lookup_service
 
 router = APIRouter(prefix="/lookup", tags=["lookup"])
 
+# Roles permitted to use the free lookup directory endpoints. Matches the permission
+# model used for task operations (tasks.py) and implements findings #29: regular
+# portal users must not be able to enumerate the full user/CI directory (incl. role).
+LOOKUP_ROLE_ALLOWLIST = ("admin", "developer", "staff")
+
+
+def _require_lookup_role(current_user: User) -> None:
+    """Raise 403 unless the caller has a role that may use the free lookup endpoints.
+
+    Applied at the endpoint layer only, so the internal form-resolution path
+    (forms.py -> lookup_service.perform_lookup -> lookup_users/lookup_ci_items) stays
+    available to every authenticated role.
+    """
+    if current_user.role not in LOOKUP_ROLE_ALLOWLIST:
+        raise HTTPException(
+            status_code=403,
+            detail=(
+                f"Role '{current_user.role}' is not permitted to use the lookup directory"
+            ),
+        )
+
 
 @router.get("/users")
 async def search_users(
@@ -22,6 +43,7 @@ async def search_users(
     db: AsyncSession = Depends(get_db)
 ):
     """Search users for lookup fields."""
+    _require_lookup_role(current_user)
     results = await lookup_service.lookup_users(db, field, q, limit)
     return {"results": results}
 
@@ -36,6 +58,7 @@ async def search_ci_items(
     db: AsyncSession = Depends(get_db)
 ):
     """Search CI items for lookup fields."""
+    _require_lookup_role(current_user)
     results = await lookup_service.lookup_ci_items(db, type_key, field, q, limit)
     return {"results": results}
 
@@ -48,6 +71,7 @@ async def perform_lookup(
     db: AsyncSession = Depends(get_db)
 ):
     """Perform a lookup and return result."""
+    _require_lookup_role(current_user)
     result = await lookup_service.perform_lookup(db, lookup_config, search_value)
     if not result:
         raise HTTPException(status_code=404, detail="No results found")
