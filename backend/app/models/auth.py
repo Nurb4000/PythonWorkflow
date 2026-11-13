@@ -99,6 +99,12 @@ class APIToken(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     name = Column(String(100), nullable=False)
     token_hash = Column(String(255), nullable=False, unique=True)
+    # Deterministic HMAC-SHA256 index of the plaintext token (see
+    # auth_service.refresh_token_index). Enables O(log n) indexed lookup for
+    # verification instead of scanning every active token with bcrypt (findings #4).
+    # Nullable: tokens created before this column existed have no index and must be
+    # re-issued (their plaintext is unrecoverable from the bcrypt hash).
+    token_index = Column(String(64), index=True, nullable=True)
     permissions = Column(String(500))  # JSON string of allowed actions
     is_active = Column(Boolean, default=True)
     expires_at = Column(DateTime(timezone=True))

@@ -11,7 +11,13 @@ from typing import Optional, List
 from datetime import datetime
 
 from app.core.database import get_db
-from app.services.auth_service import auth_service, pwd_context, _utcnow, _as_aware
+from app.services.auth_service import (
+    auth_service,
+    pwd_context,
+    _utcnow,
+    _as_aware,
+    refresh_token_index,
+)
 from app.models.auth import User, Group, APIToken
 from app.models.schemas import Workflow
 from app.schemas.workflow import AuditLogEntry
@@ -100,10 +106,18 @@ async def check_api_token_cmdb_permission(token: str = Depends(oauth2_scheme), d
     # The previous SHA256 approach could never match the bcrypt-stored
     # APIToken.token_hash values, silently breaking CMDB API-token auth; it also
     # stored/compared tokens with a fast, unsalted hash.
-    result = await db.execute(select(APIToken).where(APIToken.is_active == True))
-    for api_token in result.scalars().all():
-        if not pwd_context.verify(token, api_token.token_hash):
-            continue
+    # L4 fix (findings #4): look the token up by its HMAC index (single indexed
+    # read) instead of bcrypt-verifying every active token, then confirm with one
+    # cheap bcrypt check. This removes the O(n) per-request DoS surface.
+    indexed = refresh_token_index(token)
+    result = await db.execute(
+        select(APIToken).where(
+            APIToken.token_index == indexed,
+            APIToken.is_active == True,
+        )
+    )
+    api_token = result.scalar_one_or_none()
+    if api_token is not None and pwd_context.verify(token, api_token.token_hash):
         if api_token.expires_at and _as_aware(api_token.expires_at) < _utcnow():
             raise HTTPException(status_code=401, detail="API token expired")
         permissions = [p.strip() for p in (api_token.permissions or "").split(",") if p.strip()]

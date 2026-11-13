@@ -694,11 +694,13 @@ class AuthService:
         # bcrypt hash with automatic salt — much slower than SHA256,
         # making offline enumeration of stolen hashes practical only at small scale.
         token_hash = pwd_context.hash(token)
-        
+
         api_token = APIToken(
             user_id=user_id,
             name=name,
             token_hash=token_hash,
+            # Indexed lookup key for O(log n) verification (findings #4).
+            token_index=refresh_token_index(token),
             permissions=",".join(permissions),
             is_active=True,
             expires_at=datetime.utcnow() + timedelta(days=90)
@@ -714,31 +716,37 @@ class AuthService:
     async def verify_api_token(self, db: AsyncSession, token: str) -> Optional[User]:
         """Verify an API token and return the user.
 
-        L2 fix: iterates active tokens and verifies each with bcrypt.
-        Acceptable overhead since verification happens once per request.
+        L2 fix originally iterated every active token and bcrypt-verified each
+        (O(n) slow hashes per request — findings #4). Now it does a single indexed
+        lookup by the token's HMAC index, then one bcrypt check to confirm the
+        candidate (defense in depth: the index is keyed but a single verify guards
+        against any index collision/attack). This turns per-request verification
+        from O(n) bcrypt into one indexed read + one cheap hash.
         """
-        stmt = select(APIToken).where(APIToken.is_active == True)
+        indexed = refresh_token_index(token)
+        stmt = select(APIToken).where(
+            APIToken.token_index == indexed,
+            APIToken.is_active == True,
+        )
         result = await db.execute(stmt)
-        api_tokens = result.scalars().all()
+        api_token = result.scalar_one_or_none()
 
-        api_token = None
-        for t in api_tokens:
-            if pwd_context.verify(token, t.token_hash):
-                api_token = t
-                break
-        
-        if not api_token:
+        if api_token is None:
             return None
-        
+
+        # Confirm with a single bcrypt check.
+        if not pwd_context.verify(token, api_token.token_hash):
+            return None
+
         # Check expiration (expires_at is a timestamptz -> tz-aware; compare
         # against an aware "now" or Postgres-naive values raise TypeError).
         if api_token.expires_at and api_token.expires_at < _utcnow():
             return None
-        
+
         # Update last used
         api_token.last_used_at = datetime.utcnow()
         await db.commit()
-        
+
         # Get user
         stmt = select(User).where(User.id == api_token.user_id)
         result = await db.execute(stmt)
