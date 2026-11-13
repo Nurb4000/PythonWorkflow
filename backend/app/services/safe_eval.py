@@ -136,9 +136,13 @@ def _eval_node(node: ast.AST, data: Dict[str, Any]) -> Any:
     if isinstance(node, ast.Call):
         func = _eval_node(node.func, data)
         args = [_eval_node(a, data) for a in node.args]
+        # node.keywords is a list of ast.keyword nodes (each with .arg/.value). The
+        # previous `zip(node.keywords, node.values)` was wrong: an ast.Call has no
+        # .values attribute, so every function/method call raised AttributeError.
+        # Iterate keywords directly and read the value node from each keyword.
         kwargs = {
-            k.arg: _eval_node(v, data)
-            for k, v in zip(node.keywords, node.values)
+            k.arg: _eval_node(k.value, data)
+            for k in node.keywords
             if k.arg is not None
         }
         _wrap, _unwrap, _RestrictedProxy = _get_proxy_module()

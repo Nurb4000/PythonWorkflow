@@ -1030,6 +1030,14 @@ class WorkflowEngine:
             raise ValueError(f"Subscript slice type {type(node.slice).__name__}")
         if isinstance(node, ast.Attribute):
             obj = self._safe_eval(node.value, data)
+            # Gate dunder access (e.g. __class__.__mro__[1].__subclasses__() /
+            # __globals__) so that fixing the Call handler (#8a) cannot turn condition
+            # steps into an RCE. Legitimate calls (.upper(), .split(), .get()) are not
+            # dunders and keep working. Mirrors _RestrictedProxy in step_executors.py.
+            if node.attr.startswith("__"):
+                raise ValueError(
+                    f"Attribute {node.attr!r} is not allowed in conditions"
+                )
             return getattr(obj, node.attr)
         if isinstance(node, ast.Compare):
             left = self._safe_eval(node.left, data)
@@ -1071,9 +1079,14 @@ class WorkflowEngine:
         if isinstance(node, ast.Call):
             func = self._safe_eval(node.func, data)
             args = [self._safe_eval(a, data) for a in node.args]
+            # node.keywords is a list of ast.keyword nodes; each exposes .arg and
+            # .value. The previous `zip(node.keywords, node.values)` was wrong: an
+            # ast.Call has no .values attribute, so *every* function/method call in a
+            # condition raised AttributeError (findings #8a). Iterate keywords directly
+            # and read the value node from each keyword (mirrors app/services/safe_eval.py).
             kwargs = {
-                k.arg: self._safe_eval(v, data)
-                for k, v in zip(node.keywords, node.values)
+                k.arg: self._safe_eval(k.value, data)
+                for k in node.keywords
                 if k.arg is not None
             }
             return func(*args, **kwargs)
