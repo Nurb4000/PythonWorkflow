@@ -1,6 +1,9 @@
 """
 Authentication API endpoints
 """
+import time
+from collections import defaultdict
+
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query, Body
 from pydantic import BaseModel
 from fastapi.security import OAuth2PasswordBearer, OAuth2PasswordRequestForm
@@ -24,6 +27,70 @@ from app.schemas.workflow import AuditLogEntry
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
+
+
+# Brute-force protection for /auth/login (findings #6). authenticate_user returns a
+# uniform None on bad credentials, which stops user enumeration but does not bound
+# the number of guesses. These helpers track failed logins per key and temporarily
+# lock a key out, so credential stuffing / password guessing is bounded.
+LOGIN_MAX_FAILURES = 5        # failures within...
+LOGIN_WINDOW_SECONDS = 300    # ...this sliding window trigger a lockout...
+LOGIN_LOCKOUT_SECONDS = 300   # ...which lasts this long before retries are allowed
+# Per-IP sliding-window rate limit (defense in depth against distributed guessing /
+# login DoS). Separate from the per-username lockout so one busy IP does not pin
+# every account it touches.
+LOGIN_IP_MAX = 120            # login attempts within...
+LOGIN_IP_WINDOW_SECONDS = 60  # ...this window before a 429
+
+_failed_login_attempts: dict[str, list[float]] = defaultdict(list)
+_login_lockuntil: dict[str, float] = {}
+_ip_login_times: dict[str, list[float]] = defaultdict(list)
+
+
+def _prune_failures(bucket: list[float], now: float, window: int) -> None:
+    cutoff = now - window
+    while bucket and bucket[0] < cutoff:
+        bucket.pop(0)
+
+
+def check_login_rate_limit(key: str) -> bool:
+    """Return True if `key` (username or IP) is currently locked out."""
+    now = time.monotonic()
+    if _login_lockuntil.get(key, 0.0) > now:
+        return True
+    bucket = _failed_login_attempts[key]
+    _prune_failures(bucket, now, LOGIN_WINDOW_SECONDS)
+    if len(bucket) >= LOGIN_MAX_FAILURES:
+        _login_lockuntil[key] = now + LOGIN_LOCKOUT_SECONDS
+        return True
+    return False
+
+
+def record_failed_login(key: str) -> None:
+    now = time.monotonic()
+    _prune_failures(_failed_login_attempts[key], now, LOGIN_WINDOW_SECONDS)
+    _failed_login_attempts[key].append(now)
+
+
+def reset_login_state(key: str) -> None:
+    """Clear failure/lockout state for a key (called on successful login)."""
+    _failed_login_attempts.pop(key, None)
+    _login_lockuntil.pop(key, None)
+
+
+def check_ip_login_rate_limit(client_ip: str) -> bool:
+    """Return True if the IP exceeds the per-IP login rate window."""
+    now = time.monotonic()
+    bucket = _ip_login_times[client_ip]
+    cutoff = now - LOGIN_IP_WINDOW_SECONDS
+    while bucket and bucket[0] < cutoff:
+        bucket.pop(0)
+    return len(bucket) >= LOGIN_IP_MAX
+
+
+def record_ip_login(client_ip: str) -> None:
+    _ip_login_times[client_ip].append(time.monotonic())
+
 
 
 class RefreshTokenRequest(BaseModel):
@@ -157,17 +224,39 @@ async def user_can_access_workflow(db: AsyncSession, user: User, workflow_id: in
 
 
 @router.post("/auth/login")
-async def login(form_data: OAuth2PasswordRequestForm = Depends(), db: AsyncSession = Depends(get_db)):
-    """Login and get access token"""
+async def login(
+    form_data: OAuth2PasswordRequestForm = Depends(),
+    request: Request = Depends(),
+    db: AsyncSession = Depends(get_db),
+):
+    """Login and get access token (with brute-force protection, findings #6)."""
+    client_ip = request.client.host if request.client else (
+        (request.headers.get("X-Forwarded-For").split(",")[0].strip())
+        if request.headers.get("X-Forwarded-For") else "unknown"
+    )
+
+    # Reject early if the account or source IP is currently locked out / rate limited.
+    if check_login_rate_limit(form_data.username) or check_ip_login_rate_limit(client_ip):
+        raise HTTPException(
+            status_code=429,
+            detail="Too many login attempts. Please try again later.",
+        )
+
     user = await auth_service.authenticate_user(db, form_data.username, form_data.password)
-    
+
     if not user:
+        record_failed_login(form_data.username)
+        record_ip_login(client_ip)
         raise HTTPException(
             status_code=401,
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    
+
+    # Success: clear any accumulated failures for this account/IP.
+    reset_login_state(form_data.username)
+    _ip_login_times[client_ip].clear()
+
     # Update last login
     user.last_login = datetime.utcnow()
     await db.commit()
