@@ -49,12 +49,15 @@ _MAGIC: dict[str, List[bytes]] = {
 
 def _matches_magic(content: bytes, ext: str) -> bool:
     """Return True if *content* begins with an expected signature for *ext*."""
+    # webp: RIFF....WEBP — the "WEBP" type tag sits at offset 8 (a 4-byte file-size
+    # field sits between RIFF and WEBP), so it cannot be expressed as a single
+    # startswith prefix. Check it explicitly *before* the generic path; this is the
+    # branch that was previously unreachable dead code (findings #17).
+    if ext == "webp":
+        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
     sigs = _MAGIC.get(ext)
     if not sigs:
-        return True  # no magic requirement (e.g. webp handled below / text)
-    if ext == "webp":
-        # RIFF....WEBP  (4-byte id, 4-byte size, 4-byte type)
-        return content[:4] == b"RIFF" and content[8:12] == b"WEBP"
+        return True  # no magic requirement (e.g. text extensions, checked elsewhere)
     return any(content.startswith(sig) for sig in sigs)
 
 
