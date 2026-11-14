@@ -32,16 +32,20 @@ async def list_tables(
         
         # Get allowed tables for this user
         allowed_tables = await query_security_service.get_allowed_tables(db, current_user)
-        
+
         # Get full table list
         result = await list_tables_with_fields(db)
-        
-        # Filter by allowed tables
-        if allowed_tables:
-            filtered = [t for t in result if t["table"] in allowed_tables]
-            return {"tables": filtered, "total": len(filtered), "allowed_count": len(allowed_tables)}
-        
-        return {"tables": result, "total": len(result), "allowed_count": len(result)}
+
+        # Filter by allowed tables. An empty allowed set means the user has no
+        # granted table permissions, so they must see NO tables (fail-closed),
+        # not the entire catalog. The previous `if allowed_tables:` fallback
+        # leaked every table to any user whose role had no RolePermission rows
+        # (findings #13).
+        if not allowed_tables:
+            return {"tables": [], "total": 0, "allowed_count": 0}
+
+        filtered = [t for t in result if t["table"] in allowed_tables]
+        return {"tables": filtered, "total": len(filtered), "allowed_count": len(allowed_tables)}
     except Exception as e:
         logger.error(f"Failed to list tables: {e}", exc_info=True)
         raise HTTPException(status_code=500, detail=f"Failed to load tables: {str(e)}")
