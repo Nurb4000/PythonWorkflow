@@ -98,28 +98,29 @@ async def run_workflow(
     if not workflow.is_active:
         raise HTTPException(status_code=400, detail="Workflow is not active")
 
-    # Check permissions
-    if current_user.role in ["user", "staff"]:
-        # Verify workflow is published and visible on the portal
-        if not workflow.is_published or not workflow.portal_visible:
-            raise HTTPException(status_code=403, detail="Workflow not available for portal use")
+    # Check permissions — applied to ALL roles so the portal's published /
+    # portal-visible / environment / group scoping cannot be bypassed by an admin,
+    # developer, or cmdb_manager (findings #21).
+    # Verify workflow is published and visible on the portal
+    if not workflow.is_published or not workflow.portal_visible:
+        raise HTTPException(status_code=403, detail="Workflow not available for portal use")
 
-        # Production workflows are accessible to all; otherwise check group permissions
-        if workflow.environment != "production":
-            user_group_ids = [g.id for g in current_user.groups]
-            if user_group_ids:
-                stmt = (
-                    select(workflow_permissions)
-                    .where(
-                        workflow_permissions.c.workflow_id == workflow_id,
-                        workflow_permissions.c.group_id.in_(user_group_ids)
-                    )
+    # Production workflows are accessible to all; otherwise check group permissions
+    if workflow.environment != "production":
+        user_group_ids = [g.id for g in current_user.groups]
+        if user_group_ids:
+            stmt = (
+                select(workflow_permissions)
+                .where(
+                    workflow_permissions.c.workflow_id == workflow_id,
+                    workflow_permissions.c.group_id.in_(user_group_ids)
                 )
-                result = await db.execute(stmt)
-                if not result.fetchone():
-                    raise HTTPException(status_code=403, detail="You don't have permission to run this workflow")
-            else:
+            )
+            result = await db.execute(stmt)
+            if not result.fetchone():
                 raise HTTPException(status_code=403, detail="You don't have permission to run this workflow")
+        else:
+            raise HTTPException(status_code=403, detail="You don't have permission to run this workflow")
 
     # Trigger the workflow
     from app.schemas.workflow import WorkflowRunCreate
