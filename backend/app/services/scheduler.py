@@ -220,17 +220,25 @@ class SchedulerService:
     def get_active_schedules(self) -> List[Dict[str, Any]]:
         """Get all active schedules with their next run times"""
         schedules = []
-        
+
         for job in self.scheduler.get_jobs():
-            schedule_id = int(job.id.replace("schedule_", ""))
+            # Permanent monitor jobs (e.g. "sla_breach_monitor") have no numeric id,
+            # so int(job.id.replace("schedule_", "")) raised ValueError and broke the
+            # whole call (findings #22). Skip any job whose id is not a schedule_.
+            if not job.id.startswith("schedule_"):
+                continue
+            try:
+                schedule_id = int(job.id.replace("schedule_", ""))
+            except ValueError:
+                continue
             next_run = job.next_run_time
-            
+
             schedules.append({
                 "id": schedule_id,
                 "next_run_at": next_run,
                 "job_id": job.id
             })
-        
+
         return schedules
     
     async def _check_sla_breaches(self):
