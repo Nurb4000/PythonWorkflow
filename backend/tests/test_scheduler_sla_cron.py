@@ -95,21 +95,21 @@ async def test_sla_breached_when_past_target(db_engine, service, monkeypatch, ca
 
 # --- I1: cron parsing -----------------------------------------------------------
 
-def test_six_field_cron_registers_job(service):
+async def test_six_field_cron_registers_job(service):
     ns = SimpleNamespace(id=7, workflow_id=1, cron_expression="0 0 0 1 1 1")
-    service._add_schedule_job(ns)
+    await service._add_schedule_job(ns)
     assert service.scheduler.get_job("schedule_7") is not None
 
 
-def test_five_field_cron_registers_job(service):
+async def test_five_field_cron_registers_job(service):
     ns = SimpleNamespace(id=8, workflow_id=1, cron_expression="0 0 1 1 1")
-    service._add_schedule_job(ns)
+    await service._add_schedule_job(ns)
     assert service.scheduler.get_job("schedule_8") is not None
 
 
-def test_invalid_cron_field_count_logs_error(service, caplog):
+async def test_invalid_cron_field_count_logs_error(service, caplog):
     ns = SimpleNamespace(id=9, workflow_id=1, cron_expression="* * *")
     with caplog.at_level(logging.ERROR, logger="app.services.scheduler"):
-        service._add_schedule_job(ns)
+        await service._add_schedule_job(ns)
     assert "Failed to add schedule job" in caplog.text
     assert service.scheduler.get_job("schedule_9") is None

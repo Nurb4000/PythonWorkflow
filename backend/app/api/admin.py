@@ -374,7 +374,7 @@ async def create_schedule(
     
     # Add to scheduler if enabled
     if schedule.is_enabled:
-        scheduler_service.add_schedule(schedule)
+        await scheduler_service.add_schedule(schedule)
     
     return {
         "id": schedule.id,
@@ -418,7 +418,7 @@ async def update_schedule(
     
     # Update scheduler
     if schedule.is_enabled:
-        scheduler_service.update_schedule(schedule)
+        await scheduler_service.update_schedule(schedule)
     else:
         scheduler_service.remove_schedule(schedule_id)
     

@@ -46,7 +46,7 @@ class SchedulerService:
             schedules = result.scalars().all()
             
             for schedule in schedules:
-                self._add_schedule_job(schedule)
+                await self._add_schedule_job(schedule)
         
         self._initialized = True
         self.scheduler.start()
@@ -68,7 +68,7 @@ class SchedulerService:
         )
         logger.info(f"Scheduler initialized with {len(schedules)} schedules + SLA monitor + date target monitor")
     
-    def _add_schedule_job(self, schedule: Schedule):
+    async def _add_schedule_job(self, schedule: Schedule):
         """Add a scheduled workflow run job"""
         
         async def run_workflow():
@@ -144,16 +144,26 @@ class SchedulerService:
             next_run = trigger.get_next_fire_time(None, datetime.utcnow())
             if next_run is not None:
                 schedule.next_run_at = next_run
+                # Persist it (findings #23): the previous code only set the attribute
+                # in memory and never committed, so during initialize() the owning
+                # session closed before the write landed and list_schedules returned a
+                # stale/NULL "next run at". Fetch by id in a fresh session to avoid any
+                # session-attachment conflicts with the caller's session.
+                async with self.db_session_factory() as db:
+                    stored = await db.get(Schedule, schedule.id)
+                    if stored is not None:
+                        stored.next_run_at = next_run
+                        await db.commit()
 
             logger.info(f"Added schedule job for workflow {schedule.workflow_id}")
 
         except Exception as e:
             logger.error(f"Failed to add schedule job: {str(e)}")
     
-    def add_schedule(self, schedule: Schedule):
+    async def add_schedule(self, schedule: Schedule):
         """Add a new schedule"""
-        self._add_schedule_job(schedule)
-    
+        await self._add_schedule_job(schedule)
+
     def remove_schedule(self, schedule_id: int):
         """Remove a schedule job"""
         job_id = f"schedule_{schedule_id}"
@@ -161,10 +171,10 @@ class SchedulerService:
             self.scheduler.remove_job(job_id)
             logger.info(f"Removed schedule job {job_id}")
     
-    def update_schedule(self, schedule: Schedule):
+    async def update_schedule(self, schedule: Schedule):
         """Update an existing schedule"""
         self.remove_schedule(schedule.id)
-        self._add_schedule_job(schedule)
+        await self._add_schedule_job(schedule)
     
     async def trigger_webhook(self, workflow_id: int, payload: Dict[str, Any], auth_token: Optional[str] = None) -> WorkflowRun:
         """Trigger a workflow via webhook"""
