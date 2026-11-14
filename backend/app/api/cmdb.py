@@ -775,6 +775,21 @@ async def bulk_import_cis(
     updated = 0
     errors: List[Dict[str, Any]] = []
 
+    # Load existing CIs for this type ONCE (findings #16): the previous code ran a
+    # full unscoped select per record, i.e. O(records × type_size) row loads into
+    # memory — a self-inflicted DoS on large types. Build a lookup keyed by the
+    # upsert value once, then resolve each record in O(1). setdefault preserves the
+    # original "first existing match wins" semantics for duplicate keys.
+    existing_by_key = {}
+    if data.upsert_key:
+        all_stmt = select(ConfigurationItem).where(ConfigurationItem.type_id == ci_type.id)
+        all_result = await db.execute(all_stmt)
+        for tc in all_result.scalars().all():
+            tc_data = tc.ci_data or {}
+            key_val = tc_data.get(data.upsert_key)
+            if key_val is not None:
+                existing_by_key.setdefault(key_val, tc)
+
     for idx, record in enumerate(data.records):
         ci_data = record.ci_data or {}
         missing = [k for k in required_fields if k not in ci_data]
@@ -782,19 +797,7 @@ async def bulk_import_cis(
             errors.append({"index": idx, "name": record.name, "error": f"Missing required fields: {', '.join(missing)}"})
             continue
 
-        existing_ci = None
-        if data.upsert_key and data.upsert_key in ci_data:
-            upsert_val = ci_data[data.upsert_key]
-            type_cis_stmt = select(ConfigurationItem).where(
-                ConfigurationItem.type_id == ci_type.id,
-            )
-            type_cis_result = await db.execute(type_cis_stmt)
-            type_cis = type_cis_result.scalars().all()
-            for tc in type_cis:
-                tc_data = tc.ci_data or {}
-                if tc_data.get(data.upsert_key) == upsert_val:
-                    existing_ci = tc
-                    break
+        existing_ci = existing_by_key.get(ci_data[data.upsert_key]) if data.upsert_key else None
 
         if existing_ci:
             existing_ci.name = record.name
