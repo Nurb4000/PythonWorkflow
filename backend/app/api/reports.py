@@ -1,10 +1,11 @@
 """
 F2: Report definitions API — CRUD for report definitions, execute reports.
 """
+import re
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, text
-from typing import List, Optional
+from typing import Any, List, Optional
 
 from app.core.database import get_db
 from app.models.auth import User
@@ -12,6 +13,25 @@ from app.api.auth import get_current_admin, get_current_user
 from app.models.reports import ReportDefinition
 
 router = APIRouter(prefix="/reports", tags=["reports"])
+
+
+# Strict SQL identifier pattern for interpolated identifiers. Report definitions are
+# admin-authored, but execute_report interpolates several fields into the query text
+# (view_name, column field/label names, sort_by, filter fields). Validating them
+# against this pattern prevents SQL injection through those positions even if report
+# authoring is ever opened to non-admins. See findings #25.
+_SQL_IDENTIFIER_RE = re.compile(r"^[A-Za-z_][A-Za-z0-9_]*$")
+
+# Allowed ORDER BY directions and comparison operators for report filters.
+_SORT_ORDERS = {"asc", "desc"}
+_ALLOWED_OPERATORS = {"=", "!=", "<", ">", "<=", ">=", "LIKE", "ILIKE", "IN", "NOT IN"}
+
+
+def _validate_identifier(value: Any, what: str) -> str:
+    """Return value if it is a safe SQL identifier, else raise HTTP 400."""
+    if not isinstance(value, str) or not _SQL_IDENTIFIER_RE.match(value):
+        raise HTTPException(status_code=400, detail=f"Invalid {what}: {value!r}")
+    return value
 
 
 @router.get("/")
@@ -177,64 +197,66 @@ async def execute_report(
     if not report:
         raise HTTPException(status_code=404, detail="Report definition not found")
     
-    # Build dynamic SQL based on report config
-    view_name = report.view_name
+    # Build dynamic SQL based on report config. Structural identifiers are
+    # validated/allow-listed before interpolation to prevent SQL injection through
+    # report-definition fields (findings #25). Filter *values* are bound as params,
+    # so they are safe regardless of content.
+    view_name = _validate_identifier(report.view_name, "view_name")
     columns = report.columns or []
     filters = report.filters or []
-    sort_by = report.sort_by or "id"
-    sort_order = report.sort_order or "asc"
-    limit = report.limit or 100
-    
+    sort_by = _validate_identifier(report.sort_by or "id", "sort_by")
+    sort_order = (report.sort_order or "asc").strip().lower()
+    if sort_order not in _SORT_ORDERS:
+        raise HTTPException(status_code=400, detail=f"Invalid sort_order: {report.sort_order!r}")
+    try:
+        limit = int(report.limit or 100)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail=f"Invalid limit: {report.limit!r}")
+
     # Select columns
+    select_cols = []
     if columns:
-        select_cols = []
         for col in columns:
             if isinstance(col, dict):
                 field = col.get("field", "")
-                alias = col.get("label", field)
-                if field:
-                    select_cols.append(f'"{field}" as "{alias}"')
-        if not select_cols:
-            select_cols = ["*"]
-    else:
+                if not field:
+                    continue
+                field = _validate_identifier(field, "column field")
+                alias = _validate_identifier(col.get("label", field), "column label")
+                select_cols.append(f'"{field}" as "{alias}"')
+    if not select_cols:
         select_cols = ["*"]
-    
     select_sql = ", ".join(select_cols)
-    
-    # WHERE filters
+
+    # WHERE filters (values bound as params; field/operator interpolated after validation)
     where_clauses = []
-    if filters:
-        for f in filters:
-            if isinstance(f, dict):
-                field = f.get("field", "")
-                operator = f.get("operator", "=")
-                value = f.get("value")
-                if field and value is not None:
-                    where_clauses.append(f'"{field}" {operator} :{field}')
-    
+    exec_params = {}
+    for f in filters:
+        if isinstance(f, dict):
+            field = f.get("field", "")
+            value = f.get("value")
+            if not field or value is None:
+                continue
+            field = _validate_identifier(field, "filter field")
+            operator = str(f.get("operator", "=")).strip().upper()
+            if operator not in _ALLOWED_OPERATORS:
+                raise HTTPException(status_code=400, detail=f"Invalid operator: {f.get('operator')!r}")
+            where_clauses.append(f'"{field}" {operator} :{field}')
+            exec_params[field] = value
+
     where_sql = ""
     if where_clauses:
         where_sql = "WHERE " + " AND ".join(where_clauses)
-    
+
     # ORDER BY
     order_sql = f'ORDER BY "{sort_by}" {sort_order.upper()}'
-    
+
     # LIMIT
     limit_sql = f"LIMIT {limit}"
-    
+
     sql = f'SELECT {select_sql} FROM "{view_name}" {where_sql} {order_sql} {limit_sql}'
-    
+
     try:
-        # Execute with params
-        exec_params = {}
-        if filters:
-            for f in filters:
-                if isinstance(f, dict):
-                    field = f.get("field", "")
-                    value = f.get("value")
-                    if field and value is not None:
-                        exec_params[field] = value
-        
         result_stmt = text(sql)
         result = await db.execute(result_stmt, exec_params)
         rows = result.fetchall()
@@ -251,7 +273,6 @@ async def execute_report(
             "columns": [r.keys() if hasattr(r, 'keys') else [] for r in data[:1]],
             "rows": data,
             "total_rows": len(data),
-            "sql": sql
         }
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Report execution failed: {str(e)}")
