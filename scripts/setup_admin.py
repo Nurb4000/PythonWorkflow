@@ -14,9 +14,12 @@ sys.path.insert(0, "backend")
 from app.core.database import Base, engine
 from app.models.auth import User
 from app.services.auth_service import auth_service
-from passlib.context import CryptContext
-
-pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
+# NOTE: passlib is intentionally NOT imported here. The app uses native `bcrypt`
+# (see app/services/auth_service.py) because bcrypt 4.x removed the low-level C API
+# passlib depends on ("(trapped) error reading bcrypt version"). Password hashing for
+# the admin account below is done by auth_service.create_user -> _hash_password
+# (native bcrypt), so the old `CryptContext` shim was dead code and is dropped.
+# (findings #10 — residual passlib reference removed)
 
 
 async def setup_admin():
