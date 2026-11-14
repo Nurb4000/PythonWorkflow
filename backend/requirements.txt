@@ -1,21 +1,24 @@
 # Core dependencies
-fastapi==0.104.1
-uvicorn[standard]==0.24.0
-sqlalchemy==2.0.23
-pydantic==2.5.2
-pydantic-settings==2.1.0
+# Pins synced 2026-11-13 to the versions actually installed and working on Python 3.13
+# (findings #9). Previously stale: a fresh `pip install -r requirements.txt` pulled
+# SQLAlchemy 2.0.23, which fails to import on Python 3.13.
+fastapi==0.162.7        # was 0.104.1
+uvicorn[standard]==0.54.0   # was 0.24.0
+sqlalchemy==2.0.36      # was 2.0.23 (2.0.23 is incompatible with Python 3.13)
+pydantic==2.14.3        # was 2.5.2
+pydantic-settings==2.1.0   # unchanged (working; 2.16.3 available for later review)
 
 # Database
-asyncpg==0.29.0  # For PostgreSQL async support
+asyncpg==0.29.0  # For PostgreSQL async support (works; 0.32.0 available — supply-chain)
 
 # Scheduling
 apscheduler==3.10.4
 
 # Migrations
-alembic==1.13.1
+alembic==1.13.1   # works; 1.20.1 available — supply-chain
 
 # AI integration
-httpx==0.25.2  # For llama.cpp API calls
+httpx==0.28.1  # For llama.cpp API calls (was 0.25.2)
 
 # Utilities
 python-multipart==0.0.6
@@ -26,6 +29,7 @@ bcrypt==4.1.2
 python-json-logger==2.0.7
 
 # Testing (runs against PostgreSQL — see backend/tests/conftest.py)
-pytest==7.4.3
-pytest-asyncio==0.23.2
+# Bumped to match the installed/working pair (pytest 9.x requires pytest-asyncio >= 1.x).
+pytest==9.2.0             # was 7.4.3
+pytest-asyncio==1.5.0     # was 0.23.2
 ldap3>=2.9
