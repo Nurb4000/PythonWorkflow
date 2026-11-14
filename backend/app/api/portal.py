@@ -187,26 +187,21 @@ async def get_my_tasks(
     """Get open tasks assigned to the current user (P3.3)"""
     
     from app.models.schemas import Task
-    
-    # Get tasks assigned to this user that are still open/owned
-    stmt = select(Task).where(
-        or_(
-            Task.assigned_to_user_id == current_user.id,
-            and_(Task.assigned_group_id != None, Task.assigned_to_user_id == None)  # noqa: E711
-        ),
-        Task.status.in_(["open", "owned"])
-    )
-    
-    # If user has groups, include group-assigned tasks
+
+    # Tasks individually assigned to this user, plus tasks assigned to groups the
+    # user actually belongs to. A user with no groups (empty user_group_ids) sees
+    # only their own tasks — the previous base predicate also matched *any*
+    # unclaimed group task in the org (`assigned_group_id IS NOT NULL`), leaking
+    # cross-group work and enabling task-stealing (findings #20).
     user_group_ids = [g.id for g in current_user.groups]
+    conditions = [Task.assigned_to_user_id == current_user.id]
     if user_group_ids:
-        stmt = stmt.where(
-            or_(
-                Task.assigned_to_user_id == current_user.id,
-                Task.assigned_group_id.in_(user_group_ids)
-            )
-        )
-    
+        conditions.append(Task.assigned_group_id.in_(user_group_ids))
+
+    stmt = select(Task).where(
+        or_(*conditions),
+        Task.status.in_(["open", "owned"]),
+    )
     stmt = stmt.order_by(Task.created_at.desc()).limit(50)
     result = await db.execute(stmt)
     tasks = result.scalars().all()
