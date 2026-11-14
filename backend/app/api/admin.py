@@ -129,35 +129,38 @@ async def export_system_logs(
 
 
 def validate_cron_expression(cron_expr: str) -> bool:
-    """Validate a cron expression (5-part format)"""
+    """Validate a cron expression (5-part or 6-part with leading seconds).
+
+    The scheduler engine (_add_schedule_job) accepts both the standard
+    5-field "minute hour day month weekday" form and a 6-field form that
+    prepends "second", so validation must accept both. A 6-field expression's
+    first field ("second") shares minute's 0-59 range. See findings #24.
+    """
     parts = cron_expr.split()
-    if len(parts) != 5:
+    if len(parts) not in (5, 6):
         return False
-    
-    # Basic validation for each field
-    minute, hour, day, month, day_of_week = parts
-    
-    # Minute: 0-59
-    if not re.match(r'^(\*|[0-5]?[0-9])(-[0-5]?[0-9])?$', minute):
-        return False
-    
-    # Hour: 0-23
-    if not re.match(r'^(\*|([01]?[0-9]|2[0-3]))(-([01]?[0-9]|2[0-3]))?$', hour):
-        return False
-    
-    # Day: 1-31
-    if not re.match(r'^(\*|([1-9]|[12]\d|3[01]))(-([1-9]|[12]\d|3[01]))?$', day):
-        return False
-    
-    # Month: 1-12
-    if not re.match(r'^(\*|([1-9]|1[012]))(-([1-9]|1[012]))?$', month):
-        return False
-    
-    # Day of week: 0-6 (Sun-Sat)
-    if not re.match(r'^(\*|[0-6])(-[0-6])?$', day_of_week):
-        return False
-    
-    return True
+
+    minute_re = r'^(\*|[0-5]?[0-9])(-[0-5]?[0-9])?$'
+    hour_re = r'^(\*|([01]?[0-9]|2[0-3]))(-([01]?[0-9]|2[0-3]))?$'
+    day_re = r'^(\*|([1-9]|[12]\d|3[01]))(-([1-9]|[12]\d|3[01]))?$'
+    month_re = r'^(\*|([1-9]|1[012]))(-([1-9]|1[012]))?$'
+    dow_re = r'^(\*|[0-6])(-[0-6])?$'
+
+    if len(parts) == 6:
+        # 6-field form: second minute hour day month weekday
+        second, minute, hour, day, month, day_of_week = parts
+        if not re.match(minute_re, second):
+            return False
+    else:
+        minute, hour, day, month, day_of_week = parts
+
+    return (
+        bool(re.match(minute_re, minute))
+        and bool(re.match(hour_re, hour))
+        and bool(re.match(day_re, day))
+        and bool(re.match(month_re, month))
+        and bool(re.match(dow_re, day_of_week))
+    )
 
 
 @router.get("/stats", response_model=RunStatsResponse)
@@ -352,7 +355,7 @@ async def create_schedule(
     if not validate_cron_expression(schedule_data["cron_expression"]):
         raise HTTPException(
             status_code=400, 
-            detail="Invalid cron expression. Use 5-part format: minute hour day month day_of_week"
+            detail="Invalid cron expression. Use 5-part (minute hour day month weekday) or 6-part (second minute hour day month weekday) format"
         )
     
     # Verify workflow exists
@@ -406,7 +409,7 @@ async def update_schedule(
         if not validate_cron_expression(schedule_data["cron_expression"]):
             raise HTTPException(
                 status_code=400, 
-                detail="Invalid cron expression. Use 5-part format: minute hour day month day_of_week"
+                detail="Invalid cron expression. Use 5-part (minute hour day month weekday) or 6-part (second minute hour day month weekday) format"
             )
         schedule.cron_expression = schedule_data["cron_expression"]
     
