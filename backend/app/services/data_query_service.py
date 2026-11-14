@@ -1,6 +1,7 @@
 import csv
 import io
 import logging
+import re
 from typing import Any, Dict, List, Optional
 
 from sqlalchemy import Column, Table, text as sa_text
@@ -460,8 +461,77 @@ def _apply_operator(col, operator: str, value: Any):
         return col == value
 
 
-async def execute_sql_query(db: AsyncSession, sql: str, max_rows: int = 10000) -> Dict[str, Any]:
-    """Execute a read-only SQL query with safety checks."""
+class QueryTimeoutError(Exception):
+    """Raised when a raw SQL query exceeds the server-side statement timeout.
+
+    Surfaced to callers so the endpoint returns HTTP 408 instead of a generic
+    500 (findings #12 — raw-SQL DoS via e.g. ``SELECT pg_sleep(30)`` or an
+    unbounded join that a client-side ``wait_for`` alone does not bound).
+    """
+
+
+def _is_statement_timeout(exc: BaseException) -> bool:
+    """Return True if ``exc`` is a PostgreSQL ``statement_timeout`` cancellation.
+
+    asyncpg raises ``QueryCanceled`` with SQLSTATE ``57014`` when
+    ``statement_timeout`` fires; SQLAlchemy wraps it, so we inspect ``.orig``.
+    """
+    orig = getattr(exc, "orig", None)
+    if getattr(orig, "sqlstate", None) == "57014":
+        return True
+    # Some asyncpg versions expose error_code instead of sqlstate.
+    return getattr(orig, "error_code", None) == "57014"
+
+
+def _extract_primary_table(sql: str) -> Optional[str]:
+    """Best-effort primary-table extraction for a simple single-table SELECT.
+
+    Returns None for joins/subqueries/complex queries, which are intentionally
+    left unfiltered — field-level RBAC on arbitrary multi-column output is not
+    reliably derivable. See findings #12.
+    """
+    m = re.search(r"\bFROM\s+([a-zA-Z_][a-zA-Z0-9_]*)", sql, re.IGNORECASE)
+    if not m:
+        return None
+    table = m.group(1)
+    if table.upper() in (
+        "JOIN", "WHERE", "GROUP", "ORDER", "HAVING", "LIMIT", "AS", "ON", "SET",
+    ):
+        return None
+    # Multi-table (JOIN) or subquery results mix columns from several tables, so
+    # mapping output back to one permissioned table's visible set is ambiguous —
+    # leave them unfiltered.
+    if re.search(r"\bJOIN\b", sql, re.IGNORECASE) or re.search(r"\(\s*SELECT", sql, re.IGNORECASE):
+        return None
+    return table
+
+
+async def execute_sql_query(
+    db: AsyncSession,
+    sql: str,
+    max_rows: int = 10000,
+    user: Any = None,
+    statement_timeout_ms: Optional[int] = None,
+) -> Dict[str, Any]:
+    """Execute a read-only SQL query with safety checks.
+
+    Safety (findings #12):
+      * Only ``SELECT`` is allowed; dangerous DML/DDL keywords, comments and
+        semicolons are blocked.
+      * A server-side ``statement_timeout`` bounds DB CPU work (not just the
+        client-side ``wait_for`` in the endpoint), so ``pg_sleep`` / unbounded
+        joins are cancelled by Postgres itself rather than holding a pool slot.
+      * For a simple single-table query, results are trimmed to the caller's
+        visible fields via ``filter_query_results`` (field-level RBAC).
+    """
+    from app.core.database import QUERY_TIMEOUT
+
+    timeout_ms = (
+        statement_timeout_ms
+        if statement_timeout_ms is not None
+        else int(QUERY_TIMEOUT * 1000)
+    )
+
     sql_stripped = sql.strip()
 
     # Safety: only allow SELECT statements
@@ -469,37 +539,73 @@ async def execute_sql_query(db: AsyncSession, sql: str, max_rows: int = 10000) -
     if not upper.startswith("SELECT"):
         raise ValueError("Only SELECT queries are allowed")
 
-    # Safety: reject dangerous patterns
-    dangerous = [";", "--", "/*", "*/", "DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"]
-    for word in dangerous:
-        # Check word boundaries to avoid false positives on column names
-        if word == ";":
-            # Allow semicolons only at end or followed by whitespace/comments
+    # Safety: reject dangerous patterns.
+    # SQL keywords use word-boundary regex (so column names like "deletion" don't
+    # trip it); comment/statement markers are matched as literal substrings. The
+    # previous single-loop check treated "/*" as the regex r"\b/\*\b" — an unescaped
+    # "*" quantifies the "/", matching any word-boundary adjacency, so *every*
+    # query (e.g. "SELECT * FROM users") was wrongly rejected. See findings #12.
+    dangerous_keywords = ["DROP", "DELETE", "UPDATE", "INSERT", "ALTER", "CREATE", "TRUNCATE"]
+    for word in dangerous_keywords:
+        pattern = r'\b' + word + r'\b'
+        if re.search(pattern, sql_stripped, re.IGNORECASE):
+            raise ValueError(f"Query contains disallowed keyword: {word}")
+
+    for marker in [";", "--", "/*", "*/"]:
+        if marker == ";":
             if ";" in sql_stripped:
                 raise ValueError("Semicolons are not allowed in queries")
-        elif word.startswith("--"):
-            if word in sql_stripped:
-                raise ValueError(f"Comments are not allowed")
-        else:
-            # Check for SQL keywords that aren't part of SELECT
-            pattern = r'\b' + word + r'\b'
-            import re
-            if re.search(pattern, sql_stripped, re.IGNORECASE) and word not in ("SELECT",):
-                raise ValueError(f"Query contains disallowed keyword: {word}")
+        elif marker in sql_stripped:
+            raise ValueError(f"Comment marker '{marker}' is not allowed")
 
-    # Execute with row limit safety net
+    # Server-side statement timeout: bound DB CPU work regardless of client wait.
+    # SET LOCAL scopes it to this transaction/connection so Postgres cancels a
+    # heavy query (pg_sleep, unbounded join) itself. Non-Postgres backends that
+    # don't support it simply continue without the guard.
     try:
-        result = await db.execute(sa_text(sql).limit(max_rows))
-    except Exception as e:
-        # If LIMIT isn't supported on the raw text, wrap in subquery
-        wrapped = f"SELECT * FROM ({sql_stripped}) AS limited_subq LIMIT {max_rows}"
-        result = await db.execute(sa_text(wrapped))
+        await db.execute(sa_text("SET LOCAL statement_timeout = :ms"), {"ms": timeout_ms})
+    except Exception:  # pragma: no cover - backend-dependent
+        logger.debug(
+            "SET LOCAL statement_timeout not supported; continuing without server-side timeout"
+        )
+
+    async def _run_limited() -> Any:
+        try:
+            return await db.execute(sa_text(sql).limit(max_rows))
+        except Exception as e:
+            if _is_statement_timeout(e):
+                raise QueryTimeoutError(
+                    f"Query exceeded {timeout_ms}ms server-side statement timeout"
+                ) from e
+            # If LIMIT isn't supported on the raw text, wrap in a subquery.
+            wrapped = f"SELECT * FROM ({sql_stripped}) AS limited_subq LIMIT {max_rows}"
+            try:
+                return await db.execute(sa_text(wrapped))
+            except Exception as e2:
+                if _is_statement_timeout(e2):
+                    raise QueryTimeoutError(
+                        f"Query exceeded {timeout_ms}ms server-side statement timeout"
+                    ) from e2
+                raise
+
+    result = await _run_limited()
 
     rows = []
     if result.returns_rows:
         columns = list(result.keys())
         for row in result.fetchall():
             rows.append(dict(zip(columns, row)))
+
+    # Field-level RBAC for simple single-table raw queries (findings #12).
+    # Multi-table / complex queries are intentionally left unfiltered — the
+    # output columns cannot be reliably mapped back to a single permissioned table.
+    if user is not None:
+        table = _extract_primary_table(sql_stripped)
+        if table is not None:
+            from app.services.query_security_service import query_security_service
+            rows = await query_security_service.filter_query_results(
+                db, user, table, rows, action="view"
+            )
 
     return {
         "columns": list(result.keys()) if result.returns_rows else [],

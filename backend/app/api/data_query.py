@@ -11,6 +11,7 @@ from app.services.data_query_service import (
     list_tables_with_fields,
     execute_visual_query,
     execute_sql_query,
+    QueryTimeoutError,
     update_custom_data,
     bulk_update_custom_data,
     QUERYABLE_TABLES,
@@ -104,10 +105,15 @@ async def run_sql_query(
 
     try:
         async def _run():
-            return await execute_sql_query(db, sql, max_rows=10000)
+            return await execute_sql_query(
+                db, sql, max_rows=10000, user=current_user
+            )
 
         result = await asyncio.wait_for(_run(), timeout=30.0)
         return result
+    except QueryTimeoutError as e:
+        # Server-side statement_timeout fired (findings #12 DoS guard).
+        raise HTTPException(status_code=408, detail=str(e))
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
     except asyncio.TimeoutError:
