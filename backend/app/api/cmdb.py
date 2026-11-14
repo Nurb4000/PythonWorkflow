@@ -849,7 +849,26 @@ async def search_cis(
     stmt = stmt.order_by(ConfigurationItem.name)
     result = await db.execute(stmt)
     items = result.scalars().all()
-    return [_ci_detail_to_dict(i) for i in items]
+
+    # Trim each match's ci_data to the caller's visible fields, exactly as
+    # list_cis/get_ci do — otherwise /cmdb/search leaks every ci_data field to
+    # any cmdb_manager, sidestepping the field-level RBAC (findings #15).
+    from app.services.query_security_service import query_security_service
+    visible_fields = await query_security_service.get_visible_fields(
+        db, current_user, "configuration_items"
+    )
+
+    out = []
+    for ci in items:
+        ci_dict = _ci_detail_to_dict(ci)
+        if ci_dict.get("ci_data") and visible_fields and visible_fields != ["*"]:
+            filtered_ci_data = {}
+            for key, value in ci_dict["ci_data"].items():
+                if key in visible_fields or "*" in visible_fields:
+                    filtered_ci_data[key] = value
+            ci_dict["ci_data"] = filtered_ci_data
+        out.append(ci_dict)
+    return out
 
 
 # ---------------------------------------------------------------------------
