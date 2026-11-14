@@ -153,7 +153,9 @@ async def get_my_runs(
     
     stmt = (
         select(WorkflowRun)
-        .where(WorkflowRun.triggered_by.like(f"user:{current_user.id}%"))
+        # Exact match, not a LIKE prefix: "user:1%" would also match user:10,
+        # user:11, … user:199 — leaking other users' runs (findings #19).
+        .where(WorkflowRun.triggered_by == f"user:{current_user.id}")
         .order_by(WorkflowRun.created_at.desc())
         .limit(100)
     )
