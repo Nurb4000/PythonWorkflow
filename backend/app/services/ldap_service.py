@@ -6,6 +6,7 @@ from typing import Dict, Any, Optional, List
 from datetime import datetime, timezone
 
 from app.core.config import settings
+from app.utils.secret_encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -292,7 +293,8 @@ async def load_ldap_overrides() -> None:
     if _db("ldap_bind_dn") is not None:
         settings.ldap_bind_dn = _db("ldap_bind_dn")
     if _db("ldap_bind_password") is not None and _db("ldap_bind_password") != "":
-        settings.ldap_bind_password = _db("ldap_bind_password")
+        # Stored encrypted at rest (findings #34); decrypt for runtime use.
+        settings.ldap_bind_password = decrypt_secret(_db("ldap_bind_password"))
     if _db("ldap_user_filter") is not None:
         settings.ldap_user_filter = _db("ldap_user_filter")
     if _db("ldap_username_attribute") is not None:

@@ -13,6 +13,7 @@ from app.core.database import get_db
 from app.models.auth import User
 from app.models.system_settings import SystemSetting
 from app.api.auth import get_current_user
+from app.utils.secret_encryption import SECRET_SETTING_KEYS, encrypt_secret
 # NOTE: use the real application config singleton. This module previously
 # defined its own in-memory Settings class whose values nothing ever read —
 # saving email/LLM settings appeared to work but silently went nowhere.
@@ -35,7 +36,14 @@ async def get_setting(db: AsyncSession, key: str, default: str = "") -> str:
 
 
 async def set_setting(db: AsyncSession, key: str, value: str) -> None:
-    """Set a setting value in the DB"""
+    """Set a setting value in the DB.
+
+    Credential keys (see ``SECRET_SETTING_KEYS``) are encrypted at rest so the
+    secret never sits in cleartext in the database (findings #34). Non-secret
+    settings are stored unchanged.
+    """
+    if key in SECRET_SETTING_KEYS and value:
+        value = encrypt_secret(value)
     stmt = select(SystemSetting).where(SystemSetting.key == key)
     result = await db.execute(stmt)
     row = result.scalar_one_or_none()

@@ -22,6 +22,7 @@ from app.core.database import async_session_factory
 from app.models.email_trigger import EmailProcessingLog
 from app.models.schemas import Workflow, WorkflowRun
 from app.models.system_settings import SystemSetting
+from app.utils.secret_encryption import SECRET_SETTING_KEYS, decrypt_secret
 from app.services.scheduler import scheduler_service
 from app.services.email_service import notify_admin
 
@@ -65,7 +66,12 @@ class EmailMonitorService:
                 stmt = select(SystemSetting).where(SystemSetting.key.in_(keys))
                 result = await db.execute(stmt)
                 for row in result.scalars().all():
-                    self._settings_cache[row.key] = row.value or ""
+                    val = row.value or ""
+                    # Passwords are stored encrypted at rest (findings #34);
+                    # decrypt before caching so runtime use gets plaintext.
+                    if row.key in SECRET_SETTING_KEYS:
+                        val = decrypt_secret(val)
+                    self._settings_cache[row.key] = val
         return self._settings_cache
 
     def _get_setting(self, key: str, default: str = "") -> str:

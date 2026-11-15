@@ -16,6 +16,7 @@ from datetime import datetime
 from email.message import EmailMessage
 
 from app.core.config import settings
+from app.utils.secret_encryption import decrypt_secret
 
 logger = logging.getLogger(__name__)
 
@@ -75,7 +76,8 @@ async def load_smtp_overrides() -> None:
     if _db("smtp_username") is not None:
         settings.smtp_username = _db("smtp_username")
     if _db("smtp_password") is not None and _db("smtp_password") != "":
-        settings.smtp_password = _db("smtp_password")
+        # Stored encrypted at rest (findings #34); decrypt for runtime use.
+        settings.smtp_password = decrypt_secret(_db("smtp_password"))
     if _db("smtp_from") is not None:
         settings.smtp_from = _db("smtp_from")
     if _db("smtp_tls") is not None:
