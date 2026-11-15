@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func, or_, and_
 from typing import List, Optional
+from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.models.field_library import FieldDefinition
@@ -210,7 +211,10 @@ async def deprecate_field_definition(
         raise HTTPException(status_code=404, detail="Field definition not found")
     
     field.is_deprecated = True
-    field.deprecated_at = func.now()
+    # #35 fix: assign a Python datetime, not func.now(). Assigning the SQL now()
+    # expression to the mapped DateTime(timezone=True) column makes asyncpg try to
+    # bind it as a parameter, which it cannot serialize -> commit raises (HTTP 500).
+    field.deprecated_at = datetime.now(timezone.utc)
     field.deprecated_by_id = current_user.id
     field.is_active = False
     

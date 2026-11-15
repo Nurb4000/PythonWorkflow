@@ -6,6 +6,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select, func
 from typing import Any, Dict, List, Optional
 from sqlalchemy.orm import selectinload
+from datetime import datetime, timezone
 
 from app.core.database import get_db
 from app.models.auth import User
@@ -122,7 +123,12 @@ async def cancel_run(
         raise HTTPException(status_code=400, detail="Run cannot be cancelled")
 
     run.status = "cancelled"
-    run.completed_at = db.func.now()
+    # #35 fix: assign a Python datetime, not db.func.now(). The latter produces a
+    # server-side SQL now() expression; assigning it to the mapped DateTime column
+    # makes SQLAlchemy bind it as a parameter, which asyncpg cannot serialize ->
+    # commit raises (HTTP 500). Use a tz-aware UTC datetime to match the
+    # DateTime(timezone=True) column.
+    run.completed_at = datetime.now(timezone.utc)
     await db.commit()
 
     return {"message": "Run cancelled successfully"}
