@@ -1,8 +1,11 @@
 """
 Authentication API endpoints
 """
+import logging
 import time
 from collections import defaultdict
+
+logger = logging.getLogger(__name__)
 
 from fastapi import APIRouter, HTTPException, Depends, Request, Response, Query, Body
 from pydantic import BaseModel
@@ -125,7 +128,12 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
-    
+
+    # Findings #30: self-registered accounts must verify their email before they
+    # can authenticate. Unverified users exist but cannot use their tokens yet.
+    if not user.is_verified:
+        raise HTTPException(status_code=403, detail="Email address not verified")
+
     return user
 
 
@@ -426,20 +434,73 @@ async def register(
             password=password,
             role=role,
             full_name=full_name or username,
-            custom_data=custom_data
+            custom_data=custom_data,
+            is_verified=False,  # findings #30: self-registration starts unverified
         )
 
+        # Findings #30: self-registration creates an *unverified* account. Email a
+        # short-lived verification token so the caller can prove ownership before
+        # the account can authenticate (get_current_user rejects unverified users).
+        # Best-effort: registration still succeeds even if SMTP is unavailable.
+        verification_token = auth_service.create_verification_token(user.id)
+        base = str(request.url_root).rstrip("/")
+        verify_link = f"{base}/auth/verify-email?token={verification_token}"
+        try:
+            from app.services.email_service import send_email
+            send_email(
+                to=email,
+                subject="Verify your PythonWorkflow account",
+                body=(
+                    "Welcome! Confirm your email address to activate your account:\n\n"
+                    f"{verify_link}\n\nThis link expires in 24 hours."
+                ),
+            )
+        except Exception as exc:  # never block registration on email delivery
+            logger.warning("Failed to send verification email to %s: %s", email, exc)
+
         return {
-            "message": "User created successfully",
+            "message": "User created. Check your email to verify your account.",
             "user": {
                 "id": user.id,
                 "username": user.username,
                 "email": user.email,
-                "role": user.role
+                "role": user.role,
+                "is_verified": user.is_verified
             }
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/auth/verify-email")
+async def verify_email(
+    token: str = Query(..., description="Verification token emailed at registration"),
+    db: AsyncSession = Depends(get_db),
+):
+    """Confirm an email address using the token emailed at registration.
+
+    Findings #30: self-registered accounts start unverified and cannot
+    authenticate (get_current_user returns 403) until this endpoint sets
+    ``is_verified=True``. The token is a signed JWT, so validation is
+    stateless and does not require the revocation path.
+    """
+    payload = auth_service.decode_token(token)
+    if not payload or payload.get("type") != "email_verification":
+        raise HTTPException(status_code=400, detail="Invalid or expired verification token")
+    user_id = payload.get("sub")
+    if user_id is None:
+        raise HTTPException(status_code=400, detail="Invalid verification token")
+    try:
+        user = await auth_service.get_user_by_id(db, int(user_id))
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid verification token")
+    if user is None:
+        raise HTTPException(status_code=404, detail="User not found")
+    if user.is_verified:
+        return {"message": "Email already verified"}
+    user.is_verified = True
+    await db.commit()
+    return {"message": "Email verified successfully"}
 
 
 @router.get("/auth/me")

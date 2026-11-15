@@ -164,8 +164,14 @@ class AuthService:
         return user
     
     async def create_user(self, db: AsyncSession, username: str, email: str,
-                          password: str, role: str = "user", full_name: str = "", custom_data: Optional[dict] = None) -> User:
-        """Create a new user"""
+                          password: str, role: str = "user", full_name: str = "", custom_data: Optional[dict] = None,
+                          is_verified: bool = True) -> User:
+        """Create a new user.
+
+        ``is_verified`` defaults to True (admin-created/trusted accounts). Self-
+        registration passes False so the account stays unverified until the emailed
+        link is confirmed (findings #30).
+        """
 
         # Check if user exists
         stmt = select(User).where(User.username == username)
@@ -194,7 +200,7 @@ class AuthService:
             roles=roles,
             full_name=full_name or username,
             is_active=True,
-            is_verified=True,
+            is_verified=is_verified,
             custom_data=custom_data or {}
         )
         
@@ -283,6 +289,20 @@ class AuthService:
         )
         encoded_jwt = jwt.encode(to_encode, settings.secret_key, algorithm=settings.algorithm)
         return encoded_jwt
+
+    def create_verification_token(self, user_id: int) -> str:
+        """Create a short-lived JWT used to confirm a user's email address.
+
+        Findings #30: self-registered accounts start unverified; this token is
+        emailed so the caller can prove ownership before the account can
+        authenticate. It carries ``sub`` (user id) and ``type=email_verification``
+        so the verify endpoint can validate it without touching the revocation
+        path that access tokens require.
+        """
+        return self.create_access_token(
+            {"sub": str(user_id), "type": "email_verification"},
+            expires_delta=timedelta(hours=24),
+        )
 
     def decode_token(self, token: str) -> Optional[dict]:
         """Pure JWT decode (signature + expiry). No revocation check.
