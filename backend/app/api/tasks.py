@@ -73,7 +73,12 @@ async def list_tasks(
     elif current_user.role == "user":
         # Users see only their own tasks
         stmt = stmt.where(Task.assigned_to_user_id == current_user.id)
-    
+    else:
+        # Unknown/unrecognized role (e.g. cmdb_manager, or a typo/future role):
+        # fail safe and restrict to the user's own tasks rather than leaking every
+        # active task system-wide (findings #33).
+        stmt = stmt.where(Task.assigned_to_user_id == current_user.id)
+
     # P6.2: Count total for pagination
     count_stmt = select(func.count()).select_from(stmt.subquery())
     total_result = await db.execute(count_stmt)
