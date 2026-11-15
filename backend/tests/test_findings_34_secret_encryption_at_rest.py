@@ -90,7 +90,12 @@ async def test_set_setting_encrypts_credentials_and_stores_plain_others(sqlite):
 
 
 async def test_credential_keys_are_exactly_the_secrets():
-    assert SECRET_SETTING_KEYS == {"smtp_password", "imap_password", "ldap_bind_password"}
+    assert SECRET_SETTING_KEYS == {
+        "smtp_password",
+        "imap_password",
+        "ldap_bind_password",
+        "bootstrap_admin_password",  # findings #7: bootstrap admin pw encrypted at rest
+    }
 
 
 # --- read sites decrypt stored secrets -----------------------------------------

@@ -233,6 +233,12 @@ async def create_default_admin():
 
     H3 fix: uses a high-entropy random password instead of the weak "admin123".
     The password is logged once (masked) so the operator can retrieve it.
+
+    Findings #7 fix: in addition to the masked log line, the plaintext bootstrap
+    password is persisted encrypted-at-rest in ``system_settings``
+    (``bootstrap_admin_password``) so the operator can still retrieve it if the
+    startup log was never captured/retained (otherwise a lost log = permanent
+    lock-out). Retrieve it later with ``scripts/setup_admin.py --show``.
     """
     try:
         async with async_session_factory() as db:
@@ -247,6 +253,7 @@ async def create_default_admin():
                 # No users exist, create default admin
                 import secrets
                 from app.services.auth_service import pwd_context
+                from app.api.system_settings import set_setting
 
                 # H3: high-entropy random password (24-char URL-safe token)
                 bootstrap_password = secrets.token_urlsafe(18)  # ~128 bits of entropy
@@ -263,11 +270,18 @@ async def create_default_admin():
                 )
                 db.add(admin)
                 await db.commit()
+                # Findings #7 fix: persist the plaintext bootstrap password
+                # encrypted-at-rest so it survives a lost/unretained startup log.
+                # set_setting encrypts keys in SECRET_SETTING_KEYS (Fernet, keyed off
+                # SECRET_KEY); read back via decrypt_secret(get_setting(...)).
+                await set_setting(db, "bootstrap_admin_password", bootstrap_password)
                 # L4 fix: mask the password in logs (show first 4 + last 4 chars)
                 masked = f"{bootstrap_password[:4]}****{bootstrap_password[-4:]}"
                 logger.info(
                     "Created default admin user (username: admin, password: %s). "
-                    "Change it immediately via PUT /auth/users/{id}.",
+                    "Change it immediately via PUT /auth/users/{id}. "
+                    "If this log is not retained, retrieve the password with "
+                    "'python scripts/setup_admin.py --show'.",
                     masked,
                 )
             else:

@@ -171,7 +171,9 @@ Services:
 - Frontend: http://localhost:9000
 - Backend API: http://localhost:6000
 - API Docs: http://localhost:6000/docs
-- Default admin user (created on first run if no users exist): username `admin`, password a high-entropy random `token_urlsafe(18)` (~128 bits) that is logged **once, masked** (`first4****last4`). Retrieve it from the startup logs and change immediately via `PUT /auth/users/{id}`. If the startup log is not captured, there is no way to recover the password.
+- Default admin user (created on first run if no users exist): username `admin`, password a high-entropy random `token_urlsafe(18)` (~128 bits) that is logged **once, masked** (`first4****last4`). Change it immediately via `PUT /auth/users/{id}`. The plaintext password is also persisted encrypted-at-rest in the database, so it can be retrieved even if the startup log was never captured:
+  - Retrieve it: `python scripts/setup_admin.py --show`
+  - Regenerate/reset it: `python scripts/setup_admin.py --reset`
 
 ### Local Development
 

@@ -23,6 +23,10 @@ SECRET_SETTING_KEYS = frozenset({
     "smtp_password",
     "imap_password",
     "ldap_bind_password",
+    # Bootstrap admin password created on first run (findings #7). Stored encrypted
+    # at rest so the retrievable fallback credential never sits in cleartext in the
+    # database; read back via decrypt_secret(get_setting(db, "bootstrap_admin_password")).
+    "bootstrap_admin_password",
 })
 
 
