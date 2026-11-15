@@ -388,8 +388,12 @@ async def change_password(
 
 
 # H1 fix: allowlist of roles a self-registering user can claim.
-# Admins assign higher roles via PUT /auth/users/{id}.
+# Admins assign higher roles via the dedicated POST /auth/users endpoint (findings #31).
 _ALLOWED_SELF_REGISTER_ROLES = frozenset({"user"})
+
+# Roles an admin may directly assign when creating an account via POST /auth/users.
+# These are the roles the system actually recognizes (see get_current_* dependencies).
+_VALID_ADMIN_CREATED_ROLES = frozenset({"user", "staff", "developer", "admin", "cmdb_manager"})
 
 # H8 fix: fields to exclude from custom_data on registration.
 # The full JSON body was previously stored as-is, leaking password/role/email.
@@ -470,6 +474,57 @@ async def register(
         }
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
+
+
+@router.post("/auth/users")
+async def create_user_account(
+    request: Request,
+    username: str,
+    email: str,
+    password: str,
+    full_name: Optional[str] = None,
+    role: str = "user",
+    admin_user: User = Depends(get_current_admin),
+    db: AsyncSession = Depends(get_db),
+):
+    """Admin-only: create a user account with an explicitly requested role.
+
+    Findings #31: self-service ``register`` downgrades any role outside
+    ``_ALLOWED_SELF_REGISTER_ROLES`` ({"user"}) to "user", so admins could not
+    create staff/developer/admin accounts through it (the account was silently
+    created as a restricted "user"). This endpoint requires an admin and honors
+    the requested role directly. Admin-created accounts are trusted, so they start
+    verified (is_verified=True) and can authenticate immediately.
+    """
+    if role not in _VALID_ADMIN_CREATED_ROLES:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid role {role!r}; allowed roles: {sorted(_VALID_ADMIN_CREATED_ROLES)}",
+        )
+
+    try:
+        user = await auth_service.create_user(
+            db=db,
+            username=username,
+            email=email,
+            password=password,
+            role=role,
+            full_name=full_name or username,
+            is_verified=True,  # admin-created accounts are trusted
+        )
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+
+    return {
+        "message": "User created successfully",
+        "user": {
+            "id": user.id,
+            "username": user.username,
+            "email": user.email,
+            "role": user.role,
+            "is_verified": user.is_verified,
+        }
+    }
 
 
 @router.post("/auth/verify-email")
