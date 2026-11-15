@@ -14,7 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.core.database import get_db, async_session_factory
 from app.models.auth import User, Group, workflow_permissions
 from app.models.schemas import Task, WorkflowRun, WorkflowStep
-from app.api.auth import get_current_user, get_current_admin
+from app.api.auth import get_current_user, get_current_admin, has_role
 
 router = APIRouter()
 
@@ -479,6 +479,23 @@ async def update_task(
     return {"message": "Task updated", "task_id": task.id}
 
 
+def _task_paused_by(current_user: User, task) -> bool:
+    """True if the caller may pause/resume ``task``.
+
+    Findings #32: pausing/resuming is restricted to the assignee, a member of the
+    task's assigned group, or an admin — otherwise any authenticated user could
+    pause/resume any task (IDOR) and hide SLA/OLA/date-target breaches from the
+    periodic monitor by pausing tasks out of breach detection.
+    """
+    if has_role(current_user, "admin"):
+        return True
+    if task.assigned_to_user_id == current_user.id:
+        return True
+    if task.assigned_group_id and task.assigned_group_id in [g.id for g in (current_user.groups or [])]:
+        return True
+    return False
+
+
 @router.post("/tasks/{task_id}/pause")
 async def pause_task(
     task_id: int,
@@ -490,14 +507,17 @@ async def pause_task(
     stmt = select(Task).where(Task.id == task_id)
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
+    if not _task_paused_by(current_user, task):
+        raise HTTPException(status_code=403, detail="You are not permitted to pause this task")
+
     task.pause_state = pause_state
     task.updated_at = datetime.now(timezone.utc)
     await db.commit()
-    
+
     return {"message": f"Task paused with state: {pause_state}", "task_id": task.id, "pause_state": task.pause_state}
 
 
@@ -511,14 +531,17 @@ async def resume_task(
     stmt = select(Task).where(Task.id == task_id)
     result = await db.execute(stmt)
     task = result.scalar_one_or_none()
-    
+
     if not task:
         raise HTTPException(status_code=404, detail="Task not found")
-    
+
+    if not _task_paused_by(current_user, task):
+        raise HTTPException(status_code=403, detail="You are not permitted to resume this task")
+
     task.pause_state = "in_process"
     task.updated_at = datetime.now(timezone.utc)
     await db.commit()
-    
+
     return {"message": "Task resumed", "task_id": task.id}
 
 
