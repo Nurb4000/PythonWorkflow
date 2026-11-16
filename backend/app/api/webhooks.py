@@ -2,7 +2,6 @@
 API endpoints for webhooks and external triggers (P2.5)
 """
 import hmac
-import hashlib
 import time
 from collections import defaultdict
 from fastapi import APIRouter, HTTPException, Header, Depends, Request
@@ -12,7 +11,7 @@ from typing import Optional
 from app.core.database import get_db
 from app.core.config import settings
 from app.services.scheduler import scheduler_service
-from app.services.auth_service import _utcnow, _as_aware
+from app.services.auth_service import auth_service
 from app.models.schemas import Workflow
 
 router = APIRouter()
@@ -152,20 +151,16 @@ async def external_trigger(
         client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
     _check_rate_limit(f"api_trigger:{client_ip}")
 
-    # Validate API key against stored tokens if provided
+    # Validate API key against stored tokens if provided.
+    # Findings #31 fix: verify with bcrypt via the shared indexed lookup
+    # (auth_service.verify_api_token) instead of comparing an unsalted SHA-256
+    # hash against the bcrypt-stored token_hash — the two can never match, which
+    # made this endpoint return 401 for every request (valid or not). verify_api_token
+    # also handles expiry (tz-aware) and returns None for unknown/inactive tokens.
     if x_api_key:
-        from app.models.auth import APIToken
-        token_hash = hashlib.sha256(x_api_key.encode()).hexdigest()
-        stmt = select(APIToken).where(
-            APIToken.token_hash == token_hash,
-            APIToken.is_active == True
-        )
-        result = await db.execute(stmt)
-        api_token = result.scalar_one_or_none()
-        if not api_token:
+        user = await auth_service.verify_api_token(db, x_api_key)
+        if user is None:
             raise HTTPException(status_code=401, detail="Invalid API key")
-        if api_token.expires_at and _as_aware(api_token.expires_at) < _utcnow():
-            raise HTTPException(status_code=401, detail="API key expired")
     else:
         raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
 
