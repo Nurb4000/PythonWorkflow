@@ -3,7 +3,7 @@ API endpoints for webhooks and external triggers (P2.5)
 """
 import hmac
 import time
-from collections import defaultdict
+from collections import OrderedDict, defaultdict
 from fastapi import APIRouter, HTTPException, Header, Depends, Request
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy import select
@@ -23,7 +23,40 @@ _rate_buckets: dict[str, list[float]] = defaultdict(list)
 
 # FG5: Idempotency — track idempotency keys for 15 minutes
 _IDEMPOTENCY_WINDOW = 900  # seconds
-_idempotency_cache: dict[str, tuple[float, int]] = {}  # key -> (timestamp, run_id)
+# Hard cap on distinct idempotency keys held at once (findings #37). The cache is keyed
+# on a client-controlled header, so an attacker flooding unique X-Idempotency-Key values
+# can no longer grow it without limit. 10k comfortably exceeds any single source's
+# 120 req/min * 15 min budget while bounding memory and the per-request scan cost.
+_IDEMPOTENCY_MAX_ENTRIES = 10_000
+# OrderedDict keeps insertion order, so the oldest key is always at the front — enabling
+# O(1) oldest-first eviction. Bounded size bounds both memory and the per-request scan
+# cost (findings #37): a flood of attacker-controlled X-Idempotency-Key headers can no
+# longer grow the cache without limit.
+_idempotency_cache: "OrderedDict[str, tuple[float, int]]" = OrderedDict()
+
+
+def _prune_idempotency_entries(now: float) -> None:
+    """Drop expired entries, then evict oldest beyond the hard cap (findings #37).
+
+    The cache is keyed on a client-controlled header and was only lazily pruned (and
+    never evicted on overflow), so a flood of unique keys grew it without bound and
+    made each scan O(N). Pruning on every access + a hard LRU cap keeps N bounded
+    regardless of request pattern. Entries are inserted in monotonic-time order, so the
+    front is always the oldest.
+    """
+    cutoff = now - _IDEMPOTENCY_WINDOW
+    while _idempotency_cache and next(iter(_idempotency_cache.values()))[0] < cutoff:
+        _idempotency_cache.popitem(last=False)
+    while len(_idempotency_cache) > _IDEMPOTENCY_MAX_ENTRIES:
+        _idempotency_cache.popitem(last=False)
+
+
+def _record_idempotency(key: str, run_id: int) -> None:
+    """Store a (now, run_id) entry and evict oldest beyond the hard cap (#37)."""
+    _idempotency_cache[key] = (time.monotonic(), run_id)
+    _idempotency_cache.move_to_end(key)  # most-recently-used goes to the back
+    while len(_idempotency_cache) > _IDEMPOTENCY_MAX_ENTRIES:
+        _idempotency_cache.popitem(last=False)
 
 
 def _check_rate_limit(key: str) -> None:
@@ -81,16 +114,17 @@ async def webhook_trigger(
         client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
     _check_rate_limit(f"webhook:{client_ip}")
 
-    # FG5: Idempotency check
+    # Verify webhook secret if configured. Must run before the idempotency check so an
+    # attacker with a bad/missing secret cannot drive cache writes / O(N) scans
+    # (findings #37).
+    verify_webhook_secret(x_webhook_secret)
+
+    # FG5: Idempotency check — after auth (#37): prune expired + evict-overflow, then
+    # replay a previously seen key.
     if x_idempotency_key:
-        now = time.monotonic()
-        # Prune expired entries
-        cutoff = now - _IDEMPOTENCY_WINDOW
-        expired = [k for k, (ts, _) in _idempotency_cache.items() if ts < cutoff]
-        for k in expired:
-            del _idempotency_cache[k]
+        _prune_idempotency_entries(time.monotonic())
         cached = _idempotency_cache.get(x_idempotency_key)
-        if cached and cached[0] >= cutoff:
+        if cached is not None:
             return {
                 "success": True,
                 "run_id": cached[1],
@@ -98,9 +132,6 @@ async def webhook_trigger(
                 "message": "Duplicate request (idempotent replay)",
                 "idempotent": True,
             }
-
-    # Verify webhook secret if configured
-    verify_webhook_secret(x_webhook_secret)
     
     try:
         # Verify workflow exists and is active
@@ -114,9 +145,9 @@ async def webhook_trigger(
         # Trigger the workflow via scheduler (which uses engine.trigger_workflow)
         run = await scheduler_service.trigger_webhook(workflow_id, payload)
 
-        # Store idempotency key
+        # Store idempotency key (bounded, oldest-first eviction — findings #37)
         if x_idempotency_key:
-            _idempotency_cache[x_idempotency_key] = (time.monotonic(), run.id)
+            _record_idempotency(x_idempotency_key, run.id)
 
         return {
             "success": True,
