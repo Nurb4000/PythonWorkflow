@@ -40,7 +40,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 ### Core Engine
 - **Visual Workflow Designer**: Drag-and-drop interface with graph-mode execution
 - **Condition Routing**: Model B condition steps with per-route expressions and default targets
-- **Parallel Execution**: Graph-mode workflows support fan-out/fan-in with visited-set deduplication
+- **Graph Traversal**: Fan-out/fan-in graph execution with a visited set so each step runs at most once per run (DAG semantics). Branches traverse depth-first/sequentially; concurrent parallel branches with true fan-in synchronization are planned (see Next Steps)
 - **State Machine**: Runs track status (pending/running/completed/failed/waiting/timeout/cancelled)
 - **Resume Support**: Human-task pauses allow workflow resumption without re-execution
 - **Timeout & Retries**: Configurable run timeouts and per-step retry logic
