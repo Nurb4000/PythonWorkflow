@@ -81,9 +81,10 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 
 ### Security
 - **SSRF Protection**: Blocks private/loopback IPs in API calls
-- **Webhook Secrets**: HMAC verification for incoming webhooks
+- **Webhook Secrets**: HMAC verification for incoming webhooks (fails closed when unset)
 - **Role-Based Access**: Admin/Developer/Staff/User permissions
-- **Code Sandboxing**: Restricted builtins for custom code steps
+- **Rate Limiting & Brute-Force Protection**: Per-username lockout and per-IP rate limiting on `POST /auth/login`
+- **Code Sandboxing**: Restricted builtins for custom code steps (subprocess-isolated with CPU/memory limits and a hard timeout)
 
 ### Marketplace
 - **Publish Workflows**: Export and publish workflows from the detail page with metadata (name, description, category, tags)
@@ -128,9 +129,54 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Seed Script**: `scripts/demo_seed.py` populates sample workflows, CIs, incidents, and KB articles
 - **Reset**: Re-run to refresh demo data without affecting production
 
+### Field Library
+- **Field Definitions**: Reusable field schemas shared across forms and CMDB types; full CRUD with deprecation
+- **Where-Used**: List every form and CI-type that references a given field
+- **Scan**: Audit existing forms/CI-types for field usage
+- **Migration Plan**: Generate a migration plan when changing a field definition
+- **Data Explorer**: Query any queryable table via a visual filter builder (`POST /data-query/build`) or raw SQL (`POST /data-query/sql`), with field-level RBAC applied
+
+### SQL Views
+- **Named Views**: Create/read/update/delete named SQL views; regenerate them from forms/CI-types
+- **Admin Management**: List and delete views from the admin panel
+
+### Bulk Operations (Admin)
+- Batch deprecate / reactivate / reassign-owner for workflows, forms, and CI-types
+
+### Roles & Field-Level Permissions
+- **Roles**: Manage roles and their permissions (`/admin/roles`)
+- **Field RBAC**: Per-table visible/editable-field policies; check which fields a role may view or edit (`/admin/role-permissions/visible-fields/{table_name}`, `/admin/role-permissions/editable-fields/{table_name}`, `/admin/role-permissions/check/{table_name}`)
+
+### LDAP
+- **Config & Test-Connection**: Configure LDAP and test the bind
+- **Sync & Authenticate**: Sync users/groups from LDAP; authenticate against LDAP
+
+### Search, Lookup & Audit
+- **Unified Search**: `POST /search` across workflows, forms, and CI items
+- **Lookup**: Resolve users (`/lookup/users`) and CI items (`/lookup/ci-items`) by field, or run a custom lookup (`/lookup/perform`)
+- **Audit Trails**: Entity-level (`/audit/{entity_type}/{entity_id}`) and user-level (`/audit/user/{user_id}`) audit history
+
+### Data Export
+- **Table / Query Export**: Dump a table (`GET /data-export/table/{table}`) or query result (`POST /data-export/query`) to CSV. Secret columns are stripped and table-level RBAC applies (developer-scoped; see Security notes)
+
+### Reports
+- **Report Builder**: Create/read/update reports and execute them for table/graph output (`/reports`)
+
+### SLA / OLA Stats
+- **Stats**: SLA and OLA statistics for services and date targets (`/services/sla-stats`, `/services/ola-stats`)
+
+### Workflow Import / Export
+- **Export / Duplicate / Import**: Export a workflow to JSON, duplicate it in the designer, or import from a package/body (`/workflows/{id}/export`, `/workflows/{id}/duplicate`, `/workflows/import`)
+
+### Admin Diagnostics & Lifecycle
+- **Hygiene Report**: Data-hygiene report (`GET /admin/hygiene-report`)
+- **Logs**: View and export audit logs (`/admin/logs`, `/admin/logs/export`)
+- **Promote**: Promote a workflow or form between environments (`/admin/promote/workflow/{id}`, `/admin/promote/form/{id}`)
+- **Form Uploads**: Manage uploaded form files (`GET /admin/form-uploads`)
+
 ### Testing
-- **Backend**: 157 tests (pytest + asyncio) run against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, and run-inspector suites
-- **E2E**: 10 tests (Puppeteer + Chromium headless)
+- **Backend**: 570+ tests (pytest + asyncio) collected against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, run-inspector suites, and the findings regression nets. (`pytest --collect-only` reports ~579; a handful require a live Postgres and error out without it.)
+- **E2E**: 18 steps across Puppeteer + Chromium headless (CDP-driven) smoke/regression scripts
 - **Regression Net**: Pins current behavior before refactors
 
 ## Tech Stack
@@ -163,8 +209,8 @@ docker compose up -d
 docker compose exec backend alembic upgrade head
 
 # Run tests
-make test-backend    # 157/157 passing
-make test-e2e        # 10/10 passing
+make test-backend    # 570+ collected (see Testing)
+make test-e2e        # 18 steps
 ```
 
 Services:
@@ -218,11 +264,10 @@ POST   /workflows/{id}/run           # Trigger run
 
 ### Runs
 ```
-GET    /workflows/{id}/runs          # List runs (paginated)
-GET    /runs/{id}                    # Get run details
-GET    /runs/{id}/steps              # Get step instances
-DELETE /runs/{id}                    # Cancel run
-POST   /runs/{id}/resume             # Resume paused run
+GET    /workflows/{workflow_id}/runs                 # List runs (paginated)
+GET    /workflows/{workflow_id}/runs/{run_id}        # Get run details
+GET    /workflows/{workflow_id}/runs/{run_id}/steps  # Get step instances
+DELETE /workflows/{workflow_id}/runs/{run_id}        # Cancel run
 ```
 
 ### Tasks
@@ -271,6 +316,20 @@ POST   /ai/assist-node               # Generate/explain/fix/optimize a workflow 
 POST   /ai/assist-query              # Generate/explain/fix SQL for the query builder
 POST   /ai/assist-form               # Suggest form fields from a description
 POST   /ai/explain-error             # Diagnose workflow run failures
+POST   /ai/generate-step             # Generate a single step config from natural language
+POST   /ai/generate-workflow         # Generate a whole workflow from a description
+POST   /ai/generate-form             # Generate a form from a description
+POST   /ai/assist-report             # AI assist for report definitions
+POST   /ai/assist-cron               # AI assist for cron/schedule expressions
+POST   /ai/assist-webhook            # AI assist for webhook step config
+POST   /ai/assist-ci-type            # AI assist for CMDB CI-type definitions
+POST   /ai/assist-task               # AI assist for task configuration
+POST   /ai/assist-ldap               # AI assist for LDAP configuration
+POST   /ai/assist-marketplace        # AI assist for marketplace items
+POST   /ai/assist-email-template     # AI assist for email templates
+POST   /ai/validate-standards        # Validate against documented standards
+GET    /ai/knowledge-base            # Domain KB steering prompts
+GET    /ai/health                    # AI service health
 ```
 
 ### Marketplace
@@ -287,6 +346,156 @@ GET    /marketplace/my-nodes         # List personal node templates
 POST   /marketplace/my-nodes         # Save node to personal library
 DELETE /marketplace/my-nodes/{id}    # Remove from personal library
 GET    /marketplace/categories       # Category catalog + tag cloud
+```
+
+### Field Library
+```
+GET    /field-library                       # List field definitions
+POST   /field-library                       # Create a field definition
+GET    /field-library/{field_id}            # Get a field definition
+PUT    /field-library/{field_id}            # Update a field definition
+POST   /field-library/{field_id}/deprecate  # Deprecate a field definition
+DELETE /field-library/{field_id}            # Delete a field definition
+GET    /field-library/{field_id}/where-used # Forms/CI-types referencing this field
+GET    /field-library/scan/forms            # Audit forms for field usage
+GET    /field-library/scan/ci-types         # Audit CI-types for field usage
+GET    /field-library/migration-plan        # Generate a migration plan for a field
+```
+
+### Where-Used (Admin)
+```
+GET    /admin/where-used/field/{field_id}      # Fields referenced by this field id
+GET    /admin/where-used/forms/{field_key}     # Forms using this field key
+GET    /admin/where-used/ci-types/{field_key}  # CI-types using this field key
+```
+
+### SQL Views
+```
+GET    /sql-views                    # List views
+POST   /sql-views                    # Create a view
+PUT    /sql-views/{view_id}          # Update a view
+DELETE /sql-views/{view_id}          # Delete a view
+GET    /admin/views                  # Admin: list views
+POST   /admin/views/regenerate/form/{form_id}      # Regenerate a view from a form
+POST   /admin/views/regenerate/ci-type/{ci_type_id}# Regenerate a view from a CI-type
+DELETE /admin/views/{view_name}      # Admin: delete a view
+```
+
+### Data Explorer & Data Fields
+```
+GET    /data-query/tables            # Queryable tables
+POST   /data-query/build             # Visual filter-builder query (field-level RBAC)
+POST   /data-query/sql               # Raw SQL query (field-level RBAC)
+PUT    /data-query/records/{table_name}/{record_id}/custom-data
+POST   /data-query/bulk-update/custom-data
+GET    /data-fields                  # List data field definitions
+POST   /data-fields                  # Create a data field definition
+GET    /data-fields/{field_id}       # Get a data field definition
+PUT    /data-fields/{field_id}       # Update a data field definition
+DELETE /data-fields/{field_id}       # Delete a data field definition
+```
+
+### LDAP
+```
+GET    /admin/ldap/config            # Get LDAP config
+PUT    /admin/ldap/config            # Update LDAP config
+POST   /admin/ldap/test-connection   # Test the LDAP connection
+POST   /admin/ldap/sync              # Sync users/groups from LDAP
+POST   /admin/ldap/authenticate      # Authenticate against LDAP
+```
+
+### Search, Lookup & Audit
+```
+GET    /search                       # Unified search (workflows/forms/CI items)
+GET    /lookup/users                 # Resolve users by field
+GET    /lookup/ci-items              # Resolve CI items by field
+POST   /lookup/perform               # Custom lookup
+GET    /audit/{entity_type}/{entity_id}      # Entity-level audit trail
+GET    /audit/user/{user_id}         # User-level audit trail
+```
+
+### Data Export
+```
+GET    /data-export/table/{table_name}  # Dump a table to CSV (secret columns stripped, RBAC)
+POST   /data-export/query            # Export a query result to CSV
+```
+
+### Reports
+```
+GET    /reports                      # List reports
+GET    /reports/{report_id}          # Get a report
+POST   /reports                      # Create a report
+PUT    /reports/{report_id}          # Update a report
+POST   /reports/{report_id}/execute  # Execute a report (table/graph)
+DELETE /reports/{report_id}          # Delete a report
+```
+
+### Roles & Field-Level Permissions
+```
+GET    /admin/roles                   # List roles
+POST   /admin/roles                   # Create a role
+GET    /admin/roles/{role_id}         # Get a role
+PUT    /admin/roles/{role_id}         # Update a role
+DELETE /admin/roles/{role_id}         # Delete a role
+GET    /admin/role-permissions        # List role-permission policies
+POST   /admin/role-permissions        # Create a role-permission policy
+PUT    /admin/role-permissions/{permission_id}
+DELETE /admin/role-permissions/{permission_id}
+GET    /admin/role-permissions/check/{table_name}          # Can this role view/edit this table?
+GET    /admin/role-permissions/visible-fields/{table_name} # Fields the role can view
+GET    /admin/role-permissions/editable-fields/{table_name}# Fields the role can edit
+```
+
+### Bulk Operations (Admin)
+```
+POST   /bulk/workflows/deprecate      # Batch-deprecate workflows
+POST   /bulk/workflows/reactivate     # Batch-reactivate workflows
+POST   /bulk/workflows/reassign-owner # Batch-reassign workflow owners
+POST   /bulk/forms/deprecate          # Batch-deprecate forms
+POST   /bulk/forms/reactivate         # Batch-reactivate forms
+POST   /bulk/ci-types/deprecate       # Batch-deprecate CI-types
+POST   /bulk/ci-types/reactivate      # Batch-reactivate CI-types
+```
+
+### Branding & Portal Customization
+```
+GET    /branding                     # Get branding (system name, logo)
+PUT    /settings/branding            # Update branding
+GET    /settings/banner              # Get portal banner
+PUT    /settings/banner              # Update portal banner
+GET    /portal/banner                # Effective portal banner (client-side)
+GET    /settings/priority-matrix     # Priority matrix (admin)
+PUT    /settings/priority-matrix     # Update priority matrix
+GET    /portal/priority-matrix       # Priority matrix (portal-facing)
+```
+
+### SLA / OLA Stats
+```
+GET    /services/sla-stats           # SLA statistics
+GET    /services/ola-stats           # OLA statistics
+```
+
+### Admin Diagnostics & Lifecycle
+```
+GET    /admin/hygiene-report         # Data-hygiene report
+GET    /admin/logs                   # View audit logs
+GET    /admin/logs/export            # Export audit logs
+POST   /admin/promote/workflow/{workflow_id}   # Promote a workflow across environments
+POST   /admin/promote/form/{form_id}           # Promote a form across environments
+GET    /admin/form-uploads           # Manage uploaded form files
+```
+
+### CMDB Extras
+```
+GET    /cmdb/items/export            # Export CI items
+GET    /cmdb/items/{item_id}/history # CI item field-change history
+POST   /cmdb/types/{type_id}/webhook     # Per-CI-type webhook config
+GET    /cmdb/types/{type_id}/webhook     # Get per-CI-type webhook config
+GET    /cmdb/templates                   # CI item templates
+POST   /cmdb/templates/{template_key}/apply  # Apply a CI item template
+GET    /cmdb/stats                   # CMDB statistics
+GET    /cmdb/search                  # Search CI items
+GET    /cmdb/items/{item_id}/graph   # Dependency graph for a CI item
 ```
 
 ## Configuration
@@ -361,7 +570,7 @@ PythonWorkflow/
 
 ## Next Steps
 
-- **P7**: Production deployment hardening (secrets management, rate limiting, audit logging)
+- **P7**: Production deployment hardening — login brute-force rate limiting + account lockout are shipped (see Security); remaining work is secrets rotation tooling, centralized audit logging, and deploy-time config validation
 - **P8**: Advanced features — **sub-workflows are now shipped** (`sub_workflow` executor: synchronous call-wait-merge); remaining work is parallel branches with synchronization and standardized error-handling patterns
 - **P9**: Performance optimization (connection pooling, query optimization, caching)
 
