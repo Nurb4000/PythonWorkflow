@@ -110,6 +110,12 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **OLA Tracking**: Internal Operational Level Agreements for backend processes
 - **Priority Matrix**: Define priority levels (P1-P4) with color coding and escalation rules
 
+### Forms
+- **Form Builder**: Create/read/update/delete forms built from reusable field definitions (`/forms`)
+- **Submissions**: Submit form data and manage the submission lifecycle (`/forms/{id}/submit`, `/forms/{id}/submissions`, submission status)
+- **Templates**: Reusable form templates; save any form as a template (`/forms/templates`, `/forms/{id}/save-template`)
+- **File Uploads**: Upload and download form-associated files (`/forms/upload`, `/forms/download/{filename}`)
+
 ### Incident & Change Management
 - **Incident Demos**: Sample incidents with severity tracking and resolution workflows
 - **Change Demos**: Sample change requests with approval workflows and risk assessment
