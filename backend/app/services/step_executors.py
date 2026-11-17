@@ -1668,7 +1668,11 @@ class SubWorkflowExecutor(BaseExecutor):
                 "success": True,
                 "run_id": final_run.id,
                 "status": final_run.status,
-                "result_data": final_run.result_data or {},
+                # WorkflowRun stores a run's final output in ``output_data`` (not
+                # ``result_data`` -- that column belongs to the Task model). Reading
+                # ``result_data`` here raised AttributeError on every successful
+                # sub-workflow. See Feature-Plan §2.1.
+                "result_data": final_run.output_data or {},
                 "duration_seconds": final_run.duration_seconds
             }
         else:

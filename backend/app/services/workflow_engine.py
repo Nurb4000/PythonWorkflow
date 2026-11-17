@@ -1121,3 +1121,16 @@ class WorkflowEngine:
             # No task found — treat as resolved (no human action needed)
             return True
         return all(t.status in ("completed", "closed") for t in tasks)
+
+
+# Module-level shared engine instance.
+#
+# ``tasks.py`` (resume-after-reopen) and ``step_executors.py`` (SubWorkflowExecutor)
+# both do ``from app.services.workflow_engine import workflow_engine`` and then call
+# e.g. ``workflow_engine.resume_workflow(...)`` / ``workflow_engine.trigger_workflow(...)``.
+# This singleton is that name; without it those imports raise ImportError. It is safe
+# to build here at import time: ``__init__`` only registers the built-in step executors
+# (which import back into this module lazily, inside methods, so there is no
+# circular-import cycle), and the engine is effectively stateless across runs -- every
+# public method receives its own ``db`` session.
+workflow_engine = WorkflowEngine()
