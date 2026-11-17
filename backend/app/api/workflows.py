@@ -20,6 +20,13 @@ from app.schemas.workflow import (
     WorkflowRunResponse
 )
 from app.services.workflow_engine import WorkflowEngine
+from app.services.workflow_version_service import (
+    snapshot_workflow,
+    list_versions,
+    get_version,
+    restore_version,
+)
+from app.models.schemas import WorkflowVersion
 
 router = APIRouter()
 engine = WorkflowEngine()
@@ -308,6 +315,64 @@ async def update_workflow(
     )
     result = await db.execute(stmt)
     return _workflow_to_response(result.scalar_one())
+
+
+@router.get("/{workflow_id}/versions")
+async def list_workflow_versions(
+    workflow_id: int,
+    developer: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """List version history for a workflow (newest first)."""
+    if await db.get(Workflow, workflow_id) is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    return await list_versions(db, workflow_id)
+
+
+@router.get("/{workflow_id}/versions/{version_id}")
+async def get_workflow_version(
+    workflow_id: int,
+    version_id: int,
+    developer: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Return a single version snapshot (full definition) for a workflow."""
+    row = await get_version(db, version_id)
+    if row is None or row.workflow_id != workflow_id:
+        raise HTTPException(status_code=404, detail="Version not found")
+    snapshot = row.snapshot if isinstance(row.snapshot, dict) else {}
+    return {
+        "id": row.id,
+        "workflow_id": row.workflow_id,
+        "version_number": row.version_number,
+        "label": row.label,
+        "created_by": row.created_by,
+        "created_at": row.created_at.isoformat() if row.created_at else None,
+        "snapshot": snapshot,
+    }
+
+
+@router.post("/{workflow_id}/versions/{version_id}/restore")
+async def restore_workflow_version(
+    workflow_id: int,
+    version_id: int,
+    request: Request,
+    developer: User = Depends(get_current_developer),
+    db: AsyncSession = Depends(get_db),
+):
+    """Restore a workflow to an earlier version (result captured as a new version)."""
+    if await db.get(Workflow, workflow_id) is None:
+        raise HTTPException(status_code=404, detail="Workflow not found")
+    restored = await restore_version(db, workflow_id, version_id, created_by=developer.id)
+    if restored is None:
+        raise HTTPException(status_code=404, detail="Version not found")
+    # FG1: Audit log
+    ip, ua = _get_client_info(request)
+    await _log_audit(
+        db, developer.id, "restore_workflow_version", "workflow", workflow_id,
+        f"Restored to version {restored.version} (from v{version_id})", ip, ua,
+    )
+    return _workflow_to_response(restored)
 
 
 @router.get("/{workflow_id}/associated-forms")

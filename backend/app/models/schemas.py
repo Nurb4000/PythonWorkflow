@@ -50,6 +50,32 @@ class Workflow(Base):
     # entry_form relationship can be added later if needed (avoids circular import)
 
 
+class WorkflowVersion(Base):
+    """A point-in-time snapshot of a workflow's definition (Feature-Plan §2.4).
+
+    Created on every create/save so versions can be listed, inspected, and
+    restored. The full definition (name/description/config/tags + serialized
+    steps; step connections live inside each step's ``definition`` JSON) is stored
+    as JSON in ``snapshot``. ``version_number`` matches ``Workflow.version`` at the
+    time of the snapshot.
+    """
+
+    __tablename__ = "workflow_versions"
+
+    __table_args__ = (Index("idx_workflow_versions_workflow", "workflow_id"),)
+
+    id = Column(Integer, primary_key=True, index=True)
+    workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="CASCADE"), nullable=False, index=True)
+    version_number = Column(Integer, nullable=False)
+    label = Column(String(255), default="")
+    snapshot = Column(JSON, default=dict, nullable=False)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    workflow = relationship("Workflow", backref="versions")
+    creator = relationship("User", backref="workflow_versions")
+
+
 class WorkflowStep(Base):
     __tablename__ = "workflow_steps"
 

@@ -92,6 +92,7 @@ class WorkflowUpdate(BaseModel):
     entry_form_id: Optional[int] = None  # P3.3
     service_id: Optional[int] = None  # SERVICE_MANAGEMENT_PLAN Phase 1.4
     manual_version_increment: bool = False  # P7: Manual version bump
+    version_label: Optional[str] = None  # §2.4: optional annotation captured in the version snapshot
     owner_user_id: Optional[int] = None  # A3: explicit owner
     tags: Optional[List[str]] = None  # A3: freeform tags
     is_deprecated: Optional[bool] = None  # E1: deprecation

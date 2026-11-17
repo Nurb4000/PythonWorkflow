@@ -14,6 +14,7 @@ from app.core.database import async_session_factory
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRunCreate
 from app.services.email_service import notify_admin
+from app.services.workflow_version_service import snapshot_workflow
 
 logger = logging.getLogger(__name__)
 
@@ -192,11 +193,15 @@ class WorkflowEngine:
                 description=step_data.get("description", "")
             )
             db.add(step)
-        
+
+        # §2.4: capture the initial version-1 snapshot. The snapshot query's autoflush
+        # flushes the just-added steps so they are included in the stored definition.
+        await snapshot_workflow(db, workflow, version_number=1, created_by=created_by)
+
         await db.commit()
         await db.refresh(workflow, attribute_names=["steps"])
         return workflow
-    
+
     async def update_workflow(self, db: AsyncSession, workflow_id: int, workflow_data: WorkflowUpdate,
                               created_by: Optional[int] = None) -> Optional[Workflow]:
         """Update an existing workflow"""
@@ -332,10 +337,16 @@ class WorkflowEngine:
         # fired together, producing a +2 bump on a single save.
         if not workflow_data.manual_version_increment:
             workflow.version += 1
+        # §2.4: capture this version's snapshot. The snapshot query's autoflush flushes
+        # the deleted/recreated steps so the stored definition reflects the new graph.
+        await snapshot_workflow(
+            db, workflow, workflow.version,
+            label=workflow_data.version_label or "", created_by=created_by,
+        )
         await db.commit()
         await db.refresh(workflow)
         return workflow
-    
+
     async def delete_workflow(self, db: AsyncSession, workflow_id: int) -> bool:
         """Deactivate a workflow (soft-delete), preserving runs for audit"""
         stmt = select(Workflow).where(Workflow.id == workflow_id)
