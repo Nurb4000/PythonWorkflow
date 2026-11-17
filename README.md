@@ -85,6 +85,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Role-Based Access**: Admin/Developer/Staff/User permissions
 - **Rate Limiting & Brute-Force Protection**: Per-username lockout and per-IP rate limiting on `POST /auth/login`
 - **Code Sandboxing**: Restricted builtins for custom code steps (subprocess-isolated with CPU/memory limits and a hard timeout)
+- **Export Denylist**: CSV export hard-strips sensitive columns (`password_hash`, `ldap_dn`, `custom_data`, tokens, keys) via `_SECRET_EXPORT_COLUMNS` on top of table-level RBAC — prevents bulk-dumping secrets (findings #11/#26)
 
 ### Marketplace
 - **Publish Workflows**: Export and publish workflows from the detail page with metadata (name, description, category, tags)
@@ -163,7 +164,14 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Audit Trails**: Entity-level (`/audit/{entity_type}/{entity_id}`) and user-level (`/audit/user/{user_id}`) audit history
 
 ### Data Export
-- **Table / Query Export**: Dump a table (`GET /data-export/table/{table}`) or query result (`POST /data-export/query`) to CSV. Secret columns are stripped and table-level RBAC applies (developer-scoped; see Security notes)
+- **Table / Query Export**: Dump a table (`GET /data-export/table/{table}`) or query result (`POST /data-export/query`) to CSV. Developer-scoped, with table-level view RBAC and a hard secret-column denylist (see Export Column Policy below).
+
+### Export Column Policy
+CSV export applies **defense in depth** so sensitive fields can never be bulk-dumped:
+1. **Table-level RBAC** — both endpoints call `query_security_service.validate_query_access(..., "view")` and return `403` without access (same guard as `/data-query/build`).
+2. **Secret-column denylist** — `data_query_service._SECRET_EXPORT_COLUMNS` is the source of truth. `strip_secret_export_columns()` removes any of these even when explicitly requested: `password_hash`, `ldap_dn`, `custom_data`, `refresh_token`, `api_token`, `token`, `secret`, `private_key`, `auth_token`. Applied to both table and query export.
+3. **Field-level RBAC** — when a `current_user` is present, per-user visible fields are also applied.
+- **Limits**: default `limit` 10,000, hard cap 100,000 (`Query(ge=1, le=100000)`). No export rate-limiting/alerting yet — a noted residual (findings #26).
 
 ### Reports
 - **Report Builder**: Create/read/update reports and execute them for table/graph output (`/reports`)
