@@ -14,7 +14,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory, engine
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications
 from app.services.scheduler import scheduler_service
 
 # E2: Configure logging — JSON format for production, text for development
@@ -206,6 +206,7 @@ app.include_router(portal.router)
 app.include_router(forms.router, tags=["forms"])
 app.include_router(system_settings.router, tags=["system-settings"])
 app.include_router(tasks.router, tags=["tasks"])
+app.include_router(notifications.router, tags=["notifications"])
 app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(data_fields.router, prefix="/data-fields", tags=["data-fields"])
 app.include_router(data_query.router, prefix="/data-query", tags=["data-query"])

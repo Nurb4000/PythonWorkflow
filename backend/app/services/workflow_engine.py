@@ -763,7 +763,22 @@ class WorkflowEngine:
         run.input_data = {**(run.input_data or {}), **instance.output_data}
         # Mark workflow as waiting on human action (resume continues from here)
         run.status = "waiting"
-        
+
+        # Notify the assignee that they have a new task (Feature-Plan §2.3). Flushed
+        # here so it commits alongside the task above and rolls back with it.
+        if assigned_to_user_id:
+            from app.services.notification_service import create_notification
+
+            await create_notification(
+                db,
+                user_id=assigned_to_user_id,
+                title=f"Task assigned: {task.title}",
+                message="You have been assigned a task in a running workflow.",
+                type="task_assigned",
+                related_entity_type="task",
+                related_entity_id=task.id,
+            )
+
         await db.commit()
         
         logger.info(f"Created task {task.id} for step {step.id}, workflow paused at human step")

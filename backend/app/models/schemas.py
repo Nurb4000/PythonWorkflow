@@ -210,6 +210,36 @@ class Task(Base):
     assigned_group = relationship("Group", foreign_keys=[assigned_group_id])
 
 
+class Notification(Base):
+    """An in-app notification for a single user (Feature-Plan §2.3).
+
+    Recipients are told about events that matter to them -- task assignment,
+    SLA/OLA breaches, workflow completion/failure, form submissions, etc. Each
+    row is owned by one user; the UI surfaces an unread badge + inbox.
+    """
+
+    __tablename__ = "notifications"
+
+    __table_args__ = (
+        Index("idx_notifications_user_unread", "user_id", "is_read"),
+        Index("idx_notifications_created_at", "created_at"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    title = Column(String(255), nullable=False)
+    message = Column(Text, default="")
+    type = Column(String(50), default="info", nullable=False, index=True)
+    # task_assigned, sla_breach, ola_breach, workflow_completed, workflow_failed,
+    # form_submission, mention
+    is_read = Column(Boolean, default=False, nullable=False, index=True)
+    related_entity_type = Column(String(50), nullable=True)  # e.g. task, workflow_run
+    related_entity_id = Column(Integer, nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now(), index=True)
+
+    owner = relationship("User", backref="notifications")
+
+
 class Schedule(Base):
     __tablename__ = "schedules"
 
