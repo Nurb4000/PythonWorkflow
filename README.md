@@ -277,7 +277,8 @@ GET    /tasks/{id}                   # Get task details
 POST   /tasks/{id}/open              # Reopen task
 POST   /tasks/{id}/review            # Move to review
 POST   /tasks/{id}/take              # Take ownership
-POST   /tasks/{id}/complete          # Complete with results
+POST   /tasks/{id}/complete          # Complete with results (resumes the paused run)
+POST   /tasks/{id}/resume            # Resume a paused task (clears pause state)
 POST   /tasks/{id}/close             # Close task
 POST   /tasks/{id}/reject            # Reject with reason
 PUT    /tasks/{id}                   # Update task (admin)
