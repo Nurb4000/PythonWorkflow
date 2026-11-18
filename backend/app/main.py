@@ -295,8 +295,11 @@ async def create_default_admin():
             if not users:
                 # No users exist, create default admin
                 import secrets
-                from app.services.auth_service import pwd_context
+                from app.services.auth_service import pwd_context, AuthService
                 from app.api.system_settings import set_setting
+
+                # Multi-tenancy (§3.1): the first user must belong to a tenant.
+                tenant_id = await AuthService._resolve_default_tenant_id(db)
 
                 # H3: high-entropy random password (24-char URL-safe token)
                 bootstrap_password = secrets.token_urlsafe(18)  # ~128 bits of entropy
@@ -310,6 +313,7 @@ async def create_default_admin():
                     is_active=True,
                     is_verified=True,
                     custom_data={"bootstrap": True},
+                    tenant_id=tenant_id,
                 )
                 db.add(admin)
                 await db.commit()

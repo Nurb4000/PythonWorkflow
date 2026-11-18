@@ -14,6 +14,8 @@ from sqlalchemy import select
 from sqlalchemy.orm import selectinload
 
 from app.models.auth import User, Group, APIToken, TokenRevocation, RefreshToken
+from app.models.tenancy import Tenant
+from app.services.tenant_scoping import DEFAULT_TENANT_NAME, DEFAULT_TENANT_SLUG
 from app.core.config import settings
 
 logger = logging.getLogger(__name__)
@@ -163,15 +165,41 @@ class AuthService:
         
         return user
     
+    @staticmethod
+    async def _resolve_default_tenant_id(db: AsyncSession) -> int:
+        """Return the id of the seeded default tenant, creating it if missing.
+
+        Async counterpart to ``tenant_scoping.ensure_default_tenant`` so user
+        creation on an ``AsyncSession`` always has a tenant to fall back to.
+        """
+        result = await db.execute(select(Tenant).where(Tenant.slug == DEFAULT_TENANT_SLUG))
+        tenant = result.scalar_one_or_none()
+        if tenant is not None:
+            return tenant.id
+        tenant = Tenant(name=DEFAULT_TENANT_NAME, slug=DEFAULT_TENANT_SLUG, is_active=True)
+        db.add(tenant)
+        await db.commit()
+        await db.refresh(tenant)
+        return tenant.id
+
     async def create_user(self, db: AsyncSession, username: str, email: str,
                           password: str, role: str = "user", full_name: str = "", custom_data: Optional[dict] = None,
-                          is_verified: bool = True) -> User:
+                          is_verified: bool = True, tenant_id: Optional[int] = None) -> User:
         """Create a new user.
 
         ``is_verified`` defaults to True (admin-created/trusted accounts). Self-
         registration passes False so the account stays unverified until the emailed
         link is confirmed (findings #30).
+
+        ``tenant_id`` places the user in a tenant (Feature-Plan §3.1). When omitted,
+        the user is assigned the seeded default tenant so the NOT NULL ``tenant_id``
+        column is always satisfied — this covers self-registration, admin-created
+        users, and LDAP-synced accounts alike.
         """
+        # Resolve the tenant: use the explicit id when provided, otherwise fall back
+        # to the seeded default tenant (creating it if it was never seeded).
+        if tenant_id is None:
+            tenant_id = await self._resolve_default_tenant_id(db)
 
         # Check if user exists
         stmt = select(User).where(User.username == username)
@@ -201,7 +229,8 @@ class AuthService:
             full_name=full_name or username,
             is_active=True,
             is_verified=is_verified,
-            custom_data=custom_data or {}
+            custom_data=custom_data or {},
+            tenant_id=tenant_id,
         )
         
         db.add(user)
