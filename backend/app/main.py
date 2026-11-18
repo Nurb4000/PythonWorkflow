@@ -174,6 +174,48 @@ app = FastAPI(
     version="0.1.0"
 )
 
+# FastAPI (<=0.163) leaks the ASGI `receive`/`send` callables into the OpenAPI schema
+# for any endpoint that injects `request: Request`; pydantic 2.14 cannot build a JSON
+# schema for those and raises `PydanticInvalidForJsonSchema`, which makes
+# `/openapi.json` return 500 and breaks Swagger UI. Tolerate callable schemas here so
+# the spec still generates, then drop the resulting placeholder parameters (they carry
+# no request data worth documenting). Workaround added during the Docker e2e pass.
+from pydantic.json_schema import GenerateJsonSchema as _GenerateJsonSchema
+
+_app_openapi = app.openapi
+_CALLABLE_MARKER = {"type": "string", "x-openapi-callable": True}
+
+
+def _openapi_tolerant_callables():
+    _original = _GenerateJsonSchema.handle_invalid_for_json_schema
+
+    def _patched(self, schema, error_info):
+        if "Callable" in str(error_info):
+            return dict(_CALLABLE_MARKER)
+        return _original(self, schema, error_info)
+
+    _GenerateJsonSchema.handle_invalid_for_json_schema = _patched
+    try:
+        spec = _app_openapi()
+    finally:
+        _GenerateJsonSchema.handle_invalid_for_json_schema = _original
+
+    # Remove the placeholder parameters (e.g. login's ASGI receive/send) so the docs
+    # only show real request fields.
+    for _path, _ops in spec.get("paths", {}).items():
+        for _method, _op in _ops.items():
+            if not isinstance(_op, dict):
+                continue
+            _ops[_method]["parameters"] = [
+                p for p in _op.get("parameters", [])
+                if not (isinstance(p.get("schema"), dict)
+                        and p["schema"].get("x-openapi-callable"))
+            ]
+    return spec
+
+
+app.openapi = _openapi_tolerant_callables
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
