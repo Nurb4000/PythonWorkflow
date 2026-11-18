@@ -2,7 +2,9 @@
 Authentication API endpoints
 """
 import logging
+import json
 import time
+from urllib.parse import urlparse
 from collections import defaultdict
 
 logger = logging.getLogger(__name__)
@@ -234,10 +236,14 @@ async def user_can_access_workflow(db: AsyncSession, user: User, workflow_id: in
 @router.post("/auth/login")
 async def login(
     form_data: OAuth2PasswordRequestForm = Depends(),
-    request: Request = Depends(),
+    request: Request = None,
     db: AsyncSession = Depends(get_db),
 ):
     """Login and get access token (with brute-force protection, findings #6)."""
+    # ``request`` is declared as ``= None`` rather than ``= Depends()`` on purpose:
+    # FastAPI 0.163.1 fails to populate the OAuth2 form fields (spurious 422) when a
+    # dependency is written ``request: Request = Depends()`` -- but a bare/defaulted
+    # annotation injects the request normally, exactly like every other endpoint here.
     client_ip = request.client.host if request.client else (
         (request.headers.get("X-Forwarded-For").split(",")[0].strip())
         if request.headers.get("X-Forwarded-For") else "unknown"
@@ -417,20 +423,28 @@ async def register(
     H1 fix: role is validated against an allowlist; unknown roles default to 'user'.
     H8 fix: custom_data excludes reserved fields (password, role, email, username).
     """
+    # Self-registration sends its data as query params; the JSON body is optional
+    # and only used to collect extra custom_data fields. An absent/empty body (the
+    # normal case) must not fail registration -- treat it as no extras.
     try:
         body = await request.json()
+    except (json.JSONDecodeError, RuntimeError):
+        body = {}
+    if not isinstance(body, dict):
+        body = {}
 
-        # H1: validate role against allowlist — unknown roles become "user"
-        if role not in _ALLOWED_SELF_REGISTER_ROLES:
-            role = "user"
+    # H1: validate role against allowlist -- unknown roles become "user"
+    if role not in _ALLOWED_SELF_REGISTER_ROLES:
+        role = "user"
 
-        # H8: extract only non-reserved fields as custom_data
-        custom_data = None
-        if body:
-            filtered = {k: v for k, v in body.items() if k not in _RESERVED_REGISTRATION_FIELDS}
-            if filtered:
-                custom_data = filtered
+    # H8: extract only non-reserved fields as custom_data
+    custom_data = None
+    if body:
+        filtered = {k: v for k, v in body.items() if k not in _RESERVED_REGISTRATION_FIELDS}
+        if filtered:
+            custom_data = filtered
 
+    try:
         user = await auth_service.create_user(
             db=db,
             username=username,
@@ -447,7 +461,11 @@ async def register(
         # the account can authenticate (get_current_user rejects unverified users).
         # Best-effort: registration still succeeds even if SMTP is unavailable.
         verification_token = auth_service.create_verification_token(user.id)
-        base = str(request.url_root).rstrip("/")
+        # Reconstruct the app root from the request URL so the verification link is
+        # absolute. `Request.url_root` / `.scheme` / `.netloc` were removed in newer
+        # Starlette releases, so parse `request.url` (stable across versions) instead.
+        _parsed_url = urlparse(str(request.url))
+        base = f"{_parsed_url.scheme}://{_parsed_url.netloc}"
         verify_link = f"{base}/auth/verify-email?token={verification_token}"
         try:
             from app.services.email_service import send_email
