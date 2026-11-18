@@ -85,7 +85,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Role-Based Access**: Admin/Developer/Staff/User permissions
 - **Rate Limiting & Brute-Force Protection**: Per-username lockout and per-IP rate limiting on `POST /auth/login`
 - **Code Sandboxing**: Restricted builtins for custom code steps (subprocess-isolated with CPU/memory limits and a hard timeout)
-- **Export Denylist**: CSV export hard-strips sensitive columns (`password_hash`, `ldap_dn`, `custom_data`, tokens, keys) via `_SECRET_EXPORT_COLUMNS` on top of table-level RBAC — prevents bulk-dumping secrets (findings #11/#26)
+- **Export Denylist**: CSV export hard-strips sensitive columns (`password_hash`, `ldap_dn`, `custom_data`, tokens, keys) via a secret-column denylist on top of table-level RBAC — prevents bulk-dumping secrets.
 
 ### Marketplace
 - **Publish Workflows**: Export and publish workflows from the detail page with metadata (name, description, category, tags)
@@ -171,7 +171,7 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 1. **Table-level RBAC** — both endpoints call `query_security_service.validate_query_access(..., "view")` and return `403` without access (same guard as `/data-query/build`).
 2. **Secret-column denylist** — `data_query_service._SECRET_EXPORT_COLUMNS` is the source of truth. `strip_secret_export_columns()` removes any of these even when explicitly requested: `password_hash`, `ldap_dn`, `custom_data`, `refresh_token`, `api_token`, `token`, `secret`, `private_key`, `auth_token`. Applied to both table and query export.
 3. **Field-level RBAC** — when a `current_user` is present, per-user visible fields are also applied.
-- **Limits**: default `limit` 10,000, hard cap 100,000 (`Query(ge=1, le=100000)`). No export rate-limiting/alerting yet — a noted residual (findings #26).
+- **Limits**: default `limit` 10,000, hard cap 100,000 (`Query(ge=1, le=100000)`). Export rate-limiting and alerting are not yet implemented.
 
 ### Reports
 - **Report Builder**: Create/read/update reports and execute them for table/graph output (`/reports`)
@@ -189,16 +189,16 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 - **Form Uploads**: Manage uploaded form files (`GET /admin/form-uploads`)
 
 ### Testing
-- **Backend**: 570+ tests (pytest + asyncio) collected against a dedicated PostgreSQL test database — includes marketplace, engine-behavior regression net, run-inspector suites, and the findings regression nets. (`pytest --collect-only` reports ~579; a handful require a live Postgres and error out without it.)
+- **Backend**: 570+ tests (pytest + asyncio) against a dedicated PostgreSQL test database — covering marketplace, engine-behavior regressions, run inspection, and the security-findings regression suite.
 - **E2E**: 18 steps across Puppeteer + Chromium headless (CDP-driven) smoke/regression scripts
 - **Regression Net**: Pins current behavior before refactors
 
 ## Tech Stack
 
-- **Backend**: Python 3.11 (pinned; 3.13 upgrade blocked by `pydantic` and `bcrypt` wheel availability), FastAPI, SQLAlchemy 2.0 (async), Alembic
+- **Backend**: Python 3.11+ (developed and tested on 3.13), FastAPI, SQLAlchemy 2.0 (async), Alembic
 - **Frontend**: React 18, TypeScript, React Flow, TanStack Query
 - **Database**: PostgreSQL 15 only (production and tests; tests use an auto-created `workflow_db_test`). No SQLite fallback exists.
-- **AI**: llama.cpp (optional, for step generation)
+- **AI**: Optional LLM backend. Run locally with `llama.cpp` (no API key) or point at any OpenAI-compatible endpoint (e.g. OpenAI cloud) via the configurable `AI_PROVIDER`; set `OPENAI_API_KEY` to use the cloud provider.
 - **Email**: SMTP (optional, for admin notices + workflow emails)
 - **Testing**: pytest, pytest-asyncio, Puppeteer, Docker Compose
 
@@ -582,12 +582,6 @@ PythonWorkflow/
 - ✅ **Phase 6**: Hardening (SSRF protection, pagination, docs, dead-code sweep)
 - ✅ **AI Assist**: Hybrid KB steering, backend AI endpoints, per-node/query/form/error AI assist (all 6 phases)
 - ✅ **Phase 10**: Internal Marketplace — publish/discover/install workflows and node templates; My Nodes library; security audit preview; demo migration
-
-## Next Steps
-
-- **P7**: Production deployment hardening — login brute-force rate limiting + account lockout are shipped (see Security); remaining work is secrets rotation tooling, centralized audit logging, and deploy-time config validation
-- **P8**: Advanced features — **sub-workflows are now shipped** (`sub_workflow` executor: synchronous call-wait-merge); remaining work is parallel branches with synchronization and standardized error-handling patterns
-- **P9**: Performance optimization (connection pooling, query optimization, caching)
 
 See `docs/` for reference documentation (`docker-deployment.md`, `scheduling.md`, `entry-forms-and-tasks.md`) and the active plan (`incident-change-plan.md`). Completed feature plans are removed once shipped; notable history lives in `CHANGELOG.md`.
 
