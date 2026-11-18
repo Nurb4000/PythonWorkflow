@@ -1,6 +1,6 @@
 # Planning & Status — COMPLETE ✅
 
-**Last Updated:** 2026-08-25  
+**Last Updated:** 2026-11-17  
 **Status:** All items complete — ready for team review
 
 ---
@@ -36,6 +36,27 @@
 - 21 comprehensive guides covering all features
 - Architecture overview, developer/contributor guides
 - Administration procedures, API references
+
+---
+
+## Multi-Tenancy (Feature-Plan §3.1) — Foundation Complete ✅
+Shared-schema, column-level tenant isolation. A `Tenant` is the isolation boundary;
+every tenant-owned row carries a `tenant_id` and queries are scoped to the current
+user's tenant.
+
+- **Model** — `app/models/tenancy.py` `Tenant`; `User.tenant_id` + `Group.tenant_id`
+  (groups are tenant-local so group→workflow grants cannot cross tenants).
+- **Scoping** — `app/services/tenant_scoping.py`: `resolve_tenant_id`,
+  `apply_tenant_scope`, `scope_current_tenant`, `ensure_default_tenant`. Resolution
+  point is `User.tenant_id`; tenant filter is outermost, RBAC applied within tenant.
+- **Migration** — `o5p6q7r8s9t0` seeds the default tenant (`slug='default'`);
+  `p6q7r8s9t0u1` adds `tenant_id` (NOT NULL + FK to `tenants`) to all 9 content tables
+  and backfills existing rows to the default tenant. Verified end-to-end against live
+  PostgreSQL (upgrade → seed-without-tenant → backfill → downgrade).
+- **Tests** — `tests/test_findings_multi_tenancy_foundation.py` (7): schema, columns,
+  resolution, scoping isolation, idempotent default-tenant seeding.
+
+Next: tenant provisioning API (`app/api/tenancy.py`) and endpoint-level scoping wiring.
 
 ---
 

@@ -50,10 +50,14 @@ class User(Base):
     # this instant are treated as revoked on password change (findings #2).
     password_changed_at = Column(DateTime(timezone=True), nullable=True)
     custom_data = Column(JSON, default=dict)  # Custom field extensions
+    # Multi-tenancy (§3.1): the tenant this user belongs to. All tenant-owned rows
+    # are scoped to this id; it is the single resolution point for query isolation.
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
 
     # Relationships (defined after all models are loaded)
     groups = relationship("Group", secondary=user_groups, back_populates="users")
     audit_logs = relationship("AuditLog", back_populates="user")
+    tenant = relationship("Tenant", back_populates="users")
 
 
 class Group(Base):
@@ -66,10 +70,14 @@ class Group(Base):
     is_active = Column(Boolean, default=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     custom_data = Column(JSON, default=dict)  # Custom field extensions
+    # Multi-tenancy (§3.1): groups are tenant-local so group->workflow permission
+    # grants cannot cross tenants; group-based access is then automatically scoped.
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), nullable=True, index=True)
 
     # Relationships
     users = relationship("User", secondary=user_groups, back_populates="groups")
     workflows = relationship("Workflow", secondary=workflow_permissions, back_populates="allowed_groups")
+    tenant = relationship("Tenant", back_populates="groups")
 
 
 
