@@ -86,9 +86,11 @@ def parse_demo_metadata(xml_content: str) -> dict:
 
 
 async def seed():
+    # PostgreSQL only (the project has no SQLite runtime path). Falls back to a
+    # local Postgres when DATABASE_URL is unset so the script works out of the box.
     database_url = os.environ.get(
         "DATABASE_URL",
-        "sqlite+aiosqlite:///./test.db"
+        "postgresql+asyncpg://localhost:5432/workflow_db"
     )
 
     engine = create_async_engine(database_url, echo=False)
