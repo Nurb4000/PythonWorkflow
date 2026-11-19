@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.api.auth import get_current_user
 from app.core.database import get_db
+from app.services.tenant_scoping import scope_current_tenant
 from app.models.auth import User
 from app.models.schemas import Notification
 from app.services.notification_service import unread_count
@@ -30,6 +31,8 @@ async def list_notifications(
 ):
     """List the current user's notifications (most recent first), paginated."""
     stmt = select(Notification).where(Notification.user_id == current_user.id)
+    # Tenant isolation (§3.1): scope to the caller's tenant.
+    stmt = scope_current_tenant(db, stmt, current_user)
     if unread:
         stmt = stmt.where(Notification.is_read.is_(False))
     if type:

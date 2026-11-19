@@ -19,6 +19,7 @@ class Workflow(Base):
     __tablename__ = "workflows"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     name = Column(String(255), nullable=False, index=True)
     description = Column(Text, default="")
     version = Column(Integer, default=1)
@@ -80,6 +81,7 @@ class WorkflowStep(Base):
     __tablename__ = "workflow_steps"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     workflow_id = Column(Integer, ForeignKey("workflows.id"), nullable=False)
     step_type = Column(String(50), nullable=False)  # api_call, database_query, email, form, condition, etc.
     definition = Column(JSON, nullable=False)  # Step configuration
@@ -102,6 +104,7 @@ class WorkflowRun(Base):
     __tablename__ = "workflow_runs"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     workflow_id = Column(Integer, ForeignKey("workflows.id", ondelete="SET NULL"), nullable=True)
     status = Column(String(20), default="pending")  # pending, running, completed, failed, cancelled, waiting, timeout
     triggered_by = Column(String(100), default="manual")  # manual, schedule, api, webhook
@@ -153,6 +156,7 @@ class StepInstance(Base):
     __tablename__ = "step_instances"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     workflow_run_id = Column(Integer, ForeignKey("workflow_runs.id"), nullable=False)
     step_id = Column(Integer, ForeignKey("workflow_steps.id", ondelete="SET NULL"), nullable=True)
     step_title = Column(String(255), default="", server_default="")  # Snapshot of step title at run time
@@ -206,6 +210,7 @@ class Task(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     workflow_run_id = Column(Integer, ForeignKey("workflow_runs.id"), nullable=True)
     step_id = Column(Integer, ForeignKey("workflow_steps.id"), nullable=True)
     title = Column(String(255), nullable=False)

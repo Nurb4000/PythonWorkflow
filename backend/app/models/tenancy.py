@@ -10,6 +10,7 @@ from sqlalchemy import Boolean, Column, DateTime, Integer, String, func
 from sqlalchemy.orm import relationship
 
 from app.core.database import Base
+from app.models.auth import user_tenants
 
 
 class Tenant(Base):
@@ -23,5 +24,10 @@ class Tenant(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     # Relationships (resolved lazily by name once all models are loaded).
-    users = relationship("User", back_populates="tenant")
+    users = relationship("User", back_populates="tenant")  # one-to-many via User.tenant_id
+    members = relationship(
+        "User",
+        secondary=user_tenants,
+        back_populates="tenants",
+    )  # many-to-many: all users who are members of this tenant
     groups = relationship("Group", back_populates="tenant")

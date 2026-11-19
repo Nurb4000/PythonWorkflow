@@ -11,6 +11,7 @@ from sqlalchemy import select
 from app.core.config import resolve_project_root
 from app.models.schemas import Workflow, WorkflowStep
 from app.schemas.workflow import WorkflowCreate
+from app.services.tenant_scoping import resolve_creation_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -88,10 +89,14 @@ class TemplateService:
             steps=template.get("steps", [])
         )
         
+        # Multi-tenancy (§3.1): template-derived workflow lands in the default tenant.
+        tenant_id = await resolve_creation_tenant_id(db, None)
+
         workflow = Workflow(
             name=workflow_create.name,
             description=workflow_create.description,
-            version=1
+            version=1,
+            tenant_id=tenant_id
         )
         db.add(workflow)
         await db.flush()
@@ -104,7 +109,8 @@ class TemplateService:
                 definition=step_data.get("definition", {}),
                 position=i,
                 condition_expr=step_data.get("condition_expr", ""),
-                is_enabled=step_data.get("is_enabled", True)
+                is_enabled=step_data.get("is_enabled", True),
+                tenant_id=tenant_id
             )
             db.add(step)
         

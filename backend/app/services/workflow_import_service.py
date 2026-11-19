@@ -14,6 +14,7 @@ from sqlalchemy.orm import selectinload
 from app.models.schemas import Workflow, WorkflowStep, Schedule
 from app.models.auth import Group, User
 from app.models.forms import Form
+from app.services.tenant_scoping import resolve_creation_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -121,6 +122,10 @@ class WorkflowImportService:
                 ref_to_id[form_data["refId"]] = existing.id
                 result.forms_matched.append(form_name)
             elif create_forms:
+                # Multi-tenancy (§3.1): imported forms land in the importer's tenant.
+                creator = await db.execute(select(User).where(User.id == user_id)) \
+                    if user_id is not None else None
+                tenant_id = await resolve_creation_tenant_id(db, creator.scalar_one_or_none())
                 new_form = Form(
                     name=form_name,
                     description=form_data.get("description", ""),
@@ -130,6 +135,7 @@ class WorkflowImportService:
                     created_by=user_id,
                     environment=form_data.get("environment", "test"),
                     is_published=False,
+                    tenant_id=tenant_id,
                 )
                 db.add(new_form)
                 await db.flush()
@@ -189,6 +195,11 @@ class WorkflowImportService:
                         break
                     counter += 1
 
+            # Multi-tenancy (§3.1): imported workflow lands in the importer's tenant.
+            creator = await db.execute(select(User).where(User.id == user_id)) \
+                if user_id is not None else None
+            tenant_id = await resolve_creation_tenant_id(db, creator.scalar_one_or_none())
+
             new_wf = Workflow(
                 name=final_name,
                 description=wf_data.get("description", ""),
@@ -201,6 +212,7 @@ class WorkflowImportService:
                 portal_icon=wf_data.get("portal", {}).get("icon", ""),
                 portal_order=wf_data.get("portal", {}).get("order", 0),
                 portal_visible=wf_data.get("portal", {}).get("visible", True),
+                tenant_id=tenant_id,
             )
             db.add(new_wf)
             await db.flush()
@@ -233,6 +245,7 @@ class WorkflowImportService:
                 description=step_data.get("description", ""),
                 max_retries=step_data.get("maxRetries", 0),
                 retry_delay_seconds=step_data.get("retryDelaySeconds", 0),
+                tenant_id=tenant_id,
                 failure_hook_url=step_data.get("failureHookUrl", ""),
             )
             db.add(new_step)
@@ -604,7 +617,7 @@ class WorkflowImportService:
             dup_name = f"{source.name} (Copy {counter})"
             counter += 1
 
-        # Create new workflow
+        # Create new workflow (duplicate stays in the source tenant)
         new_wf = Workflow(
             name=dup_name,
             description=source.description or "",
@@ -617,6 +630,7 @@ class WorkflowImportService:
             portal_icon=source.portal_icon or "",
             portal_order=source.portal_order or 0,
             portal_visible=source.portal_visible,
+            tenant_id=source.tenant_id,
         )
         db.add(new_wf)
         await db.flush()
@@ -636,6 +650,7 @@ class WorkflowImportService:
                 max_retries=step.max_retries or 0,
                 retry_delay_seconds=step.retry_delay_seconds or 0,
                 failure_hook_url=step.failure_hook_url or "",
+                tenant_id=source.tenant_id,
             )
             db.add(new_step)
             await db.flush()

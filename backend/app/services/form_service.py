@@ -10,6 +10,7 @@ from sqlalchemy.orm import selectinload
 
 from app.models.forms import Form, FormSubmission, FormTemplate
 from app.models.auth import User
+from app.services.tenant_scoping import scope_current_tenant, resolve_creation_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -32,14 +33,19 @@ class FormService:
         
         # Validate schema
         self._validate_schema(schema)
-        
+
+        # Multi-tenancy (§3.1): assign the creating user's tenant (or default).
+        creator = await db.execute(select(User).where(User.id == user_id))
+        tenant_id = await resolve_creation_tenant_id(db, creator.scalar_one_or_none())
+
         form = Form(
             name=name,
             description=description,
             schema_json=schema,
             version=1,
             created_by=user_id,
-            environment=environment
+            environment=environment,
+            tenant_id=tenant_id
         )
         
         db.add(form)
@@ -105,7 +111,10 @@ class FormService:
                 Form.environment == "production",
                 Form.is_active == True
             )
-        
+
+        # Tenant isolation (§3.1): never return another tenant's forms.
+        stmt = scope_current_tenant(db, stmt, user)
+
         # A2: pagination
         offset = (page - 1) * page_size
         count_stmt = select(func.count()).select_from(stmt.subquery())
@@ -190,7 +199,8 @@ class FormService:
             form_id=form_id,
             submitted_by=user_id,
             data=data,
-            status="submitted"
+            status="submitted",
+            tenant_id=form.tenant_id
         )
 
         db.add(submission)
@@ -235,12 +245,15 @@ class FormService:
     async def create_template(self, db: AsyncSession, name: str, description: str, 
                             schema: Dict[str, Any], category: str = "general") -> FormTemplate:
         """Create a form template"""
-        
+
+        # Templates are reusable across tenants; assign the default tenant.
+        tenant_id = await resolve_creation_tenant_id(db, None)
         template = FormTemplate(
             name=name,
             description=description,
             schema_json=schema,
-            category=category
+            category=category,
+            tenant_id=tenant_id
         )
         
         db.add(template)

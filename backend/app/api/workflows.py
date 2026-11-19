@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from typing import List, Optional
 
 from app.core.database import get_db
+from app.services.tenant_scoping import scope_current_tenant
 from app.models.auth import User, Group, AuditLog
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, Task
 from app.models.forms import Form, FormSubmission
@@ -162,6 +163,9 @@ async def list_workflows(
         .outerjoin(WorkflowRun, WorkflowRun.workflow_id == Workflow.id)
         .group_by(Workflow.id)
     )
+
+    # Tenant isolation (§3.1): never surface another tenant's workflows.
+    stmt = scope_current_tenant(db, stmt, current_user)
 
     # Search filter
     if search:
@@ -534,7 +538,8 @@ async def add_step(
         definition=step_data.get("definition", {}),
         position=step_data.get("position", 0),
         condition_expr=step_data.get("condition_expr", ""),
-        is_enabled=step_data.get("is_enabled", True)
+        is_enabled=step_data.get("is_enabled", True),
+        tenant_id=workflow.tenant_id
     )
     db.add(step)
     await db.commit()

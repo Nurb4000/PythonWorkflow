@@ -16,6 +16,7 @@ from app.models.auth import User
 from app.models.forms import Form, FormUpload
 from app.models.schemas import Task, WorkflowRun
 from app.api.auth import get_current_user, get_current_developer
+from app.services.tenant_scoping import resolve_creation_tenant_id
 
 router = APIRouter()
 
@@ -105,12 +106,15 @@ async def upload_form_file(
         path = os.path.join(UPLOAD_DIR, stored)
         with open(path, "wb") as f:
             f.write(content)
+        # Multi-tenancy (§3.1): assign the uploading user's tenant (or default).
+        tenant_id = await resolve_creation_tenant_id(db, current_user)
         upload = FormUpload(
             original_name=original,
             stored_name=stored,
             content_type=file.content_type or "",
             size_bytes=len(content),
             uploaded_by=current_user.id,
+            tenant_id=tenant_id,
         )
         db.add(upload)
         await db.commit()

@@ -13,6 +13,7 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from app.models.auth import Group
 from app.models.services import Category, Service
+from app.services.tenant_scoping import resolve_creation_tenant_id
 
 logger = logging.getLogger(__name__)
 
@@ -523,6 +524,8 @@ async def seed_demo_form(db: AsyncSession) -> Optional[int]:
     if existing:
         return existing.id
 
+    # Multi-tenancy (§3.1): demo forms land in the seeded default tenant.
+    tenant_id = await resolve_creation_tenant_id(db, None)
     form = Form(
         name=DEMO_FORM["name"],
         description=DEMO_FORM["description"],
@@ -531,6 +534,7 @@ async def seed_demo_form(db: AsyncSession) -> Optional[int]:
         environment=DEMO_FORM.get("environment", "test"),
         is_published=DEMO_FORM.get("is_published", False),
         is_active=True,
+        tenant_id=tenant_id,
     )
     db.add(form)
     await db.flush()

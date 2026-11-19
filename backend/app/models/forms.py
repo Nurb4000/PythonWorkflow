@@ -11,6 +11,7 @@ class Form(Base):
     __tablename__ = "forms"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, default="")
     schema_json = Column(JSON, nullable=False)  # JSON Schema definition
@@ -36,6 +37,7 @@ class FormSubmission(Base):
     __tablename__ = "form_submissions"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     form_id = Column(Integer, ForeignKey("forms.id"), nullable=False)
     submitted_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     data = Column(JSON, nullable=False)  # Submitted form data
@@ -55,6 +57,7 @@ class FormUpload(Base):
     __tablename__ = "form_uploads"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     original_name = Column(String(255), nullable=False)
     stored_name = Column(String(255), nullable=False, unique=True, index=True)  # uuid_<original_name>
     content_type = Column(String(255), default="")
@@ -70,6 +73,7 @@ class FormTemplate(Base):
     __tablename__ = "form_templates"
 
     id = Column(Integer, primary_key=True, index=True)
+    tenant_id = Column(Integer, ForeignKey("tenants.id"), index=True)
     name = Column(String(255), nullable=False)
     description = Column(Text, default="")
     schema_json = Column(JSON, nullable=False)

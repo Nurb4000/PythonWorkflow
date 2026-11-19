@@ -9,6 +9,7 @@ from sqlalchemy.orm import selectinload
 from datetime import datetime, timezone
 
 from app.core.database import get_db
+from app.services.tenant_scoping import scope_current_tenant
 from app.models.auth import User
 from app.models.schemas import Workflow, WorkflowRun, StepInstance, WorkflowStep
 from app.api.auth import get_current_user, user_can_access_workflow
@@ -39,6 +40,9 @@ async def list_runs(
         select(WorkflowRun)
         .where(WorkflowRun.workflow_id == workflow_id)
     )
+
+    # Tenant isolation (§3.1): never surface another tenant's runs.
+    stmt = scope_current_tenant(db, stmt, current_user)
     
     if status:
         stmt = stmt.where(WorkflowRun.status == status)

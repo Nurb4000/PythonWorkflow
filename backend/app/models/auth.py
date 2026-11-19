@@ -1,7 +1,7 @@
 """
 User authentication and authorization models
 """
-from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, Table, JSON
+from sqlalchemy import Column, Integer, String, Boolean, DateTime, ForeignKey, ForeignKeyConstraint, Table, JSON
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from app.core.database import Base
@@ -26,6 +26,21 @@ kb_article_permissions = Table(
     Base.metadata,
     Column('article_id', Integer, ForeignKey('knowledge_base_articles.id'), primary_key=True),
     Column('group_id', Integer, ForeignKey('groups.id'), primary_key=True)
+)
+
+# Many-to-many: a user may belong to multiple tenants (Feature-Plan §3.1 extension).
+# User.tenant_id remains the single "default/primary" tenant (assigned at creation);
+# this table records *additional* tenants a user can switch into. Membership for
+# scoping = {user.tenant_id} UNION {tenant_ids in this table}, so existing users are
+# implicitly members of their default tenant without a backfill.
+user_tenants = Table(
+    'user_tenants',
+    Base.metadata,
+    Column('user_id', Integer, ForeignKey('users.id'), primary_key=True),
+    Column('tenant_id', Integer, ForeignKey('tenants.id'), primary_key=True),
+    Column('is_admin', Boolean, default=False, nullable=False),  # tenant-level admin flag (future)
+    ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
+    ForeignKeyConstraint(['tenant_id'], ['tenants.id'], ondelete='CASCADE'),
 )
 
 
@@ -57,7 +72,12 @@ class User(Base):
     # Relationships (defined after all models are loaded)
     groups = relationship("Group", secondary=user_groups, back_populates="users")
     audit_logs = relationship("AuditLog", back_populates="user")
-    tenant = relationship("Tenant", back_populates="users")
+    tenant = relationship("Tenant", back_populates="users")  # default/primary tenant
+    tenants = relationship(
+        "Tenant",
+        secondary=user_tenants,
+        back_populates="users",
+    )  # all tenants the user is a member of (default + additional)
 
 
 class Group(Base):

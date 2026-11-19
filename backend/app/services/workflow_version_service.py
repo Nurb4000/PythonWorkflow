@@ -155,6 +155,7 @@ async def restore_version(
             max_retries=sd.get("max_retries", 0),
             retry_delay_seconds=sd.get("retry_delay_seconds", 0),
             failure_hook_url=sd.get("failure_hook_url", ""),
+            tenant_id=workflow.tenant_id,
         ))
 
     workflow.version += 1

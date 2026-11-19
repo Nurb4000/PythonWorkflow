@@ -15,6 +15,8 @@ from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRunCreate
 from app.services.email_service import notify_admin
 from app.services.workflow_version_service import snapshot_workflow
+from app.services.tenant_scoping import resolve_creation_tenant_id
+from app.models.auth import User
 
 logger = logging.getLogger(__name__)
 
@@ -145,6 +147,13 @@ class WorkflowEngine:
         if validation_warnings:
             logger.warning(f"Workflow '{norm_name}' has input validation warnings: {validation_warnings}")
 
+        # Multi-tenancy (§3.1): assign the creating user's tenant (or the seeded
+        # default) so the NOT NULL tenant_id column enforced by the content migration
+        # is satisfied and the workflow is scoped to that tenant on read.
+        creator = await db.execute(select(User).where(User.id == created_by)) \
+            if created_by is not None else None
+        tenant_id = await resolve_creation_tenant_id(db, creator.scalar_one_or_none())
+
         workflow = Workflow(
             name=norm_name,
             description=workflow_data.description,
@@ -156,7 +165,8 @@ class WorkflowEngine:
             entry_form_id=workflow_data.entry_form_id,
             created_by=created_by,
             owner_user_id=workflow_data.owner_user_id or created_by,
-            tags=workflow_data.tags or []
+            tags=workflow_data.tags or [],
+            tenant_id=tenant_id
         )
         db.add(workflow)
         await db.flush()
@@ -190,7 +200,8 @@ class WorkflowEngine:
                 condition_expr=step_data.get("condition_expr", ""),
                 is_enabled=step_data.get("is_enabled", True),
                 title=step_data.get("title", ""),
-                description=step_data.get("description", "")
+                description=step_data.get("description", ""),
+                tenant_id=tenant_id
             )
             db.add(step)
 
@@ -328,7 +339,8 @@ class WorkflowEngine:
                     condition_expr=step_data.get("condition_expr", ""),
                     is_enabled=step_data.get("is_enabled", True),
                     title=step_data.get("title", ""),
-                    description=step_data.get("description", "")
+                    description=step_data.get("description", ""),
+                    tenant_id=workflow.tenant_id
                 )
                 db.add(step)
 
@@ -407,10 +419,11 @@ class WorkflowEngine:
             service_id=run_data.service_id or workflow.service_id,
             sla_response_target_hours=sla_response_target,
             sla_resolution_target_hours=sla_resolution_target,
+            tenant_id=workflow.tenant_id,
         )
         db.add(run)
         await db.flush()
-        
+
         # Create step instances
         for step in workflow.steps:
             instance = StepInstance(
@@ -423,7 +436,8 @@ class WorkflowEngine:
                 status="pending",
                 input_data=run_data.input_data.copy(),
                 position=step.position,
-                max_retries=step.max_retries or run_data.max_retries
+                max_retries=step.max_retries or run_data.max_retries,
+                tenant_id=workflow.tenant_id,
             )
             db.add(instance)
         
@@ -761,8 +775,9 @@ class WorkflowEngine:
             priority=run.priority,
             ola_pickup_target_hours=ola_pickup_target,
             ola_closure_target_hours=ola_closure_target,
+            tenant_id=run.tenant_id,
         )
-        
+
         db.add(task)
         await db.flush()
         

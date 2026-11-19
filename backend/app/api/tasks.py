@@ -12,6 +12,7 @@ from typing import List, Optional
 from sqlalchemy.orm import selectinload
 
 from app.core.database import get_db, async_session_factory
+from app.services.tenant_scoping import scope_current_tenant
 from app.models.auth import User, Group, workflow_permissions
 from app.models.schemas import Task, WorkflowRun, WorkflowStep
 from app.api.auth import get_current_user, get_current_admin, has_role
@@ -41,6 +42,9 @@ async def list_tasks(
         )
         .where(Task.is_active == True)
     )
+
+    # Tenant isolation (§3.1): scope to the caller's tenant.
+    stmt = scope_current_tenant(db, stmt, current_user)
     
     # Filter by status if provided
     if status:

@@ -10,11 +10,12 @@ from pathlib import Path
 from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
+from app.middleware.active_tenant import ActiveTenantMiddleware
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory, engine
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications, tenancy
 from app.services.scheduler import scheduler_service
 
 # E2: Configure logging — JSON format for production, text for development
@@ -216,6 +217,10 @@ def _openapi_tolerant_callables():
 
 app.openapi = _openapi_tolerant_callables
 
+# Multi-tenant switching: read X-Tenant-Id first (outermost) so get_current_user can
+# resolve the active tenant for every request. Runs before CORS/GZip/routing.
+app.add_middleware(ActiveTenantMiddleware)
+
 # CORS middleware
 app.add_middleware(
     CORSMiddleware,
@@ -249,6 +254,7 @@ app.include_router(forms.router, tags=["forms"])
 app.include_router(system_settings.router, tags=["system-settings"])
 app.include_router(tasks.router, tags=["tasks"])
 app.include_router(notifications.router, tags=["notifications"])
+app.include_router(tenancy.router, prefix="/tenants", tags=["tenants"])
 app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(data_fields.router, prefix="/data-fields", tags=["data-fields"])
 app.include_router(data_query.router, prefix="/data-query", tags=["data-query"])

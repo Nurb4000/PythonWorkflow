@@ -29,10 +29,16 @@ from app.services.auth_service import (
 from app.models.auth import User, Group, APIToken
 from app.models.schemas import Workflow
 from app.schemas.workflow import AuditLogEntry
+from app.services.tenant_scoping import (
+    get_active_tenant_id,
+    get_requested_tenant_id,
+    member_tenant_ids,
+    list_member_tenants,
+    set_active_tenant_id,
+)
 
 router = APIRouter()
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="api/auth/login")
-
 
 # Brute-force protection for /auth/login (findings #6). authenticate_user returns a
 # uniform None on bad credentials, which stops user enumeration but does not bound
@@ -114,20 +120,35 @@ def create_access_token(data: dict, expires_delta: Optional[datetime] = None) ->
     return auth_service.create_access_token(data, expires_delta=expires_delta)
 
 
-async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession = Depends(get_db)) -> User:
-    """Get current authenticated user"""
+async def get_current_user(
+    token: str = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> User:
+    """Get current authenticated user.
+
+    As part of establishing the request's authN/authZ context, this also resolves the
+    *active tenant* (see ``app.services.tenant_scoping``). The raw ``X-Tenant-Id``
+    header is forwarded to a request-scoped contextvar by ``ActiveTenantMiddleware``;
+    here we resolve it: when the caller selected one of their tenants, that id is
+    membership-validated and published to ``ACTIVE_TENANT_ID_CTX`` so every
+    ``scope_current_tenant`` call in this request isolates to it. Without a header the
+    contextvar stays at its default (``None``) and scoping falls back to the user's
+    default tenant. Doing this here (rather than via a ``Request`` parameter) avoids a
+    FastAPI quirk where a ``Request`` dependency silently breaks JSON body parsing for
+    the whole route -- so no content endpoint or scoping helper needs changing.
+    """
     payload = await auth_service.verify_token(db, token)
     if payload is None:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    
+
     user_id = payload.get("sub")
     if user_id is None:
         raise HTTPException(status_code=401, detail="Invalid authentication credentials")
-    
+
     user = await auth_service.get_user_by_id(db, int(user_id))
     if user is None:
         raise HTTPException(status_code=401, detail="User not found")
-    
+
     if not user.is_active:
         raise HTTPException(status_code=403, detail="Inactive user")
 
@@ -135,6 +156,28 @@ async def get_current_user(token: str = Depends(oauth2_scheme), db: AsyncSession
     # can authenticate. Unverified users exist but cannot use their tokens yet.
     if not user.is_verified:
         raise HTTPException(status_code=403, detail="Email address not verified")
+
+    # Resolve the active tenant for this request (multi-tenant switching). Only query
+    # membership when a specific tenant was requested, to avoid extra work on the
+    # common no-header path. The raw header value comes from the middleware-provided
+    # contextvar rather than a Request parameter.
+    requested = get_requested_tenant_id()
+    if requested is not None:
+        try:
+            tenant_id = int(requested)
+        except (TypeError, ValueError):
+            raise HTTPException(
+                status_code=400, detail=f"Invalid X-Tenant-Id header: {requested!r}"
+            )
+        allowed = await member_tenant_ids(db, user)
+        if tenant_id not in allowed:
+            raise HTTPException(
+                status_code=403,
+                detail="The current user is not a member of the requested tenant",
+            )
+        set_active_tenant_id(tenant_id)
+    else:
+        set_active_tenant_id(None)
 
     return user
 
@@ -577,8 +620,17 @@ async def verify_email(
 
 
 @router.get("/auth/me")
-async def get_current_user_info(user: User = Depends(get_current_user)):
-    """Get current user information"""
+async def get_current_user_info(
+    user: User = Depends(get_current_user),
+    db: AsyncSession = Depends(get_db),
+):
+    """Get current user information, including the tenants they belong to.
+
+    ``tenants`` lists every tenant the user is a member of (default + additional) so
+    the frontend can render the tenant switcher. ``active_tenant_id`` is the tenant
+    selected for this request (via the X-Tenant-Id header), or the user's default when
+    none was requested.
+    """
     return {
         "id": user.id,
         "username": user.username,
@@ -587,7 +639,9 @@ async def get_current_user_info(user: User = Depends(get_current_user)):
         "role": user.role,
         "is_active": user.is_active,
         "mfa_enabled": user.mfa_enabled,
-        "groups": [{"id": g.id, "name": g.name} for g in user.groups]
+        "groups": [{"id": g.id, "name": g.name} for g in user.groups],
+        "tenants": list_member_tenants(db, user),
+        "active_tenant_id": get_active_tenant_id(),
     }
 
 
