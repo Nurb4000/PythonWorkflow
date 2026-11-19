@@ -35,6 +35,8 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 └─────────────────────────────────────────────────────────────────┘
 ```
 
+**Multi-tenancy.** The platform uses shared-schema, column-level isolation: every tenant-owned table carries a `tenant_id`, and content queries are scoped to the authenticated user's tenant at SQL time. A user may belong to multiple tenants (`user_tenants`); `User.tenant_id` is their default/primary tenant, and the `X-Tenant-Id` request header selects the active tenant for a given call (resolved and membership-validated by `get_current_user`, applied by `scope_current_tenant`).
+
 ## Features
 
 ### Core Engine
@@ -86,6 +88,14 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Rate Limiting & Brute-Force Protection**: Per-username lockout and per-IP rate limiting on `POST /auth/login`
 - **Code Sandboxing**: Restricted builtins for custom code steps (subprocess-isolated with CPU/memory limits and a hard timeout)
 - **Export Denylist**: CSV export hard-strips sensitive columns (`password_hash`, `ldap_dn`, `custom_data`, tokens, keys) via a secret-column denylist on top of table-level RBAC — prevents bulk-dumping secrets.
+
+### Multi-Tenancy
+- **Shared-Schema Isolation**: Every tenant-owned row carries a `tenant_id`; all content queries (workflows, runs, tasks, forms, CMDB, KB, services, schedules, notifications, fields, reports, SQL views, marketplace, email log) are scoped to the caller's tenant at the SQL level
+- **Per-Tenant Switching**: Send `X-Tenant-Id` on any request to operate as a member of another tenant; resolved and membership-validated by `get_current_user`, then applied by `scope_current_tenant` — no per-endpoint changes needed
+- **Multiple Tenants Per User**: `user_tenants` association table lets a user belong to several tenants while `User.tenant_id` remains their default/primary tenant
+- **Tenant Provisioning API**: Admin-only CRUD over `Tenant` records (create/list/get/update) with unique-slug enforcement (409) and not-found (404)
+- **Membership Management**: Admin endpoints to list/add/remove a user's membership in a tenant
+- **Platform Scope**: Callers with no tenant get an unscoped view; every real user has a non-null `tenant_id` after provisioning
 
 ### Marketplace
 - **Publish Workflows**: Export and publish workflows from the detail page with metadata (name, description, category, tags)
@@ -325,6 +335,18 @@ DELETE /admin/schedules/:id          # Delete schedule
 POST   /admin/schedules/:id/test     # Test schedule trigger
 ```
 
+### Tenants
+Admin-only provisioning + membership management for shared-schema multi-tenancy. A user may belong to several tenants; send the `X-Tenant-Id` header on any request to operate as a member of another tenant (validated against their membership, then applied to every scoped query).
+```
+GET    /tenants                        # List tenants (filter: include_inactive)
+POST   /tenants                        # Create tenant (unique slug; 409 on collision)
+GET    /tenants/{tenant_id}            # Get a single tenant (404 if missing)
+PUT    /tenants/{tenant_id}            # Update tenant name / active status
+GET    /tenants/{tenant_id}/members    # List members of a tenant
+POST   /tenants/{tenant_id}/members    # Add a user to a tenant
+DELETE /tenants/{tenant_id}/members/{user_id}  # Remove a user from a tenant
+```
+
 ### AI Assist
 ```
 POST   /ai/assist-node               # Generate/explain/fix/optimize a workflow node
@@ -551,6 +573,7 @@ PythonWorkflow/
 │   ├── app/
 │   │   ├── api/              # FastAPI routers
 │   │   ├── core/             # Config, database, security
+│   │   ├── middleware/       # Request middleware (multi-tenant `X-Tenant-Id` resolution)
 │   │   ├── models/           # SQLAlchemy models
 │   │   ├── schemas/          # Pydantic schemas
 │   │   ├── data/             # Demo workflow packages
@@ -582,6 +605,7 @@ PythonWorkflow/
 - ✅ **Phase 6**: Hardening (SSRF protection, pagination, docs, dead-code sweep)
 - ✅ **AI Assist**: Hybrid KB steering, backend AI endpoints, per-node/query/form/error AI assist (all 6 phases)
 - ✅ **Phase 10**: Internal Marketplace — publish/discover/install workflows and node templates; My Nodes library; security audit preview; demo migration
+- ✅ **Multi-Tenancy**: Shared-schema tenant isolation, per-request tenant switching via `X-Tenant-Id`, multiple tenants per user (`user_tenants`), admin tenant provisioning + membership API, active-tenant query scoping
 
 See `docs/` for reference documentation (`docker-deployment.md`, `scheduling.md`, `entry-forms-and-tasks.md`) and the active plan (`incident-change-plan.md`). Completed feature plans are removed once shipped; notable history lives in `CHANGELOG.md`.
 
