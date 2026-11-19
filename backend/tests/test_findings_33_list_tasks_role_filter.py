@@ -25,10 +25,13 @@ class FakeGroup:
 
 
 class FakeUser:
-    def __init__(self, uid, role="user", groups=None):
+    def __init__(self, uid, role="user", groups=None, tenant_id=1):
         self.id = uid
         self.role = role
         self.groups = groups or []
+        # Every real user carries a tenant (post-migration NOT NULL invariant);
+        # list_tasks now scopes reads by tenant, so the stub must expose it.
+        self.tenant_id = tenant_id
 
 
 class _Scalars:
