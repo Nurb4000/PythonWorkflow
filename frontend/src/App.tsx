@@ -3,6 +3,7 @@ import { Routes, Route, Navigate, Link, useNavigate, useLocation } from 'react-r
 import axios from 'axios'
 import { AuthProvider, useAuth, LoginForm, RegisterForm, roleDefaultPath } from './components/Auth'
 import { BrandingProvider, useBranding } from './components/Branding'
+import { TenantSwitcher } from './components/TenantSwitcher'
 import { WorkflowList } from './pages/WorkflowList'
 import { WorkflowDetail } from './pages/WorkflowDetail'
 import { WorkflowDesigner } from './pages/WorkflowDesigner'
@@ -247,7 +248,7 @@ const RoleDefault: React.FC = () => {
 
 const Navbar: React.FC = () => {
   const { branding } = useBranding()
-  const { user, logout } = useAuth()
+  const { user, logout, tenants } = useAuth()
   const [showPwdModal, setShowPwdModal] = useState(false)
   const [pwdForm, setPwdForm] = useState({ old_password: '', new_password: '', confirm_password: '' })
   const [pwdMsg, setPwdMsg] = useState('')
@@ -298,6 +299,7 @@ const Navbar: React.FC = () => {
       {/* Right side: user controls */}
       {user && (
         <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+          <TenantSwitcher />
           <span style={{ opacity: 0.8, fontSize: '0.9rem' }}>
             {user.full_name || user.username} ({user.role})
           </span>

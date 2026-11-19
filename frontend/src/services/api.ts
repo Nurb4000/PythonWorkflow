@@ -20,6 +20,13 @@ api.interceptors.request.use((config) => {
   if (token && !config.headers.Authorization) {
     config.headers.Authorization = `Bearer ${token}`
   }
+  // Multi-tenancy: send the user's active tenant so the backend scopes every query to it.
+  // The active tenant is selected via the UI switcher and persisted here; when absent the
+  // backend falls back to the user's default tenant.
+  const tenant = localStorage.getItem('activeTenantId')
+  if (tenant) {
+    config.headers['X-Tenant-Id'] = tenant
+  }
   return config
 })
 
@@ -35,6 +42,19 @@ const handleUnauthorized = (error: any) => {
       if (!window.location.pathname.startsWith('/login')) {
         window.location.href = '/login'
       }
+    }
+  } else if (error.response?.status === 403) {
+    // Multi-tenancy: a 403 on a request that carried an active-tenant header usually means
+    // the persisted tenant selection is stale (membership revoked). Recover by clearing it so
+    // the next request falls back to the user's default tenant instead of staying locked out.
+    const cfgHeaders: Record<string, any> = error.config?.headers || {}
+    const carriedTenant = Object.keys(cfgHeaders).some(
+      (k) => String(k).toLowerCase() === 'x-tenant-id'
+    )
+    if (carriedTenant && localStorage.getItem('activeTenantId')) {
+      localStorage.removeItem('activeTenantId')
+      window.location.reload()
+      return Promise.reject(error)
     }
   }
   return Promise.reject(error)

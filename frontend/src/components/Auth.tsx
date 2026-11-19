@@ -16,6 +16,13 @@ export const roleDefaultPath = (role: string): string => {
   }
 }
 
+interface Tenant {
+  id: number
+  name: string
+  slug?: string
+  is_active?: boolean
+}
+
 interface User {
   id: number
   username: string
@@ -23,22 +30,34 @@ interface User {
   role: string
   full_name: string
   groups: Array<{id: number, name: string}>
+  // Multi-tenancy: the user's default/primary tenant, plus every tenant they belong to.
+  tenant_id?: number | null
+  tenants?: Tenant[]
 }
 
 interface AuthState {
   isAuthenticated: boolean
   user: User | null
   token: string | null
+  // Multi-tenancy: all tenants the user can switch between, and the currently active one.
+  tenants: Tenant[]
+  activeTenantId: number | null
+  initializing: boolean
 }
 
 interface AuthContextType {
   isAuthenticated: boolean
   user: User | null
   token: string | null
+  tenants: Tenant[]
+  activeTenantId: number | null
   initializing: boolean
   login: (username: string, password: string) => Promise<{ success: boolean; error?: string; user?: User }>
   register: (username: string, email: string, password: string, full_name?: string) => Promise<{ success: boolean; error?: string }>
   logout: () => void
+  // Switch the active tenant for the session. Persisted so every subsequent request is
+  // scoped to it via the X-Tenant-Id header; a reload re-scopes all open pages.
+  setActiveTenant: (tenantId: number) => void
 }
 
 const AuthContext = React.createContext<AuthContextType | null>(null)
@@ -63,10 +82,18 @@ const decodeJwtExp = (token: string): number | null => {
 }
 
 export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }) => {
+  // Multi-tenancy: restore the previously selected active tenant (if any) so the first
+  // /auth/me request already carries the correct X-Tenant-Id header.
   const [authState, setAuthState] = useState<AuthState>({
     isAuthenticated: false,
     user: null,
-    token: null
+    token: null,
+    tenants: [],
+    activeTenantId: (() => {
+      const saved = localStorage.getItem('activeTenantId')
+      return saved ? Number(saved) : null
+    })(),
+    initializing: true
   })
   const [initializing, setInitializing] = useState(() => !!localStorage.getItem('token'))
   const refreshTimerRef = useRef<number | null>(null)
@@ -122,19 +149,45 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
     }
   }, [])
 
-  const fetchCurrentUser = async (token: string) => {
+  const fetchCurrentUser = async (token: string): Promise<User | null> => {
     try {
-      const response = await axios.get(`${API_URL}/auth/me`, {
-        headers: { Authorization: `Bearer ${token}` }
-      })
+      // Multi-tenancy: carry the active tenant so /auth/me reports the right scope.
+      const tenantId = localStorage.getItem('activeTenantId')
+      const headers: Record<string, string> = { Authorization: `Bearer ${token}` }
+      if (tenantId) headers['X-Tenant-Id'] = tenantId
+
+      const response: any = await axios.get(`${API_URL}/auth/me`, { headers })
+      const data = response.data
+      const tenants: Tenant[] = Array.isArray(data.tenants) ? data.tenants : []
+      // Prefer the server-resolved active tenant; fall back to the user's default tenant,
+      // then to the first listed tenant, so there is always a sensible active selection.
+      const activeTenantId: number | null =
+        (typeof data.active_tenant_id === 'number' && data.active_tenant_id) ||
+        (typeof data.tenant_id === 'number' && data.tenant_id) ||
+        (tenants.length ? tenants[0].id : null)
+
+      const user: User = { ...data, tenants }
       setAuthState({
         isAuthenticated: true,
-        user: response.data,
-        token
+        user,
+        token,
+        tenants,
+        activeTenantId,
+        initializing: false
       })
+      return user
     } catch (error) {
       logout()
+      return null
     }
+  }
+
+  // Multi-tenancy: persist the selected tenant and reload so every open page re-fetches
+  // scoped to the newly active tenant (the api interceptor reads localStorage per request).
+  const setActiveTenant = (tenantId: number) => {
+    if (typeof tenantId !== 'number' || tenantId === authState.activeTenantId) return
+    localStorage.setItem('activeTenantId', String(tenantId))
+    window.location.reload()
   }
 
   const login = async (username: string, password: string) => {
@@ -148,17 +201,15 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       })
 
       const { access_token, user } = response.data
-      
+
       localStorage.setItem('token', access_token)
       axios.defaults.headers.common['Authorization'] = `Bearer ${access_token}`
-      
-      setAuthState({
-        isAuthenticated: true,
-        user,
-        token: access_token
-      })
-      
-      return { success: true, user }
+
+      // Enrich the profile with the user's tenants + active tenant (not returned by login),
+      // so the tenant switcher has data immediately after sign-in.
+      const fullUser = await fetchCurrentUser(access_token)
+
+      return { success: true, user: fullUser ?? user }
     } catch (error: any) {
       return { 
         success: false, 
@@ -183,11 +234,15 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
 
   const logout = () => {
     localStorage.removeItem('token')
+    localStorage.removeItem('activeTenantId')
     delete axios.defaults.headers.common['Authorization']
     setAuthState({
       isAuthenticated: false,
       user: null,
-      token: null
+      token: null,
+      tenants: [],
+      activeTenantId: null,
+      initializing: false
     })
   }
 
@@ -197,7 +252,8 @@ export const AuthProvider: React.FC<{children: React.ReactNode}> = ({ children }
       initializing,
       login,
       register,
-      logout
+      logout,
+      setActiveTenant
     }}>
       {children}
     </AuthContext.Provider>

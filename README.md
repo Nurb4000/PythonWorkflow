@@ -96,6 +96,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Tenant Provisioning API**: Admin-only CRUD over `Tenant` records (create/list/get/update) with unique-slug enforcement (409) and not-found (404)
 - **Membership Management**: Admin endpoints to list/add/remove a user's membership in a tenant
 - **Platform Scope**: Callers with no tenant get an unscoped view; every real user has a non-null `tenant_id` after provisioning
+- **UI Tenant Switcher**: The navbar shows a tenant dropdown for users in multiple tenants. Selection is persisted to `localStorage` and sent as the `X-Tenant-Id` header on every request (services/api.ts); switching reloads the page so all open pages re-fetch scoped data. `/auth/me` returns the user's `tenants` and resolved `active_tenant_id`; a stale selection that yields 403 is auto-reset to the default tenant
 
 ### Marketplace
 - **Publish Workflows**: Export and publish workflows from the detail page with metadata (name, description, category, tags)
