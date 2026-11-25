@@ -87,8 +87,9 @@ class WorkflowEngine:
             CmdbLookupExecutor,
             CmdbUpdateExecutor,
             SubWorkflowExecutor,
+            LoopExecutor,
         )
-        
+
         self.step_executors = {
             "api_call": APICallExecutor(),
             "database_query": DatabaseQueryExecutor(),
@@ -106,6 +107,7 @@ class WorkflowEngine:
             "cmdb_lookup": CmdbLookupExecutor(),  # CMDB Phase 3
             "cmdb_update": CmdbUpdateExecutor(),  # CMDB Phase 3
             "sub_workflow": SubWorkflowExecutor(),  # B3: sync sub-workflow
+            "loop": LoopExecutor(),  # M1: iterate a collection over an inner step
         }
     
     def validate_input_refs(self, steps: List[Dict[str, Any]], entry_form_schema: Optional[Dict] = None) -> List[str]:

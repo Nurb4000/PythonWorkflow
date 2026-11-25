@@ -7,7 +7,7 @@ import logging
 import multiprocessing as mp
 import re
 import resource
-from typing import Dict, Any, Optional
+from typing import Dict, Any, Optional, List
 import httpx
 from datetime import datetime
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -1578,6 +1578,182 @@ class CmdbUpdateExecutor(BaseExecutor):
             "old_values": {k: old_data.get(k) for k in updates} if updates else {},
             "executed_at": datetime.utcnow().isoformat(),
         }
+
+
+class LoopExecutor(BaseExecutor):
+    """M1: Iterate over a collection, running an inner step once per item.
+
+    This is the missing loop/foreach primitive. It lets a workflow "send an email
+    per recipient", "process each row of a query result", or "run the same approval
+    against a list of items" without hand-rolled ``custom_code`` or manual unrolling.
+
+    Configuration (step_definition):
+      collection:  How to obtain the list to iterate. One of:
+        - a literal Python list                 (collection_source="explicit")
+        - a key name whose value in input_data is a list   (collection_source="input")
+        - a "$input.<key>" reference resolving to a list    (collection_source="input")
+        - an inner query definition (visual_query, or type+table) whose output has a
+          "rows" key                            (collection_source="query")
+      inner_step:  {"step_type": ..., "definition": {...}} — any registered executor
+                    runs once per item. Unknown step_type fails the step (fail closed).
+      item_key:    Key under which each item is injected into the inner step's input
+                   (default "item"). The inner step sees input_data["<item_key>"].
+      index_key:   Key for the 0-based iteration index (default "index").
+      max_items:   Optional cap on how many items to process.
+      break_condition: Optional expression (same safe syntax as a condition step,
+                   scoped to "data" = the per-item input). When it evaluates truthy,
+                   iteration stops early.
+      concurrent:  If true, run inner steps with a bounded async pool (default false;
+                   sequential is deterministic and safer for shared side effects).
+      max_workers: Pool size when concurrent=true (default 5).
+      collect:     If true (default), collect per-item results into the output.
+
+    Output (merged into run.input_data by the engine):
+      loop_count:         number of items actually processed
+      loop_requested:     number of items in the resolved collection (before cap/break)
+      loop_results:       [{"index", "item", "output"}, ...] for processed items
+      loop_items:         [item, ...] — the processed items themselves (convenient for
+                          downstream steps that only need the values)
+      executed_at
+    """
+
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any],
+                        db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        item_key = step_definition.get("item_key", "item")
+        index_key = step_definition.get("index_key", "index")
+        max_items = step_definition.get("max_items")
+        break_condition = step_definition.get("break_condition")
+        concurrent = bool(step_definition.get("concurrent", False))
+        max_workers = int(step_definition.get("max_workers", 5))
+        collect = bool(step_definition.get("collect", True))
+
+        inner_step = step_definition.get("inner_step")
+        if not isinstance(inner_step, dict) or "step_type" not in inner_step:
+            raise ValueError("loop step requires an 'inner_step' with a 'step_type'")
+        inner_def = dict(inner_step.get("definition") or {})
+
+        # --- Resolve the collection -------------------------------------------------
+        collection = await self._resolve_collection(input_data, step_definition, db)
+        if not isinstance(collection, list):
+            raise ValueError(
+                f"loop collection resolved to {type(collection).__name__}, expected a list"
+            )
+        requested = len(collection)
+        if max_items is not None:
+            collection = collection[: int(max_items)]
+
+        # --- Grab the inner executor from the engine's registry ---------------------
+        from app.services.workflow_engine import workflow_engine
+        inner_exec = workflow_engine.step_executors.get(inner_step["step_type"])
+        if inner_exec is None:
+            raise ValueError(
+                f"loop inner_step has unknown step_type {inner_step['step_type']!r}; "
+                f"registered executors: {sorted(workflow_engine.step_executors)}"
+            )
+
+        # --- Run one item -----------------------------------------------------------
+        async def run_one(i: int) -> Dict[str, Any]:
+            item = collection[i]
+            item_input = {**(input_data or {}), item_key: item, index_key: i}
+            if break_condition:
+                if workflow_engine._evaluate_condition(break_condition, item_input):
+                    return {"index": i, "item": item, "output": None, "broken": True}
+            output = await inner_exec.execute(item_input, inner_def, db=db)
+            entry = {"index": i, "item": item, "output": output}
+            if output and isinstance(output, dict):
+                entry["output"] = _unwrap(output)
+            return entry
+
+        results: List[Dict[str, Any]] = []
+        if concurrent and len(collection) > 1:
+            from asyncio import gather
+            gathered = await gather(*(run_one(i) for i in range(len(collection))))
+            for entry in gathered:
+                results.append(entry)
+                if entry.get("broken"):
+                    break
+        else:
+            for i in range(len(collection)):
+                entry = await run_one(i)
+                results.append(entry)
+                if entry.get("broken"):
+                    break
+
+        processed_items = [e["item"] for e in results]
+        output: Dict[str, Any] = {
+            "loop_count": len(results),
+            "loop_requested": requested,
+            "loop_items": processed_items,
+        }
+        if collect:
+            output["loop_results"] = results
+        output["executed_at"] = datetime.utcnow().isoformat()
+        return output
+
+    async def _resolve_collection(self, input_data: Dict[str, Any],
+                                  step_definition: Dict[str, Any],
+                                  db: Optional[AsyncSession]) -> Any:
+        """Resolve the loop collection from its configured source.
+
+        Sources:
+          - explicit: a literal list (or an inline query dict) in ``collection``.
+          - input: a key name or ``$input.<key>`` reference into step input data.
+          - query: rows from a database query, configured via the flat ``query_*``
+            fields the designer emits (query_table, query_query, query_conditions,
+            query_limit). Delegates to the registered database_query executor, whose
+            visual-query path returns ``rows``.
+        """
+        source = step_definition.get("collection_source", "explicit")
+        raw = step_definition.get("collection")
+
+        # --- query source -------------------------------------------------------
+        is_inline_query = isinstance(raw, dict) and (
+            "visual_query" in raw or "table" in raw or "type" in raw
+        )
+        if source == "query" or is_inline_query:
+            from app.services.workflow_engine import workflow_engine
+            query_exec = workflow_engine.step_executors.get("database_query")
+            if query_exec is None:
+                raise ValueError("loop query source requires the database_query executor")
+
+            if is_inline_query:
+                # caller passed a ready-made database_query definition under `collection`
+                query_def = raw
+            else:
+                # designer emits flat query_* fields; build a visual_query so we get rows
+                table = step_definition.get("query_table") or ""
+                limit = int(step_definition.get("query_limit") or 100 or 100)
+                if step_definition.get("query_visual") and isinstance(
+                        step_definition.get("query_query"), dict):
+                    vq = dict(step_definition["query_query"])
+                    vq.setdefault("table", table)
+                    vq.setdefault("limit", limit)
+                else:
+                    conds = step_definition.get("query_conditions") or {}
+                    vq = {
+                        "table": table,
+                        "filters": [
+                            {"field": k, "operator": "=", "value": v}
+                            for k, v in conds.items()
+                        ],
+                        "logic": "AND",
+                        "limit": limit,
+                    }
+                query_def = {"visual_query": vq, "type": "select"}
+
+            q_out = await query_exec.execute(input_data, query_def, db=db)
+            rows = q_out.get("rows") if isinstance(q_out, dict) else None
+            return rows if isinstance(rows, list) else []
+
+        # explicit or input: both ultimately need a list from `raw` / input_data
+        value = raw
+        if source == "input":
+            if isinstance(value, str) and value.startswith("$input."):
+                return input_data.get(value[len("$input."):])
+            if isinstance(value, str):
+                # treat as a key name whose value in input_data is the list
+                return input_data.get(value)
+        return value
 
 
 class SubWorkflowExecutor(BaseExecutor):

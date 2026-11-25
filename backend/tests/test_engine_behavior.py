@@ -535,6 +535,244 @@ class TestExecutors:
 
 
 # ---------------------------------------------------------------------------
+# M1: loop / foreach executor
+# ---------------------------------------------------------------------------
+class TestLoopExecutor:
+    """M1: iterate a collection running an inner step once per item."""
+
+    @staticmethod
+    def CC(code):
+        return {"step_type": "custom_code", "definition": {"code": code}}
+
+    @pytest.mark.asyncio
+    async def test_loop_iterates_explicit_list(self):
+        from app.services.step_executors import LoopExecutor
+        ex = LoopExecutor()
+        result = await ex.execute(
+            {},
+            {
+                "collection": [1, 2, 3],
+                "inner_step": self.CC("output['doubled'] = input_data['item'] * 2"),
+            },
+        )
+        assert result["loop_count"] == 3
+        assert result["loop_requested"] == 3
+        assert result["loop_items"] == [1, 2, 3]
+        assert [r["output"]["doubled"] for r in result["loop_results"]] == [2, 4, 6]
+        assert [r["index"] for r in result["loop_results"]] == [0, 1, 2]
+        assert "executed_at" in result
+
+    @pytest.mark.asyncio
+    async def test_loop_input_collection_by_key(self):
+        from app.services.step_executors import LoopExecutor
+        result = await LoopExecutor().execute(
+            {"names": ["a", "b"]},
+            {"collection_source": "input", "collection": "names",
+             "inner_step": self.CC("output['n'] = input_data['item']")},
+        )
+        assert result["loop_count"] == 2
+        assert result["loop_items"] == ["a", "b"]
+
+    @pytest.mark.asyncio
+    async def test_loop_input_collection_dollar_ref(self):
+        from app.services.step_executors import LoopExecutor
+        result = await LoopExecutor().execute(
+            {"vals": [10, 20, 30]},
+            {"collection_source": "input", "collection": "$input.vals",
+             "inner_step": self.CC("output['v'] = input_data['item']")},
+        )
+        assert result["loop_items"] == [10, 20, 30]
+
+    @pytest.mark.asyncio
+    async def test_loop_empty_collection_completes(self):
+        from app.services.step_executors import LoopExecutor
+        result = await LoopExecutor().execute(
+            {},
+            {"collection": [], "inner_step": self.CC("output['x'] = 1")},
+        )
+        assert result["loop_count"] == 0
+        assert result["loop_results"] == []
+
+    @pytest.mark.asyncio
+    async def test_loop_max_items_cap(self):
+        from app.services.step_executors import LoopExecutor
+        result = await LoopExecutor().execute(
+            {},
+            {"collection": [1, 2, 3, 4, 5], "max_items": 2,
+             "inner_step": self.CC("output['x'] = input_data['item']")},
+        )
+        assert result["loop_count"] == 2
+        assert result["loop_requested"] == 5
+        assert result["loop_items"] == [1, 2]
+
+    @pytest.mark.asyncio
+    async def test_loop_break_condition_stops_early(self):
+        from app.services.step_executors import LoopExecutor
+        result = await LoopExecutor().execute(
+            {},
+            {"collection": [1, 2, 3, 4, 5],
+             "break_condition": "data['index'] >= 2",
+             "inner_step": self.CC("output['x'] = input_data['item']")},
+        )
+        # index 0,1,2 processed; break fires when index==2 (after processing it)
+        assert result["loop_count"] == 3
+        assert result["loop_items"] == [1, 2, 3]
+
+    @pytest.mark.asyncio
+    async def test_loop_unknown_inner_type_raises(self):
+        from app.services.step_executors import LoopExecutor
+        with pytest.raises(ValueError, match="unknown step_type"):
+            await LoopExecutor().execute(
+                {},
+                {"collection": [1], "inner_step": {"step_type": "no_such_executor",
+                                                   "definition": {}}},
+            )
+
+    @pytest.mark.asyncio
+    async def test_loop_missing_inner_step_raises(self):
+        from app.services.step_executors import LoopExecutor
+        with pytest.raises(ValueError, match="inner_step"):
+            await LoopExecutor().execute({}, {"collection": [1]})
+
+    @pytest.mark.asyncio
+    async def test_loop_collection_not_list_raises(self):
+        from app.services.step_executors import LoopExecutor
+        # inner_step present so execution reaches the collection-type check
+        with pytest.raises(ValueError, match="expected a list"):
+            await LoopExecutor().execute(
+                {}, {"collection": "not-a-list", "inner_step": self.CC("output['x'] = 1")},
+            )
+
+    @pytest.mark.asyncio
+    async def test_loop_concurrent_matches_sequential(self):
+        from app.services.step_executors import LoopExecutor
+        # calculation runs in-process (no fork), so this is deterministic and fast;
+        # custom_code inner-step coverage lives in test_loop_iterates_explicit_list.
+        inner = {"step_type": "calculation",
+                 "definition": {"expression": "data['item'] * data['item']"}}
+        seq = await LoopExecutor().execute(
+            {}, {"collection": list(range(20)), "concurrent": False, "inner_step": inner},
+        )
+        conc = await LoopExecutor().execute(
+            {}, {"collection": list(range(20)), "concurrent": True, "max_workers": 8,
+                 "inner_step": inner},
+        )
+        assert seq["loop_count"] == 20
+        # Compare only the meaningful fields (executed_at timestamps differ by run).
+        def _norm(results):
+            return [
+                {"index": r["index"], "item": r["item"], "result": r["output"]["result"]}
+                for r in results
+            ]
+        assert _norm(seq["loop_results"]) == _norm(conc["loop_results"])
+        assert [r["output"]["result"] for r in conc["loop_results"]] == [i * i for i in range(20)]
+
+    @pytest.mark.asyncio
+    async def test_loop_query_source_maps_fields_and_iterates(self, monkeypatch):
+        """M1: the query source maps flat query_* fields into a visual_query and iterates
+        the rows returned by the database_query executor."""
+        import app.services.workflow_engine as we_module
+        from app.services.step_executors import LoopExecutor
+
+        seen = {}
+
+        class FakeDBQuery:
+            async def execute(self, input_data, step_definition, db=None):
+                seen["def"] = step_definition
+                return {"query_type": "select", "rows": [{"n": 1}, {"n": 2}]}
+
+        monkeypatch.setitem(we_module.workflow_engine.step_executors,
+                            "database_query", FakeDBQuery())
+
+        result = await LoopExecutor().execute(
+            {},
+            {
+                "collection_source": "query",
+                "query_table": "services",
+                "query_conditions": {"active": True},
+                "query_limit": 50,
+                "inner_step": {"step_type": "calculation",
+                               "definition": {"expression": "data['item']['n'] * 10"}},
+            },
+        )
+        # flat fields were mapped into a visual_query carrying filters + limit
+        vq = seen["def"]["visual_query"]
+        assert vq["table"] == "services"
+        assert vq["filters"] == [{"field": "active", "operator": "=", "value": True}]
+        assert vq["limit"] == 50
+        # and the loop iterated exactly the returned rows
+        assert result["loop_count"] == 2
+        assert [r["output"]["result"] for r in result["loop_results"]] == [10, 20]
+
+    @pytest.mark.asyncio
+    async def test_loop_query_source_empty_rows(self, monkeypatch):
+        """M1: an empty query result yields a zero-length loop that still completes."""
+        import app.services.workflow_engine as we_module
+        from app.services.step_executors import LoopExecutor
+
+        class FakeDBQuery:
+            async def execute(self, input_data, step_definition, db=None):
+                return {"query_type": "select", "rows": []}
+
+        monkeypatch.setitem(we_module.workflow_engine.step_executors,
+                            "database_query", FakeDBQuery())
+
+        result = await LoopExecutor().execute(
+            {},
+            {"collection_source": "query", "query_table": "services",
+             "inner_step": {"step_type": "calculation",
+                            "definition": {"expression": "data['item'] * 2"}}},
+        )
+        assert result["loop_count"] == 0
+        assert result["loop_results"] == []
+
+    @pytest.mark.asyncio
+    async def test_loop_merges_output_into_downstream(self, engine, session):
+        """Integration: loop output merges into run.input_data so a downstream step
+        can consume the collected items (validates fan-in data-merge contract)."""
+        wf = await create_workflow(
+            engine, session,
+            [
+                # A: loop over [1,2,3], square each item (in-process calculation)
+                {"step_type": "loop", "definition": {
+                    "collection": [1, 2, 3],
+                    "inner_step": {"step_type": "calculation",
+                                   "definition": {"expression": "data['item'] * data['item']"}},
+                }},
+                # B: downstream — read loop output merged into run.input_data.
+                # loop_count*100 + loop_items[0] == 3*100 + 1 == 301 proves it sees both.
+                {"step_type": "calculation", "definition": {
+                    "expression": "data['loop_count'] * 100 + data['loop_items'][0]"}},
+            ],
+            config={"start_step_ids": None},
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        a, b = sorted(wf.steps, key=lambda s: s.position)
+        a.definition = {**a.definition, "next_step_ids": [b.id]}
+        wf.config = {"start_step_ids": [a.id]}
+        await session.commit()
+
+        run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
+        run = await wait_run(session, run.id)
+        assert run.status == "completed", f"run failed: {run.error_message}"
+
+        # Merge contract: loop output is merged into run.input_data so downstream can
+        # read the collected items (the exact mechanism every consumer relies on).
+        assert run.input_data.get("loop_count") == 3
+        assert run.input_data.get("loop_items") == [1, 2, 3]
+
+        instances = (await session.execute(
+            select(StepInstance).where(StepInstance.workflow_run_id == run.id)
+        )).scalars().all()
+        by_step = {i.step_id: i for i in instances}
+        assert by_step[a.id].output_data.get("loop_count") == 3
+        assert [r["output"]["result"] for r in by_step[a.id].output_data.get("loop_results", [])] == [1, 4, 9]
+        # downstream B actually ran and saw the merged loop output (301)
+        assert by_step[b.id].status == "completed"
+        assert by_step[b.id].output_data.get("result") == 301
+
+
+# ---------------------------------------------------------------------------
 # Routing (_get_targets) and condition evaluation
 # ---------------------------------------------------------------------------
 class TestRouting:

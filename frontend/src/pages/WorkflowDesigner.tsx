@@ -73,6 +73,7 @@ const stepTypeToNodeType = (stepType: string): string => {
     custom_code: 'customCode',
     calculation: 'calculation',
     report: 'report',
+    loop: 'loop',
     cmdb_lookup: 'cmdbLookup',
     cmdb_update: 'cmdbUpdate'
   }
@@ -139,6 +140,9 @@ function getNodeStyle(stepType: string, instanceStatus?: string) {
     case 'cmdbUpdate':
       style = { ...base, background: '#e8f5e9', border: '2px solid #2e7d32' }
       break
+    case 'loop':
+      style = { ...base, background: '#ede7f6', border: '2px solid #4527a0' }
+      break
     case 'start':
       style = { ...base, background: '#27ae60', border: 'none', color: 'white', borderRadius: '20px' }
       break
@@ -184,6 +188,12 @@ function nodeLabel(stepType: string, data: any) {
       return `🔍 CMDB Lookup: ${data.ci_type_name || data.output_var || '...'}`
     case 'cmdb_update':
       return `✏️ CMDB Update: ${data.ci_id || data.output_var || '...'}`
+    case 'loop': {
+      const src = data.collection_source || 'explicit'
+      const hasInner = !!(data.inner_step && data.inner_step.step_type)
+      const n = Array.isArray(data.collection) ? data.collection.length : null
+      return `🔁 Loop${n != null ? ` (${n})` : ''}${hasInner ? ` → ${data.inner_step.step_type}` : ' (no inner step)'}`
+    }
     default: return stepType
   }
 }
@@ -319,6 +329,11 @@ const nodeTypes = {
     icon: '📊', title: 'Report',
     subtitle: data.report_type === 'sql_query' ? 'SQL Query' : (data.report_type || 'Table Report'),
     style: getNodeStyle('report', data.instanceStatus)
+  }),
+  loop: ({ data }: any) => renderStepNode(data, {
+    icon: '🔁', title: 'Loop',
+    subtitle: data.inner_step?.step_type || 'Iterate a collection',
+    style: getNodeStyle('loop', data.instanceStatus)
   }),
   cmdbLookup: ({ data }: any) => renderStepNode(data, {
     icon: '🔍', title: 'CMDB Lookup',
@@ -2125,6 +2140,219 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               </div>
             </>
           )
+        case 'loop':
+          return (
+            <>
+              <div className="form-group">
+                <label className="form-label">Collection Source</label>
+                <select className="form-select" value={editingDef.collection_source || 'explicit'}
+                  onChange={(e) => handleUpdateStepField('collection_source', e.target.value)}>
+                  <option value="explicit">Explicit list</option>
+                  <option value="input">From input data</option>
+                  <option value="query">Database query</option>
+                </select>
+                <small style={{ color: '#666' }}>How the loop obtains the list to iterate over.</small>
+              </div>
+
+              {(editingDef.collection_source || 'explicit') === 'explicit' ? (
+                <div className="form-group">
+                  <label className="form-label">Collection (JSON array)</label>
+                  <textarea className="form-textarea" rows={3}
+                    value={JSON.stringify(editingDef.collection ?? '', null, 2)}
+                    onChange={(e) => {
+                      try { handleUpdateStepField('collection', JSON.parse(e.target.value)) } catch { /* keep invalid input */ }
+                    }}
+                    placeholder='["alice", "bob", "carol"]' />
+                  <small style={{ color: '#666' }}>A JSON array of items to iterate.</small>
+                </div>
+              ) : (editingDef.collection_source || 'explicit') === 'input' ? (
+                <div className="form-group">
+                  <label className="form-label">Input List Reference</label>
+                  <input className="form-input" type="text" value={editingDef.collection || ''}
+                    onChange={(e) => handleUpdateStepField('collection', e.target.value)}
+                    placeholder="list_key or $input.my_list" />
+                  <small style={{ color: '#666' }}>Key name in step input, or an <code>$input.*</code> reference.</small>
+                </div>
+              ) : (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Table</label>
+                    <input className="form-input" type="text" value={editingDef.query_table || ''}
+                      onChange={(e) => handleUpdateStepField('query_table', e.target.value)}
+                      placeholder="incidents" />
+                  </div>
+                  <div className="form-group">
+                    <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                      <input type="checkbox" checked={!!editingDef.query_visual}
+                        onChange={(e) => handleUpdateStepField('query_visual', e.target.checked)}
+                        style={{ width: '18px', height: '18px' }} />
+                      <span className="form-label" style={{ margin: 0 }}>Use Visual Query Builder</span>
+                    </label>
+                  </div>
+                  {editingDef.query_visual ? (
+                    <QueryBuilder tables={dbTables || []} value={editingDef.query_query || null}
+                      onChange={(q) => { handleUpdateStepField('query_query', q); handleUpdateStepField('query_limit', q.limit) }} />
+                  ) : (
+                    <div className="form-group">
+                      <label className="form-label">Filter Conditions (JSON)</label>
+                      <textarea className="form-textarea" rows={3}
+                        value={JSON.stringify(editingDef.query_conditions ?? '', null, 2)}
+                        onChange={(e) => { try { handleUpdateStepField('query_conditions', JSON.parse(e.target.value)) } catch {} }}
+                        placeholder='{"status": "active"}' />
+                    </div>
+                  )}
+                  <div className="form-group">
+                    <label className="form-label">Row Limit</label>
+                    <input className="form-input" type="number" value={editingDef.query_limit || 100}
+                      onChange={(e) => handleUpdateStepField('query_limit', Number(e.target.value))}
+                      min={1} max={10000} />
+                  </div>
+                </>
+              )}
+
+              <div className="form-group">
+                <label className="form-label">Inner Step Type</label>
+                <select className="form-select" value={editingDef.inner_step?.step_type || 'custom_code'}
+                  onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), step_type: e.target.value, definition: { ...(prev.inner_step?.definition || {}) } } }))}>
+                  <option value="custom_code">Custom Code</option>
+                  <option value="calculation">Calculation</option>
+                  <option value="api_call">API Call</option>
+                  <option value="email">Email</option>
+                  <option value="database_query">Database Query</option>
+                  <option value="webhook">Webhook</option>
+                  <option value="delay">Delay</option>
+                </select>
+                <small style={{ color: '#666' }}>Runs once per item. Each item is injected as <code>data['item']</code> (index as <code>data['index']</code>).</small>
+              </div>
+
+              {editingDef.inner_step?.step_type === 'custom_code' && (
+                <div className="form-group">
+                  <label className="form-label">Python Code</label>
+                  <textarea className="form-textarea" rows={8}
+                    value={editingDef.inner_step?.definition?.code || ''}
+                    onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), code: e.target.value } } }))}
+                    placeholder="output['result'] = input_data['item'] * 2"
+                    style={{ fontFamily: 'monospace', fontSize: '0.85rem' }} />
+                </div>
+              )}
+              {editingDef.inner_step?.step_type === 'calculation' && (
+                <div className="form-group">
+                  <label className="form-label">Expression</label>
+                  <input className="form-input" type="text" value={editingDef.inner_step?.definition?.expression || ''}
+                    onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), expression: e.target.value } } }))}
+                    placeholder="e.g., data['item'] * 2" />
+                </div>
+              )}
+              {editingDef.inner_step?.step_type === 'api_call' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Method</label>
+                    <select className="form-select" value={editingDef.inner_step?.definition?.method || 'GET'}
+                      onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), method: e.target.value } } }))}>
+                      <option>GET</option><option>POST</option><option>PUT</option><option>PATCH</option><option>DELETE</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">URL</label>
+                    <input className="form-input" type="text" value={editingDef.inner_step?.definition?.url || ''}
+                      onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), url: e.target.value } } }))}
+                      placeholder="https://api.example.com/endpoint" />
+                  </div>
+                </>
+              )}
+              {editingDef.inner_step?.step_type === 'email' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">To</label>
+                    <input className="form-input" type="text" value={editingDef.inner_step?.definition?.to || ''}
+                      onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), to: e.target.value } } }))}
+                      placeholder="recipient@example.com" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Subject</label>
+                    <input className="form-input" type="text" value={editingDef.inner_step?.definition?.subject || ''}
+                      onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), subject: e.target.value } } }))} />
+                  </div>
+                </>
+              )}
+              {editingDef.inner_step?.step_type === 'database_query' && (
+                <>
+                  <div className="form-group">
+                    <label className="form-label">Table</label>
+                    <input className="form-input" type="text" value={editingDef.inner_step?.definition?.table || ''}
+                      onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), table: e.target.value } } }))}
+                      placeholder="incidents" />
+                  </div>
+                  <div className="form-group">
+                    <label className="form-label">Query Type</label>
+                    <select className="form-select" value={editingDef.inner_step?.definition?.type || 'select'}
+                      onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), type: e.target.value } } }))}>
+                      <option>select</option><option>insert</option><option>update</option><option>delete</option><option>upsert</option>
+                    </select>
+                  </div>
+                </>
+              )}
+              {editingDef.inner_step?.step_type === 'webhook' && (
+                <div className="form-group">
+                  <label className="form-label">Webhook URL</label>
+                  <input className="form-input" type="text" value={editingDef.inner_step?.definition?.url || ''}
+                    onChange={(e) => setEditingDef(prev => ({ ...prev, inner_step: { ...(prev.inner_step || {}), definition: { ...(prev.inner_step?.definition || {}), url: e.target.value } } }))}
+                    placeholder="https://example.com/hook" />
+                </div>
+              )}
+
+              <div className="form-row" style={{ display: 'flex', gap: '0.75rem' }}>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Item Key</label>
+                  <input className="form-input" type="text" value={editingDef.item_key || 'item'}
+                    onChange={(e) => handleUpdateStepField('item_key', e.target.value)} />
+                </div>
+                <div className="form-group" style={{ flex: 1 }}>
+                  <label className="form-label">Index Key</label>
+                  <input className="form-input" type="text" value={editingDef.index_key || 'index'}
+                    onChange={(e) => handleUpdateStepField('index_key', e.target.value)} />
+                </div>
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Max Items (optional)</label>
+                <input className="form-input" type="number" value={editingDef.max_items ?? ''}
+                  onChange={(e) => handleUpdateStepField('max_items', e.target.value === '' ? null : Number(e.target.value))}
+                  min={0} placeholder="Unbounded" />
+              </div>
+
+              <div className="form-group">
+                <label className="form-label">Break Condition (optional)</label>
+                <input className="form-input" type="text" value={editingDef.break_condition || ''}
+                  onChange={(e) => handleUpdateStepField('break_condition', e.target.value)}
+                  placeholder="e.g., data['index'] >= 5" />
+                <small style={{ color: '#666' }}>When true, iteration stops early.</small>
+              </div>
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer', marginBottom: '0.75rem' }}>
+                <input type="checkbox" checked={!!editingDef.concurrent}
+                  onChange={(e) => handleUpdateStepField('concurrent', e.target.checked)}
+                  style={{ width: '18px', height: '18px' }} />
+                <span className="form-label" style={{ margin: 0 }}>Run inner steps concurrently</span>
+              </label>
+
+              {editingDef.concurrent ? (
+                <div className="form-group">
+                  <label className="form-label">Max Workers</label>
+                  <input className="form-input" type="number" value={editingDef.max_workers || 5}
+                    onChange={(e) => handleUpdateStepField('max_workers', Number(e.target.value))}
+                    min={1} max={50} />
+                </div>
+              ) : null}
+
+              <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem', cursor: 'pointer' }}>
+                <input type="checkbox" checked={editingDef.collect !== false}
+                  onChange={(e) => handleUpdateStepField('collect', e.target.checked)}
+                  style={{ width: '18px', height: '18px' }} />
+                <span className="form-label" style={{ margin: 0 }}>Collect per-item results (loop_results / loop_items)</span>
+              </label>
+            </>
+          )
         case 'report':
           return (
             <>
@@ -2695,7 +2923,13 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               style={{ background: '#2e7d32' }}>
               ✏️ CMDB Update
             </button>
-          </div>
+
+             <button className="btn btn-primary" onClick={() => handleAddStep('loop', {
+               collection_source: 'explicit', collection: [],
+               inner_step: { step_type: 'custom_code', definition: { code: "output['result'] = input_data['item']" } },
+             })} style={{ background: '#4527a0' }}>
+               🔁 Loop
+             </button>          </div>
         </div>
         )}
       </>
