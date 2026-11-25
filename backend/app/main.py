@@ -7,7 +7,7 @@ import logging
 import uuid
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
 from app.middleware.active_tenant import ActiveTenantMiddleware
@@ -17,6 +17,7 @@ from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory, engine
 from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications, tenancy
 from app.services.scheduler import scheduler_service
+from app.services.rate_limiter import require_api_rate_limit
 
 # E2: Configure logging — JSON format for production, text for development
 def _configure_logging() -> None:
@@ -246,7 +247,13 @@ app.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
 app.include_router(workflow_runs.router, prefix="/workflows/{workflow_id}/runs", tags=["workflow-runs"])
 app.include_router(workflow_runs.runs_router, tags=["workflow-runs"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
-app.include_router(ai.router, tags=["ai"])
+# M5 fix: per-IP rate limiting on the spend-exposed AI routes (in addition to the
+# existing per-user AI cost throttle). Bounds request frequency per source IP.
+app.include_router(
+    ai.router,
+    tags=["ai"],
+    dependencies=[Depends(require_api_rate_limit)],
+)
 app.include_router(knowledge_base.router, tags=["knowledge-base"])
 app.include_router(auth.router)
 app.include_router(portal.router)
@@ -257,8 +264,21 @@ app.include_router(notifications.router, tags=["notifications"])
 app.include_router(tenancy.router, prefix="/tenants", tags=["tenants"])
 app.include_router(webhooks.router, tags=["webhooks"])
 app.include_router(data_fields.router, prefix="/data-fields", tags=["data-fields"])
-app.include_router(data_query.router, prefix="/data-query", tags=["data-query"])
-app.include_router(data_export.router, prefix="/data-export", tags=["data-export"])
+# M5 fix: per-IP rate limiting on the unbounded data-query endpoints (DoS guard).
+app.include_router(
+    data_query.router,
+    prefix="/data-query",
+    tags=["data-query"],
+    dependencies=[Depends(require_api_rate_limit)],
+)
+# M5 fix: per-IP rate limiting on the unbounded data-export endpoints (DoS guard
+# against table dumps).
+app.include_router(
+    data_export.router,
+    prefix="/data-export",
+    tags=["data-export"],
+    dependencies=[Depends(require_api_rate_limit)],
+)
 app.include_router(sql_views.router, prefix="/sql-views", tags=["sql-views"])
 app.include_router(workflow_import_export.router, prefix="/workflows", tags=["workflow-import-export"])
 app.include_router(marketplace.router, prefix="/marketplace", tags=["marketplace"])

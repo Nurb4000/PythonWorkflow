@@ -50,6 +50,16 @@ class Settings(BaseSettings):
     # from chaining generate/assist calls. Tune via env vars.
     ai_requests_per_window: int = 100
     ai_request_window_seconds: int = 3600
+
+    # M5 fix: per-IP API rate limiting for the high-cost / high-touch endpoints
+    # (/ai/*, /data-query/*, /data-export/*). Caps how many requests a single
+    # source IP may make within a rolling window before the shared
+    # `require_api_rate_limit` dependency returns HTTP 429. This bounds request
+    # frequency per IP for DoS/abuse; it is separate from the login brute-force
+    # guard (per-username lockout, app.api.auth) and from the per-user AI cost
+    # throttle above (which caps LLM spend per account). Tune via env vars.
+    api_requests_per_window: int = 60
+    api_request_window_seconds: int = 60
     
     # LDAP configuration (optional)
     ldap_server_url: str = ""  # e.g., ldap://ldap.example.com:389

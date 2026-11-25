@@ -25,6 +25,7 @@ _TEST_DATABASE_URL = os.environ.get(
 )
 os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
 
+import pytest
 import pytest_asyncio
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
@@ -33,6 +34,24 @@ from app.core.database import Base
 
 
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
+
+
+@pytest.fixture(autouse=True)
+def _reset_rate_limiter_state():
+    """Isolate each test from the module-global per-IP API rate limiter.
+
+    ``require_api_rate_limit`` (M5) keeps its sliding-window buckets in a single
+    process-wide ``RateLimiter`` keyed by client IP. Every TestClient request
+    comes from 127.0.0.1, so without resetting between tests those buckets would
+    accumulate across the suite and later requests to rate-limited routers
+    (/ai/*, /data-query/*, /data-export/*) could spuriously 429. Reset before and
+    after each test so limiter state never leaks between tests.
+    """
+    from app.services.rate_limiter import api_rate_limiter
+
+    api_rate_limiter.reset_all()
+    yield
+    api_rate_limiter.reset_all()
 
 
 async def _create_database_if_missing() -> None:
