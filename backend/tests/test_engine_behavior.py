@@ -35,6 +35,12 @@ from app.services.step_executors import (
     WebhookExecutor,
 )
 from app.services.workflow_engine import WorkflowEngine
+from app.services.interpolation import (
+    ReferenceContext,
+    ReferenceError,
+    interpolate,
+    context_has_templates,
+)
 
 
 # ---------------------------------------------------------------------------
@@ -1498,3 +1504,154 @@ class TestAdminNotice:
         assert len(called) == 1
         assert "failed" in called[0][0].lower()
         assert str(run.id) in called[0][0]
+
+
+# ---------------------------------------------------------------------------
+# G2: scoped variables / cross-step reference resolution ({{ }} templates)
+# ---------------------------------------------------------------------------
+class TestReferenceResolver:
+    """Unit tests for the pure interpolation layer (no DB)."""
+
+    def test_input_reference(self):
+        ctx = ReferenceContext(input_data={"user": "alice"})
+        assert interpolate("hello {{ input.user }}", ctx) == "hello alice"
+
+    def test_bare_field_reference_falls_back_to_input(self):
+        ctx = ReferenceContext(input_data={"price": 5})
+        assert interpolate("total {{ price }}", ctx) == "total 5"
+
+    def test_legacy_dollar_prefix_tolerated(self):
+        ctx = ReferenceContext(input_data={"n": 9})
+        assert interpolate("{{ $input.n }}", ctx) == "9"
+
+    def test_nested_input_path(self):
+        ctx = ReferenceContext(input_data={"order": {"customer": {"name": "Bob"}}})
+        assert interpolate("{{ input.order.customer.name }}", ctx) == "Bob"
+
+    def test_step_output_reference(self):
+        ctx = ReferenceContext(step_outputs={3: {"email": "x@y.com"}})
+        assert interpolate("notify {{ step.3.output.email }}", ctx) == "notify x@y.com"
+
+    def test_step_output_short_alias(self):
+        ctx = ReferenceContext(step_outputs={3: {"email": "x@y.com"}})
+        assert interpolate("{{ step.3.email }}", ctx) == "x@y.com"
+
+    def test_missing_step_output_raises(self):
+        ctx = ReferenceContext(step_outputs={})
+        with pytest.raises(ReferenceError):
+            interpolate("{{ step.42.output.x }}", ctx)
+
+    def test_unknown_reference_raises(self):
+        ctx = ReferenceContext(input_data={})
+        with pytest.raises(ReferenceError):
+            interpolate("{{ input.missing }}", ctx)
+
+    def test_numeric_reference_in_expression_is_bare_token(self):
+        # The engine resolves expressions with interpolate(); a numeric reference
+        # drops in bare so the expression stays valid Python.
+        ctx = ReferenceContext(step_outputs={1: {"unit_price": 2.5}})
+        assert interpolate("qty * {{ step.1.output.unit_price }}", ctx) == "qty * 2.5"
+
+    def test_string_reference_in_expression_wrapped_in_quotes(self):
+        # A string reference in an expression is wrapped in quotes by the author so
+        # str-substitution yields a valid string literal.
+        ctx = ReferenceContext(step_outputs={1: {"label": "Widget"}})
+        assert interpolate("name == '{{ step.1.output.label }}'", ctx) == "name == 'Widget'"
+
+    def test_context_has_templates_detection(self):
+        assert context_has_templates({"a": "x {{ input.b }}", "c": 1}) is True
+        assert context_has_templates({"a": "no template", "b": [1, {"c": "y"}]}) is False
+        assert context_has_templates(["{{ input.x }}"]) is True
+
+    def test_interpolate_recurses_dicts_and_lists(self):
+        ctx = ReferenceContext(input_data={"k": "v"})
+        src = {"to": ["{{ input.k }}@x.com", {"ref": "{{ input.k }}"}], "n": 3}
+        out = interpolate(src, ctx)
+        assert out == {"to": ["v@x.com", {"ref": "v"}], "n": 3}
+
+    def test_none_reference_becomes_empty_string(self):
+        ctx = ReferenceContext(input_data={"empty": None})
+        assert interpolate("x={{ input.empty }}y", ctx) == "x=y"
+
+
+class TestScopedReferencesIntegration:
+    """End-to-end: references resolve through the real engine + DB."""
+
+    @pytest.mark.asyncio
+    async def test_cross_step_reference_through_engine(self, engine, session):
+        """A downstream calculation references an upstream step's output by id."""
+        wf = await create_workflow(
+            engine, session,
+            [
+                {"step_type": "calculation", "definition": {"expression": "7 * 3"}},
+                {"step_type": "calculation", "definition": {"expression": "0"}},
+            ],
+            config={"start_step_ids": None},
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        a, b = sorted(wf.steps, key=lambda s: s.position)
+        a.definition = {**a.definition, "next_step_ids": [b.id]}
+        b.definition = {"expression": f"{{{{ step.{a.id}.output.result }}}} * 2"}
+        wf.config = {"start_step_ids": [a.id]}
+        await session.commit()
+
+        run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
+        run = await wait_run(session, run.id)
+        assert run.status == "completed", f"run failed: {run.error_message}"
+
+        instances = (await session.execute(
+            select(StepInstance).where(StepInstance.workflow_run_id == run.id)
+        )).scalars().all()
+        by_step = {i.step_id: i for i in instances}
+        assert by_step[a.id].output_data.get("result") == 21
+        # B resolved {{ step.a.output.result }} (21) * 2 == 42 from A's output by id.
+        assert by_step[b.id].output_data.get("result") == 42
+
+    @pytest.mark.asyncio
+    async def test_scoped_input_reference_through_engine(self, engine, session):
+        """{{ input.<field> }} resolves the run's accumulated input at trigger time."""
+        wf = await create_workflow(
+            engine, session,
+            [
+                {"step_type": "calculation", "definition": {"expression": "0"}},
+            ],
+            config={"start_step_ids": None},
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        (only,) = sorted(wf.steps, key=lambda s: s.position)
+        only.definition = {"expression": f"{{{{ input.base_price }}}}"}
+        wf.config = {"start_step_ids": [only.id]}
+        await session.commit()
+
+        run = await engine.trigger_workflow(
+            session, wf.id, WorkflowRunCreate(input_data={"base_price": 100})
+        )
+        run = await wait_run(session, run.id)
+        assert run.status == "completed", f"run failed: {run.error_message}"
+        instances = (await session.execute(
+            select(StepInstance).where(StepInstance.workflow_run_id == run.id)
+        )).scalars().all()
+        by_step = {i.step_id: i for i in instances}
+        assert by_step[only.id].output_data.get("result") == 100
+
+    @pytest.mark.asyncio
+    async def test_reference_to_missing_step_fails_run(self, engine, session):
+        """A reference to a step with no output fails closed (fail-closed contract)."""
+        wf = await create_workflow(
+            engine, session,
+            [
+                {"step_type": "calculation", "definition": {"expression": "1"}},
+                {"step_type": "calculation", "definition": {"expression": "0"}},
+            ],
+            config={"start_step_ids": None},
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        a, b = sorted(wf.steps, key=lambda s: s.position)
+        a.definition = {**a.definition, "next_step_ids": [b.id]}
+        b.definition = {"expression": f"{{{{ step.999999.output.x }}}}"}
+        wf.config = {"start_step_ids": [a.id]}
+        await session.commit()
+
+        run = await engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
+        run = await wait_run(session, run.id)
+        assert run.status == "failed"

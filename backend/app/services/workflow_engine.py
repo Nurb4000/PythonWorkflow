@@ -14,6 +14,7 @@ from app.core.database import async_session_factory
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRunCreate
 from app.services.email_service import notify_admin
+from app.services.interpolation import ReferenceContext, interpolate, context_has_templates
 from app.services.workflow_version_service import snapshot_workflow
 from app.services.tenant_scoping import resolve_creation_tenant_id
 from app.models.auth import User
@@ -662,7 +663,16 @@ class WorkflowEngine:
                 step_input.setdefault("_workflow_run_id", run.id)
                 step_input.setdefault("_workflow_step_id", step.id)
 
-                output_data = await executor.execute(step_input, step.definition, db=db)
+                # G2: resolve cross-step / scoped references ({{ step.<id>.output.<f> }},
+                # {{ input.<f> }}) in the definition against accumulated input + prior
+                # step outputs. Only queries when the definition actually contains a
+                # template, so the common case has zero extra cost.
+                step_definition = step.definition
+                if context_has_templates(step.definition):
+                    ref_ctx = await self._reference_context(db, run, instance.id)
+                    step_definition = interpolate(step.definition, ref_ctx)
+
+                output_data = await executor.execute(step_input, step_definition, db=db)
                 
                 instance.status = "completed"
                 instance.output_data = output_data
@@ -721,7 +731,39 @@ class WorkflowEngine:
         run.error_message = f"Run {run.id}: Step {instance.id} failed"
         await db.commit()
         return False
-    
+
+    async def _reference_context(self, db, run, exclude_instance_id: Optional[int] = None):
+        """Build a G2 :class:`ReferenceContext` for cross-step / scoped references.
+
+        ``input_data`` is the accumulated run input (the flat, merged blob of every
+        prior step's outputs). ``step_outputs`` maps each *workflow step id* to that
+        step's ``output_data`` so a step can reference an earlier one by identity
+        (``step.<id>.output.<field>``) instead of relying on merge order.
+
+        Prior outputs are read from committed completed/skipped StepInstances of this
+        run. Under true fan-in every predecessor is committed before a converging step
+        runs, so querying committed rows is race-free across the separate per-branch
+        sessions used by the concurrent scheduler. Any query failure degrades to an
+        empty ``step_outputs`` map (input references still work) rather than failing
+        the run.
+        """
+        input_data = dict(run.input_data or {})
+        step_outputs: Dict[int, Dict[str, Any]] = {}
+        try:
+            stmt = select(StepInstance).where(
+                StepInstance.workflow_run_id == run.id,
+                StepInstance.status.in_(("completed", "skipped")),
+            )
+            if exclude_instance_id is not None:
+                stmt = stmt.where(StepInstance.id != exclude_instance_id)
+            result = await db.execute(stmt)
+            for inst in result.scalars().all():
+                if inst.output_data and isinstance(inst.output_data, dict):
+                    step_outputs[int(inst.step_id)] = inst.output_data
+        except Exception as e:  # pragma: no cover - defensive; never fail a run on refs
+            logger.debug(f"G2 reference context build failed for run {run.id}: {e}")
+        return ReferenceContext(input_data=input_data, step_outputs=step_outputs)
+
     async def _execute_failure_hooks(self, db, run, instance, step, error_msg):
         """Execute failure hooks configured for the workflow or step."""
         import httpx
