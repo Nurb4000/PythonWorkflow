@@ -21,6 +21,46 @@ from app.models.auth import User
 logger = logging.getLogger(__name__)
 
 
+class _RunCtx:
+    """In-memory coordination state shared across concurrent DAG branch tasks.
+
+    With true parallel execution each branch runs on its *own* ``AsyncSession``, so the
+    ORM ``WorkflowRun`` object can no longer be shared (each session has its own identity
+    map and updates in one session are not visible in another without a refresh). This
+    lightweight stand-in holds exactly the attributes the step-execution helpers read and
+    write:
+
+    * ``input_data`` — the accumulated run input. Merging a step's output here is what lets
+      a converging (fan-in) step see every predecessor's outputs.
+    * ``status`` / ``error_message`` / ``completed_at`` — run-level coordination for
+      timeout, per-step failure, and human-task pause.
+
+    It is safe to mutate from multiple coroutines because asyncio is single-threaded and
+    every mutation below is a synchronous read-modify-write (no ``await`` in between), so
+    two branches can never interleave a partial update. The live engine writes the final
+    values back onto the ORM ``run`` before the caller's finalize step reads it.
+    """
+
+    __slots__ = (
+        "id", "input_data", "status", "error_message", "max_retries",
+        "timeout_seconds", "started_at", "completed_at", "priority",
+        "tenant_id", "failure_hooks",
+    )
+
+    def __init__(self, run: WorkflowRun):
+        self.id = run.id
+        self.input_data = dict(run.input_data or {})
+        self.status = run.status
+        self.error_message = run.error_message
+        self.max_retries = run.max_retries
+        self.timeout_seconds = run.timeout_seconds
+        self.started_at = run.started_at
+        self.completed_at = run.completed_at
+        self.priority = getattr(run, "priority", None)
+        self.tenant_id = run.tenant_id
+        self.failure_hooks = list(getattr(run, "failure_hooks", None) or [])
+
+
 class WorkflowEngine:
     """Main workflow execution engine"""
     
@@ -150,9 +190,16 @@ class WorkflowEngine:
         # Multi-tenancy (§3.1): assign the creating user's tenant (or the seeded
         # default) so the NOT NULL tenant_id column enforced by the content migration
         # is satisfied and the workflow is scoped to that tenant on read.
-        creator = await db.execute(select(User).where(User.id == created_by)) \
-            if created_by is not None else None
-        tenant_id = await resolve_creation_tenant_id(db, creator.scalar_one_or_none())
+        # Always run the query so we get a real Result object; when ``created_by``
+        # is None we drop the WHERE clause. ``.scalar_one_or_none()`` then safely
+        # yields ``None`` (no matching user). The old code stored ``None`` directly
+        # for the no-creator case and then called ``.scalar_one_or_none()`` on that
+        # ``None``, crashing every workflow created without an explicit creator
+        # (e.g. all engine/graph tests).
+        user_stmt = select(User).where(User.id == created_by) \
+            if created_by is not None else select(User)
+        creator_result = await db.execute(user_stmt)
+        tenant_id = await resolve_creation_tenant_id(db, creator_result.scalar_one_or_none())
 
         workflow = Workflow(
             name=norm_name,
@@ -883,92 +930,265 @@ class WorkflowEngine:
         await self._execute_branching_sync(db, run, run_id, workflow, step_instances)
 
     async def _execute_branching_sync(self, db, run, run_id: int, workflow: Workflow, step_instances):
-        """Execute a workflow following explicit connections synchronously.
+        """Execute a workflow following explicit connections with TRUE PARALLEL execution
+        and true fan-in synchronization (G1).
 
-        This avoids session management issues that occur with parallel execution.
+        Independent branches run concurrently via asyncio; a converging step waits for
+        ALL of its predecessors to complete before running (fan-in) and runs at most
+        once per run (DAG semantics). This replaces the old sequential depth-first
+        traversal, which ran branches one after another and — because it shared a
+        ``visited`` set — executed a converging step on the *first* path that reached
+        it, silently dropping every other branch.
 
-        I9 note: The ``visited`` set is shared across all path traversals.  If two
-        independent branches converge on the same target step, only the first path
-        executes it.  This prevents infinite loops in cyclic graphs but means that
-        steps are executed at most once per run (DAG semantics).  For multi-execution
-        semantics (step runs once per incoming edge), a work-queue model tracking
-        (path, step_id) pairs would be needed.
+        Model (event-driven DAG scheduler, all state below is shared via closure):
+
+        * Each node has a predecessor counter initialized to its static predecessor
+          count. A predecessor "releases" a successor (decrements its counter) when it
+          resolves — whether it executed, was skipped/disabled, or was an orphaned
+          branch that never ran.
+        * A node becomes runnable when its counter hits zero AND it was actually reached
+          by at least one predecessor (or is a wired start node).
+        * Orphaned nodes (all predecessors resolved but none routed to them) still
+          release their own successors, so counters can never deadlock.
+        * Resume-aware: instances already in a terminal state (from a prior partial run)
+          are "pre-resolved" — their successors are released up front — so the live
+          scheduler only drives the not-yet-run portion of the graph.
         """
         instance_lookup = {inst.step_id: inst for inst in step_instances}
         step_lookup = {s.id: s for s in workflow.steps}
-        visited = set()
 
-        async def execute_path(step_id: int, input_data: dict):
-            # Check timeout at the start of each step
-            if await self._check_timeout(db, run):
-                return
-            
-            if step_id in visited:
-                return
-            visited.add(step_id)
+        # In-memory coordination state shared across all concurrent branch tasks. Each
+        # task runs on its own AsyncSession (see note in _RunCtx); this object is the
+        # single source of truth for accumulated input (fan-in) and run status.
+        ctx = _RunCtx(run)
+        # step_id -> StepInstance.db id, so each task can load its own instance copy.
+        step_to_inst_id = {sid: inst.id for sid, inst in instance_lookup.items()}
 
-            instance = instance_lookup.get(step_id)
-            step = step_lookup.get(step_id)
-            if not instance or not step:
-                return
-
-            # Resume-aware: skip steps that already ran.
-            if instance.status in ("completed", "failed", "skipped"):
-                # For human steps, check if task is resolved.
-                if step.step_type in ("human_task", "approval") and not await self._human_task_resolved(db, run_id, step.id):
-                    run.status = "waiting"
-                    await db.commit()
-                    return
-                step_targets = self._get_targets(step, run.input_data)
-                self._record_route(instance, step_targets)
-                valid_targets = [t for t in step_targets if t in instance_lookup and t not in visited]
-                for target in valid_targets:
-                    await execute_path(target, run.input_data)
-                return
-
-            # Skip disabled steps - mark them as skipped but don't execute
-            if not step.is_enabled:
-                instance.status = "skipped"
-                instance.output_data = {"skipped_reason": "step_disabled"}
-                instance.completed_at = datetime.utcnow()
-                await db.commit()
-                # Still get targets so workflow continues past disabled step
-                step_targets = self._get_targets(step, input_data)
-                self._record_route(instance, step_targets)
-                valid_targets = [t for t in step_targets if t in instance_lookup and t not in visited]
-                for target in valid_targets:
-                    await execute_path(target, input_data)
-                return
-
-            run.input_data = {**(run.input_data or {}), **input_data}
-            instance.input_data = {**(instance.input_data or {}), **run.input_data, "_workflow_run_id": run.id}
-
-            success = await self._execute_single_step(db, run, instance, step)
-            if not success:
-                return
-            step_targets = self._get_targets(step, run.input_data)
-            self._record_route(instance, step_targets)
-            await db.commit()
-            valid_targets = [t for t in step_targets if t in instance_lookup and t not in visited]
-            for target in valid_targets:
-                await execute_path(target, input_data)
-
-        # Entry steps come only from explicit start config (what the designer wired up)
         config = workflow.config or {}
-        start_ids = [i for i in config.get("start_step_ids", []) if i in instance_lookup]
-        if not start_ids:
-            return  # No start outputs configured — nothing to execute
+        start_ids = set(i for i in config.get("start_step_ids", []) if i in instance_lookup)
 
+        # Static successor map (a SUPERSET of the actually-taken targets). Using a
+        # superset guarantees every real predecessor releases each successor exactly
+        # once -> no deadlock even when condition branches drop some edges.
+        static_succ = {sid: self._static_targets(step_lookup[sid]) for sid in instance_lookup}
+
+        # Static reachability from the wired start nodes, so a dangling predecessor that
+        # points at a reachable node (but is itself unreachable) is not counted — it
+        # would never resolve and would deadlock the counter.
+        reachable = self._static_reachable(start_ids, static_succ)
+
+        preds = {
+            tid: [pid for pid in static_succ
+                  if tid in static_succ.get(pid, ()) and pid in reachable]
+            for tid in instance_lookup
+        }
+
+        counter = {tid: len(preds[tid]) for tid in instance_lookup}
+        reached = {tid: set() for tid in instance_lookup}
+        executed = {tid: False for tid in instance_lookup}
+        created = {tid: False for tid in instance_lookup}
+        resolved: set[int] = set()
+        tasks: dict = {}
+
+        async def spawn(tid):
+            if created.get(tid) or tid not in reachable or tid in resolved:
+                return
+            created[tid] = True
+            # ``dag_step`` is the nested closure defined below (it closes over db/run/
+            # run_id and all the shared state dicts); it is NOT a method on self.
+            tasks[tid] = asyncio.create_task(dag_step(tid))
+
+        async def handle_ready(succ):
+            """Called when ``succ``'s predecessor counter has just hit zero."""
+            if succ in resolved or executed[succ] or counter[succ] != 0:
+                return
+            # Runnable only if it was actually reached, or it is a wired start node.
+            if succ in start_ids or reached[succ]:
+                await spawn(succ)
+            else:
+                # Orphaned branch (all predecessors resolved but none routed here). It
+                # must still release its own successors so their counters can reach zero.
+                for s2 in static_succ.get(succ, ()):
+                    if s2 not in counter:
+                        continue
+                    counter[s2] -= 1
+                    if counter[s2] == 0:
+                        await handle_ready(s2)
+
+        async def release(tid, route):
+            """Decrement each static successor's predecessor counter, mark successors that
+            were actually routed to as ``reached``, and spawn/handle any that become
+            runnable (counter hit zero). Shared by live execution, disabled-step skip, and
+            resume-aware pre-resolution so fan-in counting stays consistent everywhere."""
+            for succ in static_succ.get(tid, ()):
+                if succ not in counter:
+                    continue
+                if succ in route:
+                    reached[succ].add(tid)
+                counter[succ] -= 1
+                if counter[succ] == 0:
+                    await handle_ready(succ)
+
+        async def dag_step(step_id):
+            """Execute a single node of the DAG (one asyncio task). Runs concurrently
+            with sibling nodes on its OWN database session, so concurrent commits can't
+            corrupt a shared session's transaction state. Fan-in synchronization is
+            provided by the caller via the predecessor counter before this task spawns."""
+            instance_id = step_to_inst_id.get(step_id)
+            if instance_id is None:
+                return
+
+            async with async_session_factory() as tdb:
+                # Load a fresh copy of this instance for this branch's session.
+                instance = await tdb.get(StepInstance, instance_id)
+                step = step_lookup.get(step_id)  # read-only; definition never changes
+                if instance is None or step is None:
+                    return
+                executed[step_id] = True
+
+                # Timeout guard (checked per step, like the sequential model).
+                if await self._check_timeout(tdb, ctx):
+                    return
+
+                # Resume-aware: a step already in a terminal state is resolved without
+                # re-running; replay its routes so successors can be released.
+                if instance.status in ("completed", "skipped"):
+                    if step.step_type in ("human_task", "approval") and not await self._human_task_resolved(tdb, run_id, step.id):
+                        ctx.status = "waiting"
+                        await tdb.commit()
+                        return
+                    # Re-evaluate the route exactly as a fresh execution would (raises on
+                    # a bad/empty condition route, which fails the run).
+                    route = self._get_targets(step, ctx.input_data)
+                    await release(step_id, route)
+                    return
+
+                # Skip disabled steps — mark skipped but still propagate along routes.
+                if not step.is_enabled:
+                    instance.status = "skipped"
+                    instance.output_data = {"skipped_reason": "step_disabled"}
+                    instance.completed_at = datetime.utcnow()
+                    await tdb.commit()
+                    route = self._get_targets(step, ctx.input_data)
+                    for t in route:
+                        self._record_route_instance(instance, t)
+                    await release(step_id, route)
+                    return
+
+                # Merge accumulated run data into this step's input (fan-in: a converging
+                # step sees every predecessor's outputs, since each merged into
+                # ctx.input_data before releasing it).
+                instance.input_data = {**(instance.input_data or {}), **ctx.input_data, "_workflow_run_id": ctx.id}
+
+                success = await self._execute_single_step(tdb, ctx, instance, step)
+                if not success:
+                    # Failure (or human pause) already set ctx.status. Do not propagate
+                    # from this branch; siblings finish on their own and the run ends terminal.
+                    return
+
+                # Record the route taken for the run inspector, then release successors.
+                # _get_targets raises ValueError on a bad/empty condition route, which
+                # fails the run — matching the sequential model's behavior.
+                route = self._get_targets(step, ctx.input_data)
+                self._record_route(instance, route)
+                await tdb.commit()
+                await release(step_id, route)
+
+        # --- Resume-aware pre-resolution: replay already-terminal instances so the live
+        #     scheduler only has to drive the not-yet-run portion of the graph. Replay a
+        #     completed instance's output back into ctx.input_data so a converging step
+        #     still sees every predecessor's outputs after a resume (fan-in). ---
+        for inst in step_instances:
+            if inst.status not in ("completed", "skipped"):
+                continue
+            resolved.add(inst.step_id)
+            step = step_lookup.get(inst.step_id)
+            if step is None:
+                continue
+            if inst.output_data:
+                ctx.input_data = {**ctx.input_data, **(inst.output_data or {})}
+            route = self._get_targets(step, ctx.input_data)
+            await release(inst.step_id, route)
+
+        # --- Kick off the wired start nodes. ---
         for sid in start_ids:
-            await execute_path(sid, {})
+            await handle_ready(sid)
 
-        # Mark any unvisited instances as skipped
-        for instance in step_instances:
-            if instance.status == "pending" and instance.step_id not in visited:
-                instance.status = "skipped"
-                instance.completed_at = datetime.utcnow()
-        if any(i.status == "skipped" for i in step_instances):
+        # --- Await everything, including tasks spawned while others run. ---
+        while True:
+            pending = [t for t in tasks.values() if not t.done()]
+            if not pending:
+                break
+            results = await asyncio.gather(*pending, return_exceptions=True)
+            # A step failure/route error is recorded on ``ctx`` (or raised) inside
+            # dag_step; surface any unexpected exception so it isn't silently swallowed.
+            for r in results:
+                if isinstance(r, Exception) and not isinstance(r, asyncio.CancelledError):
+                    raise r
+
+        # --- Sync the in-memory coordination state back onto the ORM run so the caller's
+        #     finalize (status -> completed, completed_at, error, SLA, output_data) sees it.
+        #     These were written on the shared _RunCtx by the branch tasks (each task has
+        #     its own session), so they must be copied back before the caller commits. ---
+        run.status = ctx.status
+        run.input_data = ctx.input_data
+        run.error_message = ctx.error_message
+
+        # --- Mark anything never reached as skipped (matches prior behavior). ---
+        # ``executed`` is a dict keyed by step id with a False value for steps that never
+        # ran, so the check must read the *value* (``not executed[...]``), not test key
+        # presence (every id is always a key).
+        finalized = False
+        for inst in step_instances:
+            if inst.status == "pending" and not executed.get(inst.step_id, False) and inst.step_id not in resolved:
+                inst.status = "skipped"
+                inst.completed_at = datetime.utcnow()
+                finalized = True
+        if finalized:
             await db.commit()
+
+    def _record_route_instance(self, instance, target):
+        """Record a single route_taken target on an instance's custom_data."""
+        custom = dict(instance.custom_data or {})
+        taken = list(custom.get("route_taken") or [])
+        if int(target) not in taken:
+            taken.append(int(target))
+        custom["route_taken"] = taken
+        instance.custom_data = custom
+
+    def _static_targets(self, step) -> tuple:
+        """Return the static (potential) successor step ids of ``step`` — a superset of
+        what :meth:`_get_targets` can return at runtime. Over-approximating is safe: it
+        only makes a node wait for predecessors that will resolve anyway."""
+        d = step.definition or {}
+        ids: set = set()
+        if step.step_type in ("condition", "ai_condition"):
+            for r in d.get("routes") or []:
+                t = r.get("target_step_id")
+                if t is not None:
+                    ids.add(t)
+            for key in ("on_true", "on_false"):
+                if d.get(key) is not None:
+                    ids.add(d[key])
+        ids.update(d.get("next_step_ids") or [])
+        if d.get("next_step_id") is not None:
+            ids.add(d["next_step_id"])
+        return tuple(i for i in ids if i is not None)
+
+    @staticmethod
+    def _static_reachable(start_ids, static_succ) -> set:
+        """Set of step ids reachable from ``start_ids`` over the static successor map."""
+        seen: set = set()
+        stack = list(start_ids)
+        while stack:
+            sid = stack.pop()
+            if sid in seen:
+                continue
+            seen.add(sid)
+            for nxt in static_succ.get(sid, ()):
+                if nxt not in seen:
+                    stack.append(nxt)
+        return seen
 
     def _get_targets(self, step: WorkflowStep, input_data: Dict[str, Any]) -> List[int]:
         """Return the target step ids a step connects to based on its definition."""

@@ -212,8 +212,12 @@ async def resolve_creation_tenant_id(db: AsyncSession, user: Optional[User]) -> 
     if user is not None and user.tenant_id is not None:
         return user.tenant_id
 
-    tenant = await db.execute(
-        select(Tenant).where(Tenant.slug == DEFAULT_TENANT_SLUG)
+    # NOTE: parenthesise the ``await`` — ``await db.execute(...).scalar_one_or_none()``
+    # parses as ``await (db.execute(...).scalar_one_or_none())`` and calls
+    # ``.scalar_one_or_none()`` on the *coroutine* (AttributeError). The result must
+    # be awaited first, then the scalar method called on it.
+    tenant = (
+        await db.execute(select(Tenant).where(Tenant.slug == DEFAULT_TENANT_SLUG))
     ).scalar_one_or_none()
     if tenant is None:
         tenant = Tenant(name=DEFAULT_TENANT_NAME, slug=DEFAULT_TENANT_SLUG, is_active=True)
