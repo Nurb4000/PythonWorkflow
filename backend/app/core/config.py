@@ -119,11 +119,23 @@ class Settings(BaseSettings):
     
     # Webhook authentication. Verification now fails closed: if this is empty,
     # POST /webhook/{workflow_id} rejects triggers with 401 (findings #30).
+    # Reused as the shared secret for signing *outgoing* G4 notification webhooks.
     webhook_secret: str = ""
-    
+
+    # G4 external notification channels (leave empty to disable that channel).
+    # Runtime overrides can be persisted in system_settings and re-applied at
+    # startup via load_channel_overrides().
+    slack_webhook_url: str = ""
+    webhook_url: str = ""  # generic outgoing G4 webhook endpoint
+
     class Config:
         env_file = ".env"
         env_file_encoding = "utf-8"
+        # Ignore unknown env vars (e.g. TEST_DATABASE_URL, used by the test suite
+        # to point DATABASE_URL at the isolated DB). pydantic-settings defaults to
+        # extra="forbid", which would make Settings() crash on any non-mapping env
+        # var; tests and deployments routinely export such variables.
+        extra = "ignore"
 
 
 settings = Settings()

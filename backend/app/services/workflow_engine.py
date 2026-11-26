@@ -638,6 +638,19 @@ class WorkflowEngine:
                 except:
                     pass
                 notify_admin(f"Workflow run {run_id} failed", str(e))
+                # G4: also push the failure through configured external channels
+                # (email / Slack / signed webhook). Best-effort; never raises.
+                try:
+                    from app.services.notification_service import notify_admins
+
+                    await notify_admins(
+                        type="workflow_failed",
+                        title=f"Workflow run {run_id} failed",
+                        message=str(e),
+                        context={"run_id": run_id},
+                    )
+                except Exception:
+                    logger.exception("Failed to dispatch workflow_failed notification channel")
     
     async def _execute_single_step(self, db, run, instance, step) -> bool:
         """Execute a single step with retry support. Returns True if execution should continue."""
@@ -884,14 +897,21 @@ class WorkflowEngine:
         # Notify the assignee that they have a new task (Feature-Plan §2.3). Flushed
         # here so it commits alongside the task above and rolls back with it.
         if assigned_to_user_id:
-            from app.services.notification_service import create_notification
+            from app.models.auth import User
+            from app.services.notification_service import notify
 
-            await create_notification(
+            # Fetch the assignee so the notification can also be pushed through
+            # configured external channels (G4) -- e.g. email to the assignee.
+            user = (
+                await db.execute(select(User).where(User.id == assigned_to_user_id))
+            ).scalar_one_or_none()
+
+            await notify(
                 db,
-                user_id=assigned_to_user_id,
+                user,
+                type="task_assigned",
                 title=f"Task assigned: {task.title}",
                 message="You have been assigned a task in a running workflow.",
-                type="task_assigned",
                 related_entity_type="task",
                 related_entity_id=task.id,
             )

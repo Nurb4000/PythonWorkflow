@@ -296,18 +296,31 @@ class SchedulerService:
                             if svc_row:
                                 svc_name = f"{svc_row} (Run #{run.id})"
 
+                        sla_message = (
+                            f"Workflow run #{run.id} has breached its response SLA.\n\n"
+                            f"Workflow: {run.workflow_name}\n"
+                            f"Priority: {run.priority}\n"
+                            f"Target: {target_hours}h\n"
+                            f"Elapsed: {elapsed_hours:.1f}h\n"
+                            f"Status: {run.status}\n"
+                            f"Started: {run.started_at.isoformat()}"
+                        )
                         notify_admin(
                             f"SLA Response Breach: {svc_name}",
-                            (
-                                f"Workflow run #{run.id} has breached its response SLA.\n\n"
-                                f"Workflow: {run.workflow_name}\n"
-                                f"Priority: {run.priority}\n"
-                                f"Target: {target_hours}h\n"
-                                f"Elapsed: {elapsed_hours:.1f}h\n"
-                                f"Status: {run.status}\n"
-                                f"Started: {run.started_at.isoformat()}"
-                            )
+                            sla_message,
                         )
+                        # G4: also push the breach through configured external channels.
+                        try:
+                            from app.services.notification_service import notify_admins
+
+                            await notify_admins(
+                                type="sla_breach",
+                                title=f"SLA Response Breach: {svc_name}",
+                                message=sla_message,
+                                context={"run_id": run.id},
+                            )
+                        except Exception:
+                            logger.exception("Failed to dispatch sla_breach notification channel")
 
                     # Check if approaching breach (>=80% of target) — log warning only
                     elif elapsed_hours >= target_hours * 0.8:
@@ -360,16 +373,29 @@ class SchedulerService:
                     target_key = dt.target_key
                     target_str = dt.target_datetime.isoformat() if dt.target_datetime else "unknown"
 
+                    date_target_message = (
+                        f"Date target '{target_key}' for workflow run #{run_id} has been breached.\n\n"
+                        f"Target datetime: {target_str}\n"
+                        f"Current time: {now.isoformat()}\n"
+                        f"Step ID: {dt.step_id}\n"
+                        f"Task ID: {dt.task_id}"
+                    )
                     notify_admin(
                         f"Date Target Breach: {target_key} (Run #{run_id})",
-                        (
-                            f"Date target '{target_key}' for workflow run #{run_id} has been breached.\n\n"
-                            f"Target datetime: {target_str}\n"
-                            f"Current time: {now.isoformat()}\n"
-                            f"Step ID: {dt.step_id}\n"
-                            f"Task ID: {dt.task_id}"
-                        )
+                        date_target_message,
                     )
+                    # G4: also push the breach through configured external channels.
+                    try:
+                        from app.services.notification_service import notify_admins
+
+                        await notify_admins(
+                            type="sla_breach",
+                            title=f"Date Target Breach: {target_key} (Run #{run_id})",
+                            message=date_target_message,
+                            context={"run_id": run_id, "step_id": dt.step_id},
+                        )
+                    except Exception:
+                        logger.exception("Failed to dispatch date-target notification channel")
 
                 await db.commit()
                 logger.info(f"Date target monitor: marked {len(breached)} target(s) as breached")

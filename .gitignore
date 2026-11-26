@@ -60,3 +60,10 @@ knowledge-base/models/
 # Uploads / runtime data
 backend/uploads/
 backend/backend_data/
+
+# Internal-only status/feature-gap docs (not pushed)
+findings/
+
+# One-off VM re-provisioning scripts (machine-specific, not app code)
+provision_vm.sh
+provision_vm.sh.bak

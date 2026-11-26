@@ -12,6 +12,7 @@ PostgreSQL database so test behavior matches production exactly.
   by SQLView tests.
 """
 import os
+import socket
 
 # Point the app's DB connection at the isolated test database *before* any app
 # module is imported. app.core.config reads DATABASE_URL via pydantic Settings,
@@ -19,10 +20,26 @@ import os
 # Without this, services that open their own sessions (e.g. load_ldap_overrides)
 # read from the production DATABASE_URL while fixtures write to TEST_DATABASE_URL,
 # so persisted overrides never surface and DB-backed tests see empty data.
-_TEST_DATABASE_URL = os.environ.get(
-    "TEST_DATABASE_URL",
-    "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db_test",
-)
+def _resolve_test_database_url() -> str:
+    """Return the test database URL to point the suite at.
+
+    Honors an explicit ``TEST_DATABASE_URL`` (CI / docker). Otherwise defaults to
+    the compose ``postgres`` service, but falls back to ``127.0.0.1`` when that
+    host name does not resolve -- i.e. running the suite directly on a host/VM
+    outside the compose network, where Postgres listens on loopback.
+    """
+    explicit = os.environ.get("TEST_DATABASE_URL")
+    if explicit:
+        return explicit
+    default = "postgresql+asyncpg://workflow_user:workflow_password@postgres:5432/workflow_db_test"
+    try:
+        socket.gethostbyname("postgres")
+        return default
+    except socket.gaierror:
+        return default.replace("@postgres:", "@127.0.0.1:")
+
+
+_TEST_DATABASE_URL = _resolve_test_database_url()
 os.environ["DATABASE_URL"] = _TEST_DATABASE_URL
 
 import pytest

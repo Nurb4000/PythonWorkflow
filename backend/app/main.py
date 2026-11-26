@@ -150,6 +150,12 @@ async def lifespan(fastapi_app: FastAPI):
     await create_default_admin()
     from app.services.email_service import load_smtp_overrides
     await load_smtp_overrides()
+    # G4: re-apply DB-persisted notification channel config + routing at startup
+    # so admin edits (Slack/webhook URLs, per-type channel routing) survive restarts.
+    from app.services.notification_service import apply_routing, load_channel_overrides
+    await load_channel_overrides()
+    async with async_session_factory() as db:
+        await apply_routing(db)
     # M9 fix: re-apply DB-persisted LDAP config (incl. bind password) at startup
     # so admin edits survive restarts instead of resetting to env defaults.
     from app.services.ldap_service import load_ldap_overrides

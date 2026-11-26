@@ -9,7 +9,15 @@ pydantic==2.14.3        # was 2.5.2
 pydantic-settings==2.1.0   # unchanged (working; 2.16.3 available for later review)
 
 # Database
-asyncpg==0.29.0  # For PostgreSQL async support (works; 0.32.0 available — supply-chain)
+asyncpg==0.32.0  # For PostgreSQL async support. Bumped from 0.29.0: on this mirror
+                 # 0.29.0 ships only an sdist (no cp313 wheel) and its Cython-generated
+                 # C does not compile against Python 3.13's changed _PyLong_AsByteArray.
+                 # 0.32.0 provides a prebuilt cp313 manylinux wheel, so no compiler is needed.
+
+# greenlet is required by SQLAlchemy's async engine (greenlet_spawn) used in the
+# test conftest for engine dispose/checkout against PostgreSQL. Not pulled in
+# transitively by the pinned versions below, so it must be declared explicitly.
+greenlet==3.5.6
 
 # Scheduling
 apscheduler==3.10.4
