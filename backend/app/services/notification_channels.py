@@ -23,8 +23,6 @@ Design notes
 """
 from __future__ import annotations
 
-import hashlib
-import hmac
 import json
 import logging
 from abc import ABC, abstractmethod
@@ -35,6 +33,7 @@ from typing import Optional
 import httpx
 
 from app.core.config import settings
+from app.services.outgoing_webhook import OutgoingWebhookSender, WebhookRequest
 
 logger = logging.getLogger(__name__)
 
@@ -197,25 +196,24 @@ class WebhookChannel(NotificationChannel):
     type = ChannelType.WEBHOOK
     name = "Webhook"
 
-    def __init__(self, client: Optional[httpx.AsyncClient] = None) -> None:
-        self._client = client
+    def __init__(
+        self,
+        client: Optional[httpx.AsyncClient] = None,
+        max_retries: int = 3,
+        base_delay: float = 0.5,
+        max_delay: float = 30.0,
+    ) -> None:
+        # Delegates signing + retry-with-backoff + idempotency to the shared
+        # OutgoingWebhookSender (G5). The injected client is threaded through for tests.
+        self._sender = OutgoingWebhookSender(
+            client=client,
+            max_retries=max_retries,
+            base_delay=base_delay,
+            max_delay=max_delay,
+        )
 
     async def is_configured(self) -> bool:
         return bool(settings.webhook_url)
-
-    async def _sign(self, body: bytes) -> Optional[str]:
-        secret = settings.webhook_secret
-        if not secret:
-            return None
-        digest = hmac.new(secret.encode(), body, hashlib.sha256).hexdigest()
-        return f"sha256={digest}"
-
-    async def _post(self, url: str, payload: dict, headers: dict) -> tuple[int, str]:
-        async with (self._client or httpx.AsyncClient()) as client:
-            resp = await client.post(
-                url, content=json.dumps(payload).encode(), headers=headers, timeout=10
-            )
-        return resp.status_code, resp.text
 
     async def send(self, target: NotificationTarget) -> list[DeliveryResult]:
         url = settings.webhook_url
@@ -233,18 +231,12 @@ class WebhookChannel(NotificationChannel):
                 else None
             ),
         }
-        body = json.dumps(payload).encode()
-        headers = {"Content-Type": "application/json"}
-        signature = await self._sign(body)
-        if signature:
-            headers["X-Signature"] = signature
-        try:
-            status, resp_body = await self._post(url, payload, headers)
-            ok = 200 <= status < 300
-            detail = "ok" if ok else f"HTTP {status}: {resp_body[:200]}"
-            return [DeliveryResult(self.type.value, "<webhook>", ok, detail)]
-        except Exception as e:  # best-effort: never raise to the caller
-            return [DeliveryResult(self.type.value, "<webhook>", False, f"{type(e).__name__}: {e}")]
+        # A single logical delivery carries one idempotency key + signature across all
+        # retry attempts, so transient failures don't cause duplicate processing.
+        result = await self._sender.deliver(
+            WebhookRequest(url=url, payload=payload, secret=settings.webhook_secret)
+        )
+        return [DeliveryResult(self.type.value, "<webhook>", result.success, result.detail)]
 
 
 class NotificationDispatcher:
