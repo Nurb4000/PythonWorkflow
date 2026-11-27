@@ -98,6 +98,7 @@ class WorkflowEngine:
             CmdbUpdateExecutor,
             SubWorkflowExecutor,
             LoopExecutor,
+            TransformExecutor,
         )
 
         self.step_executors = {
@@ -118,6 +119,7 @@ class WorkflowEngine:
             "cmdb_update": CmdbUpdateExecutor(),  # CMDB Phase 3
             "sub_workflow": SubWorkflowExecutor(),  # B3: sync sub-workflow
             "loop": LoopExecutor(),  # M1: iterate a collection over an inner step
+            "transform": TransformExecutor(),  # M2: data transform / map / merge node
         }
     
     def validate_input_refs(self, steps: List[Dict[str, Any]], entry_form_schema: Optional[Dict] = None) -> List[str]:

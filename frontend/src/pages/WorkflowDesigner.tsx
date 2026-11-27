@@ -74,6 +74,7 @@ const stepTypeToNodeType = (stepType: string): string => {
     calculation: 'calculation',
     report: 'report',
     loop: 'loop',
+    transform: 'transform',
     cmdb_lookup: 'cmdbLookup',
     cmdb_update: 'cmdbUpdate'
   }
@@ -143,6 +144,9 @@ function getNodeStyle(stepType: string, instanceStatus?: string) {
     case 'loop':
       style = { ...base, background: '#ede7f6', border: '2px solid #4527a0' }
       break
+    case 'transform':
+      style = { ...base, background: '#fff8e1', border: '2px solid #ff8f00' }
+      break
     case 'start':
       style = { ...base, background: '#27ae60', border: 'none', color: 'white', borderRadius: '20px' }
       break
@@ -193,6 +197,10 @@ function nodeLabel(stepType: string, data: any) {
       const hasInner = !!(data.inner_step && data.inner_step.step_type)
       const n = Array.isArray(data.collection) ? data.collection.length : null
       return `🔁 Loop${n != null ? ` (${n})` : ''}${hasInner ? ` → ${data.inner_step.step_type}` : ' (no inner step)'}`
+    }
+    case 'transform': {
+      const n = Array.isArray(data.operations) ? data.operations.length : 0
+      return `🗂️ Transform${n > 0 ? ` (${n})` : ''}`
     }
     default: return stepType
   }
@@ -344,6 +352,13 @@ const nodeTypes = {
     icon: '✏️', title: 'CMDB Update',
     subtitle: data.ci_id ? `CI #${data.ci_id}` : (data.output_var || 'Update CI'),
     style: getNodeStyle('cmdbUpdate', data.instanceStatus)
+  }),
+  transform: ({ data }: any) => renderStepNode(data, {
+    icon: '🗂️', title: 'Transform',
+    subtitle: Array.isArray(data.operations) && data.operations.length
+      ? `${data.operations.length} operation${data.operations.length === 1 ? '' : 's'}`
+      : 'Rename / map / merge / join',
+    style: getNodeStyle('transform', data.instanceStatus)
   })
 }
 
@@ -2620,6 +2635,63 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               </div>
             </>
           )
+        case 'transform':
+          return (
+            <>
+              <div className="form-group">
+                <label className="form-label">Transform Operations (JSON array)</label>
+                <textarea className="form-textarea" rows={8}
+                  value={typeof editingDef.operations === 'object' ? JSON.stringify(editingDef.operations, null, 2) : (editingDef.operations || '')}
+                  onChange={(e) => {
+                    try { handleUpdateStepField('operations', JSON.parse(e.target.value)) }
+                    catch { handleUpdateStepField('operations', e.target.value) }
+                  }}
+                  placeholder='[{"op": "rename", "fields": {"old_name": "new_name"}}]' />
+                <small style={{ color: '#7f8c8d' }}>Ordered list of field operations applied to step input. Result is returned as <code>transformed</code>.</small>
+              </div>
+              <div className="form-group">
+                <label className="form-label" style={{ fontWeight: 'bold' }}>Add Operation</label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'rename', fields: {} })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Rename</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'remove', fields: [] })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Remove</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'set', fields: {} })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Set</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'project', fields: [] })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Project</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'merge', fields: {} })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Merge</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'map', items_field: '', operations: [] })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Map</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const ops = [...(editingDef.operations || [])]
+                    ops.push({ op: 'join', left_field: '', right: [], on: '' })
+                    handleUpdateStepField('operations', ops)
+                  }}>+ Join</button>
+                </div>
+                <small style={{ color: '#7f8c8d' }}>Append a template, then edit the JSON above. Ops: rename, remove, set, project, merge, map, join.</small>
+              </div>
+            </>
+          )
         default:
           return (
             <div className="form-group">
@@ -2922,6 +2994,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
             <button className="btn btn-primary" onClick={() => handleAddStep('cmdb_update', { ci_id: '', updates: {}, status: null, name: null })}
               style={{ background: '#2e7d32' }}>
               ✏️ CMDB Update
+            </button>
+            <button className="btn btn-primary" onClick={() => handleAddStep('transform', { operations: [] })}
+              style={{ background: '#ff8f00' }}>
+              🗂️ Transform
             </button>
 
              <button className="btn btn-primary" onClick={() => handleAddStep('loop', {

@@ -1108,6 +1108,169 @@ class CalculationExecutor(BaseExecutor):
         return target.id
 
 
+class TransformExecutor(BaseExecutor):
+    """Data transform / map / merge node (M2).
+
+    Applies an ordered list of field ``operations`` to derive a new object from
+    the step input, so non-trivial rename / restructure / merge / join /
+    derived-object work does not require dropping into ``custom_code``. Each
+    operation is
+    applied in order to a working copy of the step input; the resulting object is
+    returned under ``transformed`` (merged into ``run.input_data`` for downstream
+    steps).
+
+    Supported operations (all optional, applied top-to-bottom):
+
+    * ``rename``   -- ``{"op": "rename", "fields": {"old": "new"}}``
+    * ``remove``   -- ``{"op": "remove", "fields": ["k", ...]}``
+    * ``set``      -- ``{"op": "set", "fields": {"k": value}}`` (value may use
+                      ``$input.*`` references, resolved against the current
+                      working data so later ops can reference earlier output)
+    * ``project``  -- ``{"op": "project", "fields": ["k", ...]}`` (keep only these)
+    * ``merge``    -- ``{"op": "merge", "fields": <obj | "$input.src">}`` (deep merge)
+    * ``map``      -- ``{"op": "map", "items_field": "k", "operations": [...]}``
+                      (apply the sub-operations to each element of list ``k``)
+    * ``join``     -- ``{"op": "join", "left_field": "k", "right": <list | "$input.r">,
+                      "on": "key"}`` (left join; matching right fields are attached)
+
+    ``{{ ... }}`` templates in the definition are pre-resolved by the engine;
+    only ``$input.*`` references are interpolated here.
+    """
+
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        operations = step_definition.get("operations")
+        if not isinstance(operations, list) or not operations:
+            raise ValueError("Transform step requires a non-empty 'operations' list")
+
+        data = dict(input_data or {})
+        applied = 0
+        for op in operations:
+            data = self._apply_op(data, op)
+            applied += 1
+
+        return {
+            "transformed": data,
+            "operations_applied": applied,
+            "executed_at": datetime.utcnow().isoformat(),
+        }
+
+    # -- operation dispatch -------------------------------------------------- #
+    def _apply_op(self, data: Dict[str, Any], op: Dict[str, Any]) -> Dict[str, Any]:
+        if not isinstance(op, dict) or "op" not in op:
+            raise ValueError(f"Invalid transform operation: {op!r} (expected an 'op' key)")
+        kind = op["op"]
+        handler = getattr(self, f"_op_{kind}", None)
+        if handler is None:
+            raise ValueError(f"Unknown transform operation '{kind}'")
+        return handler(data, op)
+
+    def _op_rename(self, data, op):
+        mapping = op.get("fields", {})
+        if not isinstance(mapping, dict):
+            raise ValueError("rename 'fields' must be an object of {old: new}")
+        result = {}
+        for key, value in data.items():
+            result[mapping.get(key, key)] = value
+        return result
+
+    def _op_remove(self, data, op):
+        fields = op.get("fields", [])
+        if not isinstance(fields, list):
+            raise ValueError("remove 'fields' must be a list")
+        drop = set(fields)
+        return {k: v for k, v in data.items() if k not in drop}
+
+    def _op_project(self, data, op):
+        fields = op.get("fields", [])
+        if not isinstance(fields, list):
+            raise ValueError("project 'fields' must be a list")
+        keep = set(fields)
+        return {k: v for k, v in data.items() if k in keep}
+
+    def _op_set(self, data, op):
+        fields = op.get("fields", {})
+        if not isinstance(fields, dict):
+            raise ValueError("set 'fields' must be an object of {key: value}")
+        result = dict(data)
+        for key, raw in fields.items():
+            result[key] = self._interpolate_value(raw, data)
+        return result
+
+    def _op_merge(self, data, op):
+        source = op.get("fields")
+        if source is None:
+            raise ValueError("merge requires a 'fields' object or '$input.*' source")
+        src = self._interpolate_value(source, data) if isinstance(source, str) else source
+        if not isinstance(src, dict):
+            raise ValueError("merge source must resolve to an object")
+        return self._deep_merge(dict(data), src)
+
+    def _op_map(self, data, op):
+        items_field = op.get("items_field")
+        if not items_field:
+            raise ValueError("map requires 'items_field'")
+        sub_ops = op.get("operations", [])
+        if not isinstance(sub_ops, list):
+            raise ValueError("map 'operations' must be a list")
+        raw = data.get(items_field)
+        if not isinstance(raw, list):
+            raise ValueError(f"map 'items_field' '{items_field}' must be an existing list")
+        result = []
+        for item in raw:
+            elem = dict(item) if isinstance(item, dict) else {"value": item}
+            for sub in sub_ops:
+                elem = self._apply_op(elem, sub)
+            result.append(elem)
+        new_data = dict(data)
+        new_data[items_field] = result
+        return new_data
+
+    def _op_join(self, data, op):
+        left_field = op.get("left_field")
+        right = op.get("right")
+        on = op.get("on")
+        if not left_field or right is None or on is None:
+            raise ValueError("join requires 'left_field', 'right', and 'on'")
+        left = data.get(left_field)
+        if not isinstance(left, list):
+            raise ValueError(f"join 'left_field' '{left_field}' must be a list")
+        right_list = self._interpolate_value(right, data) if isinstance(right, str) else right
+        if not isinstance(right_list, list):
+            raise ValueError("join 'right' must resolve to a list")
+        result = []
+        for left_rec in left:
+            merged = dict(left_rec) if isinstance(left_rec, dict) else {"value": left_rec}
+            for right_rec in right_list:
+                if isinstance(right_rec, dict) and right_rec.get(on) == merged.get(on):
+                    merged.update(right_rec)
+                    break
+            result.append(merged)
+        new_data = dict(data)
+        new_data[left_field] = result
+        return new_data
+
+    # -- helpers ------------------------------------------------------------- #
+    @staticmethod
+    def _deep_merge(dst: Dict[str, Any], src: Dict[str, Any]) -> Dict[str, Any]:
+        for key, value in src.items():
+            if isinstance(value, dict) and isinstance(dst.get(key), dict):
+                TransformExecutor._deep_merge(dst[key], value)
+            else:
+                dst[key] = value
+        return dst
+
+    def _interpolate_value(self, value: Any, input_data: Dict[str, Any]) -> Any:
+        """Recursively interpolate $input.* references (same style as other executors)."""
+        if isinstance(value, str) and value.startswith("$input."):
+            field = value[len("$input."):]
+            return input_data.get(field, value)
+        elif isinstance(value, dict):
+            return {k: self._interpolate_value(v, input_data) for k, v in value.items()}
+        elif isinstance(value, list):
+            return [self._interpolate_value(item, input_data) for item in value]
+        return value
+
+
 class ReportExecutor(BaseExecutor):
     """Render read-only report (P5.3), including SQL query execution.
 
