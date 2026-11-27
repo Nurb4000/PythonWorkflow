@@ -75,6 +75,8 @@ const stepTypeToNodeType = (stepType: string): string => {
     report: 'report',
     loop: 'loop',
     transform: 'transform',
+    sub_workflow: 'subWorkflow',
+    readonly_form: 'readonlyForm',
     cmdb_lookup: 'cmdbLookup',
     cmdb_update: 'cmdbUpdate'
   }
@@ -147,6 +149,12 @@ function getNodeStyle(stepType: string, instanceStatus?: string) {
     case 'transform':
       style = { ...base, background: '#fff8e1', border: '2px solid #ff8f00' }
       break
+    case 'subWorkflow':
+      style = { ...base, background: '#edeaf1', border: '2px solid #6a1b9a' }
+      break
+    case 'readonlyForm':
+      style = { ...base, background: '#e8faf0', border: '2px solid #2e7d32' }
+      break
     case 'start':
       style = { ...base, background: '#27ae60', border: 'none', color: 'white', borderRadius: '20px' }
       break
@@ -202,6 +210,10 @@ function nodeLabel(stepType: string, data: any) {
       const n = Array.isArray(data.operations) ? data.operations.length : 0
       return `🗂️ Transform${n > 0 ? ` (${n})` : ''}`
     }
+    case 'subWorkflow':
+      return `🔗 Sub-Workflow: ${data.workflow_name || `#${data.workflow_id || 'selected'}`}`
+    case 'readonlyForm':
+      return `📄 ${data.title || `Form #${data.form_id || ''}`}`
     default: return stepType
   }
 }
@@ -359,6 +371,16 @@ const nodeTypes = {
       ? `${data.operations.length} operation${data.operations.length === 1 ? '' : 's'}`
       : 'Rename / map / merge / join',
     style: getNodeStyle('transform', data.instanceStatus)
+  }),
+  subWorkflow: ({ data }: any) => renderStepNode(data, {
+    icon: '🔗', title: 'Sub-Workflow',
+    subtitle: data.workflow_id ? `Workflow #${data.workflow_id}` : 'Select a workflow',
+    style: getNodeStyle('subWorkflow', data.instanceStatus)
+  }),
+  readonlyForm: ({ data }: any) => renderStepNode(data, {
+    icon: '📄', title: 'Read-only Form',
+    subtitle: data.form_id ? `Form #${data.form_id}` : (data.title || 'Select a form'),
+    style: getNodeStyle('readonlyForm', data.instanceStatus)
   })
 }
 
@@ -586,6 +608,18 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
       return (d.items || d) as Array<{ id: number; name: string; key: string; icon: string; field_schema: any[] }>
     },
   })
+
+  // Workflows for the sub_workflow node target selector (load up to the page max,
+  // including inactive, so any saved workflow is selectable).
+  const { data: workflowsData } = useQuery({
+    queryKey: ['workflows-for-select'],
+    queryFn: async () => {
+      const res = await workflowApi.list({ page_size: '200', include_inactive: 'true' })
+      const d = res.data as any
+      return (d.items || d) as Array<{ id: number; name: string; description?: string; is_active?: boolean }>
+    },
+  })
+  const workflows = workflowsData || []
 
   // Visual query state for database_query step editor
   const [dbVisualMode, setDbVisualMode] = useState(false)
@@ -2692,6 +2726,67 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               </div>
             </>
           )
+        case 'sub_workflow':
+          return (
+             <>
+               <div className="form-group">
+                 <label className="form-label">Target Workflow</label>
+                 <select className="form-select"
+                   value={editingDef.workflow_id ?? ''}
+                   onChange={(e) => handleUpdateStepField('workflow_id', e.target.value === '' ? null : Number(e.target.value))}>
+                   <option value="">— Select a workflow —</option>
+                   {workflows.map((w: any) => (
+                     <option key={w.id} value={w.id}>
+                       {w.name || `Workflow #${w.id}`}{w.is_active === false ? ' (inactive)' : ''}
+                     </option>
+                   ))}
+                 </select>
+                 <small style={{ color: '#666' }}>Invoke this workflow synchronously. {workflows.length} workflows available.</small>
+               </div>
+               <div className="form-group">
+                 <label className="form-label">Input Data (JSON, <code>$input.*</code> supported)</label>
+                 <textarea className="form-textarea" rows={4}
+                   value={typeof editingDef.input_data === 'object' ? JSON.stringify(editingDef.input_data, null, 2) : (editingDef.input_data || '')}
+                   onChange={(e) => { try { handleUpdateStepField('input_data', JSON.parse(e.target.value)) } catch { handleUpdateStepField('input_data', e.target.value) } }}
+                   placeholder='{"user_id": "$input.user_id"}' />
+                 <small style={{ color: '#666' }}>Data passed to the sub-workflow. Supports <code>$input.*</code> references.</small>
+               </div>
+               <div className="form-group">
+                 <label className="form-label">Timeout (seconds)</label>
+                 <input className="form-input" type="number" value={editingDef.timeout_seconds ?? 300}
+                   onChange={(e) => handleUpdateStepField('timeout_seconds', Number(e.target.value))}
+                   min={5} max={3600} />
+                 <small style={{ color: '#666' }}>Max time to wait for the sub-workflow to finish.</small>
+               </div>
+             </>
+           )
+         case 'readonly_form':
+           return (
+             <>
+               <div className="form-group">
+                 <label className="form-label">Select Form</label>
+                 <select className="form-select" value={editingDef.form_id || ''}
+                   onChange={(e) => {
+                     const fid = Number(e.target.value)
+                     const f = forms?.find(fm => fm.id === fid)
+                     handleUpdateStepField('form_id', fid)
+                     handleUpdateStepField('form_name', f?.name || '')
+                   }}>
+                   <option value="">-- Select form --</option>
+                   {(forms || []).map((f) => (
+                     <option key={f.id} value={f.id}>{f.name}{f.is_published ? '' : ' (draft)'}</option>
+                   ))}
+                 </select>
+                 {renderFormActions(editingDef.form_id)}
+               </div>
+               <div className="form-group">
+                 <label className="form-label">Title</label>
+                 <input className="form-input" type="text" value={editingDef.title || ''}
+                   onChange={(e) => handleUpdateStepField('title', e.target.value)}
+                   placeholder="Read-only Form" />
+               </div>
+             </>
+           )
         default:
           return (
             <div className="form-group">
@@ -3005,7 +3100,15 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                inner_step: { step_type: 'custom_code', definition: { code: "output['result'] = input_data['item']" } },
              })} style={{ background: '#4527a0' }}>
                🔁 Loop
-             </button>          </div>
+             </button>
+              <button className="btn btn-primary" onClick={() => handleAddStep('sub_workflow', { workflow_id: null, input_data: {}, timeout_seconds: 300 })}
+                style={{ background: '#6a1b9a' }}>
+                🔗 Sub-Workflow
+              </button>
+              <button className="btn btn-primary" onClick={() => handleAddStep('readonly_form', { form_id: null, title: 'Read-only Form' })}
+                style={{ background: '#00695c' }}>
+                📄 Read-only Form
+              </button>          </div>
         </div>
         )}
       </>
