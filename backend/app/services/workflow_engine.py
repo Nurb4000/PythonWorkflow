@@ -13,8 +13,10 @@ from sqlalchemy import select, func
 from app.core.database import async_session_factory
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRunCreate
+from app.core.config import settings
 from app.services.email_service import notify_admin
 from app.services.interpolation import ReferenceContext, interpolate, context_has_templates
+from app.services.retry_backoff import RetryPolicy, extract_retry_after
 from app.services.workflow_version_service import snapshot_workflow
 from app.services.tenant_scoping import resolve_creation_tenant_id
 from app.models.auth import User
@@ -707,11 +709,20 @@ class WorkflowEngine:
                 instance.last_error = error_msg
                 
                 if attempt < max_retries:
-                    # Wait before retry (if configured)
-                    retry_delay = step.retry_delay_seconds or 0
-                    if retry_delay > 0:
-                        logger.info(f"Retrying step {instance.id} in {retry_delay} seconds...")
-                        await asyncio.sleep(retry_delay)
+                    # Exponential backoff (G3): base grows by the policy multiplier up
+                    # to max_delay, with full jitter; an explicit Retry-After from the
+                    # failure (e.g. HTTP 429/503) is honored and still capped at max_delay.
+                    retry_after = extract_retry_after(e)
+                    delay = RetryPolicy(
+                        base_delay=step.retry_delay_seconds or settings.retry_backoff_base_seconds,
+                        multiplier=settings.retry_backoff_multiplier,
+                        max_delay=settings.retry_backoff_max_seconds,
+                    ).delay(attempt + 1, retry_after=retry_after)
+                    logger.info(
+                        f"Retrying step {instance.id} in {delay:.2f}s "
+                        f"(attempt {attempt + 1} of {max_retries})..."
+                    )
+                    await asyncio.sleep(delay)
                     continue
                 else:
                     # All retries exhausted, mark as failed

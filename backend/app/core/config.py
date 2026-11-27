@@ -60,6 +60,15 @@ class Settings(BaseSettings):
     # throttle above (which caps LLM spend per account). Tune via env vars.
     api_requests_per_window: int = 60
     api_request_window_seconds: int = 60
+
+    # G3 fix: per-step retry backoff policy. Per-step retries previously used a single
+    # fixed delay, so transient failures re-hit the same limit and waste budget. These
+    # tune an exponential-backoff curve (base * multiplier^(attempt-1), capped at
+    # max_delay, with full jitter). A step's `retry_delay_seconds` overrides the base
+    # for that step specifically. Tune via env vars.
+    retry_backoff_base_seconds: float = 1.0
+    retry_backoff_multiplier: float = 2.0
+    retry_backoff_max_seconds: float = 60.0
     
     # LDAP configuration (optional)
     ldap_server_url: str = ""  # e.g., ldap://ldap.example.com:389
