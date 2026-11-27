@@ -135,6 +135,22 @@ class BaseExecutor:
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
         raise NotImplementedError
 
+    async def compensate(
+        self,
+        input_data: Dict[str, Any],
+        step_definition: Dict[str, Any],
+        output_data: Dict[str, Any],
+        db: Optional[AsyncSession] = None,
+    ) -> Dict[str, Any]:
+        """Reverse this step's side effects as a SAGA compensating transaction (G6).
+
+        Default is a no-op: read-only or naturally idempotent steps have nothing to
+        undo. Executors that perform irreversible side effects override this to reverse
+        them (e.g. :class:`APICallExecutor` turning a POST into a DELETE). Best-effort —
+        the engine never lets one compensation abort another.
+        """
+        return {"compensated": False, "note": "no-op"}
+
 
 class APICallExecutor(BaseExecutor):
     """Execute HTTP API calls with SSRF protection (P6.1)."""
@@ -182,6 +198,47 @@ class APICallExecutor(BaseExecutor):
             except Exception as e:
                 logger.error(f"API call failed: {str(e)}")
                 raise ValueError(f"API call failed: {str(e)}")
+
+    async def compensate(
+        self,
+        input_data: Dict[str, Any],
+        step_definition: Dict[str, Any],
+        output_data: Dict[str, Any],
+        db: Optional[AsyncSession] = None,
+    ) -> Dict[str, Any]:
+        """Undo a completed API call via a declared compensating request (G6).
+
+        If the step definition carries a ``compensate`` block
+        (``{"method", "url", "headers?", "body?"}``) — typically POST -> DELETE — that
+        request is issued to reverse the original side effect. No-op (recorded) when no
+        compensating block was declared. SSRF protection still applies to the URL.
+        """
+        comp = step_definition.get("compensate")
+        if not isinstance(comp, dict) or not comp.get("url"):
+            return {"compensated": False, "note": "no compensate block declared"}
+
+        method = str(comp.get("method", "DELETE")).upper()
+        url = comp["url"]
+        headers = comp.get("headers", {})
+        body = comp.get("body")
+
+        if not self._is_safe_url(url):
+            raise ValueError(f"Compensating call to private/loopback URL blocked: {url}")
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.request(
+                    method=method, url=url, headers=headers, json=body, timeout=30.0
+                )
+            except Exception as e:
+                raise ValueError(f"Compensating API call failed: {e}")
+
+        return {
+            "compensated": True,
+            "method": method,
+            "url": url,
+            "status_code": response.status_code,
+        }
 
 
 class DatabaseQueryExecutor(BaseExecutor):

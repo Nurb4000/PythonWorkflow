@@ -62,6 +62,13 @@ class _RunCtx:
         self.priority = getattr(run, "priority", None)
         self.tenant_id = run.tenant_id
         self.failure_hooks = list(getattr(run, "failure_hooks", None) or [])
+        # G6 compensation (SAGA) coordination state, shared across concurrent branch
+        # tasks. comp_log collects completed steps so their side effects can be undone
+        # in reverse order on failure; compensating guards against double-compensation;
+        # compensations holds the audit trail once compensation has run.
+        self.comp_log: List[Dict[str, Any]] = []
+        self.compensating = False
+        self.compensations: Optional[List[Dict[str, Any]]] = None
 
 
 class WorkflowEngine:
@@ -574,6 +581,10 @@ class WorkflowEngine:
                     # Legacy: simple linear execution with condition skip.
                     # Resume-aware: steps already in a terminal status are not
                     # re-executed; a human step whose task is still open re-pauses.
+                    # G6: track completed steps so their side effects can be compensated
+                    # (undone in reverse order) if a later step fails.
+                    comp_log: List[Dict[str, Any]] = []
+                    run_failed = False
                     for instance in step_instances:
                         # Check timeout before each step
                         if await self._check_timeout(db, run):
@@ -598,10 +609,26 @@ class WorkflowEngine:
                             continue
                         success = await self._execute_single_step(db, run, instance, step)
                         if success:
+                            # G6: register a compensating transaction for this completed
+                            # step so it can be undone if a later step fails.
+                            comp_log.append({
+                                "instance": instance,
+                                "step": step,
+                                "executor": self.step_executors.get(step.step_type),
+                                "input_data": dict(instance.input_data or {}),
+                                "step_definition": step.definition,
+                                "output_data": instance.output_data or {},
+                            })
                             self._record_route(instance, self._linear_next(step_instances, instance))
                             await db.commit()
                         else:
+                            run_failed = True
                             break
+
+                    # G6: if a step failed, undo the side effects of every step that
+                    # completed before it (reverse order), best-effort.
+                    if run_failed:
+                        await self._run_compensations(db, run, comp_log)
                 else:
                     # Graph mode: follow explicit connections. Branches are executed
                     # sequentially via _execute_branching_sync; the visited set still
@@ -755,6 +782,57 @@ class WorkflowEngine:
         run.error_message = f"Run {run.id}: Step {instance.id} failed"
         await db.commit()
         return False
+
+    async def _run_compensations(
+        self, db: AsyncSession, run_ctx: Any, comp_log: List[Dict[str, Any]]
+    ) -> List[Dict[str, Any]]:
+        """Run compensating transactions for completed steps in reverse order (G6, SAGA).
+
+        ``comp_log`` is the ordered list of successfully completed steps collected during
+        execution. Each step's executor ``compensate()`` is invoked from newest to oldest
+        so side effects unwind in the opposite order they were applied. Best-effort: a
+        compensation that raises is logged and recorded as failed but does not abort the
+        remaining compensations. The audit trail is persisted on the ORM run's
+        ``custom_data`` (or on ``_RunCtx.compensations`` for graph mode).
+        """
+        results: List[Dict[str, Any]] = []
+        for rec in reversed(comp_log):
+            step = rec["step"]
+            executor = rec["executor"]
+            if executor is None:
+                results.append({
+                    "step_id": step.id, "step_type": step.step_type,
+                    "status": "skipped", "detail": "no executor registered",
+                })
+                continue
+            try:
+                detail = await executor.compensate(
+                    rec["input_data"], rec["step_definition"], rec["output_data"], db=db,
+                )
+                results.append({
+                    "step_id": step.id, "step_type": step.step_type,
+                    "status": "compensated", "detail": detail,
+                })
+            except Exception as e:  # pragma: no cover - defensive; never abort other comps
+                logger.error(
+                    "Compensation for step %s (%s) failed: %s",
+                    step.id, step.step_type, e,
+                )
+                results.append({
+                    "step_id": step.id, "step_type": step.step_type,
+                    "status": "failed", "detail": f"{type(e).__name__}: {e}",
+                })
+
+        await db.commit()
+
+        if isinstance(run_ctx, _RunCtx):
+            run_ctx.compensations = results
+        else:
+            custom = dict(run_ctx.custom_data or {})
+            custom["compensations"] = results
+            run_ctx.custom_data = custom
+            await db.commit()
+        return results
 
     async def _reference_context(self, db, run, exclude_instance_id: Optional[int] = None):
         """Build a G2 :class:`ReferenceContext` for cross-step / scoped references.
@@ -1157,9 +1235,25 @@ class WorkflowEngine:
 
                 success = await self._execute_single_step(tdb, ctx, instance, step)
                 if not success:
-                    # Failure (or human pause) already set ctx.status. Do not propagate
-                    # from this branch; siblings finish on their own and the run ends terminal.
+                    # G6: a step failed — compensate every step that completed before it
+                    # (reverse order). The failure already set ctx.status; guard with
+                    # ctx.compensating so compensation runs once even if siblings also fail.
+                    if not ctx.compensating:
+                        ctx.compensating = True
+                        await self._run_compensations(tdb, ctx, ctx.comp_log)
                     return
+
+                # G6: register a compensating transaction for this completed step, but
+                # stop accepting new ones once compensation has begun.
+                if not ctx.compensating:
+                    ctx.comp_log.append({
+                        "instance": instance,
+                        "step": step,
+                        "executor": self.step_executors.get(step.step_type),
+                        "input_data": dict(instance.input_data or {}),
+                        "step_definition": step.definition,
+                        "output_data": instance.output_data or {},
+                    })
 
                 # Record the route taken for the run inspector, then release successors.
                 # _get_targets raises ValueError on a bad/empty condition route, which
@@ -1208,6 +1302,12 @@ class WorkflowEngine:
         run.status = ctx.status
         run.input_data = ctx.input_data
         run.error_message = ctx.error_message
+
+        # G6: surface the compensation audit trail on the run for inspection.
+        if ctx.compensations is not None:
+            custom = dict(run.custom_data or {})
+            custom["compensations"] = ctx.compensations
+            run.custom_data = custom
 
         # --- Mark anything never reached as skipped (matches prior behavior). ---
         # ``executed`` is a dict keyed by step id with a False value for steps that never
