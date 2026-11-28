@@ -226,7 +226,7 @@ Triggered by external HTTP POST.
 **Endpoint:** `POST /webhook/{workflow_id}?secret=...`
 
 ### Sub-Workflow
-Called synchronously from another workflow (Phase B3).
+Called from another workflow (Phase B3 / G8), either synchronously or fire-and-forget.
 
 **Step Type:** `sub_workflow`
 
@@ -234,12 +234,14 @@ Called synchronously from another workflow (Phase B3).
 ```json
 {
   "workflow_id": 42,
-  "input_data": {"$input.user_id": "user_id"},
+  "execution_mode": "sync",
+  "input_data": {"user_id": "$input.user_id"},
   "timeout_seconds": 300
 }
 ```
 
-Waits for completion, returns result_data.
+- `sync` (default): waits for completion and returns `result_data`. `timeout_seconds` bounds the wait.
+- `async`: returns immediately with `{ "run_id": ..., "status": "pending", "result_data": {} }`; the child runs in the background and its later failure does not fail the parent. `timeout_seconds` is ignored. Pass `run_id` downstream via `$input.run_id`. Launch errors still fail the parent step (so retries / on-failure routing / try-catch apply).
 
 ---
 

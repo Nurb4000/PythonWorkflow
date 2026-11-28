@@ -2173,14 +2173,19 @@ class TryCatchExecutor(BaseExecutor):
 
 
 class SubWorkflowExecutor(BaseExecutor):
-    """B3: Synchronous sub-workflow invocation (call, wait, merge result).
-    
+    """B3/G8: sub-workflow invocation (call/wait/merge, or fire-and-forget).
+
     Configuration:
       - workflow_id: int — target workflow to invoke
       - input_data: dict — data to pass to sub-workflow (supports $input.* interpolation)
-      - timeout_seconds: int — max wait for sub-run (default 300)
-    
-    Returns: result_data from the sub-workflow run, or error if timed out/failed.
+      - execution_mode: "sync" (default) or "async". Sync waits for the child
+        and merges its result; async returns immediately with the child run id.
+      - timeout_seconds: int — max wait for a *sync* sub-run (default 300).
+        Ignored in async mode.
+
+    Launch errors always fail the parent step (so retries / on-failure routing /
+    try_catch can handle them). In async mode, later child failures do not fail
+    the parent — the child run owns its own outcome and error hooks.
     """
     
     def _interpolate_input(self, template: Any, input_data: Dict[str, Any]) -> Any:
@@ -2199,12 +2204,20 @@ class SubWorkflowExecutor(BaseExecutor):
     
     async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any],
                      db: Optional[AsyncSession] = None) -> Dict[str, Any]:
-        """Execute sub-workflow synchronously."""
+        """Execute a sub-workflow synchronously, or launch it in the background."""
         from app.services.workflow_engine import workflow_engine
 
         workflow_id = step_definition.get("workflow_id")
         if not workflow_id:
             raise ValueError("sub_workflow step requires 'workflow_id'")
+
+        # G8: default to sync so existing workflows are unchanged. Fail closed on
+        # a typo rather than silently waiting forever or dropping the child run.
+        execution_mode = str(step_definition.get("execution_mode", "sync")).lower()
+        if execution_mode not in ("sync", "async"):
+            raise ValueError(
+                f"sub_workflow execution_mode must be 'sync' or 'async', got {execution_mode!r}"
+            )
 
         # Interpolate input data
         raw_input = step_definition.get("input_data", {})
@@ -2227,12 +2240,36 @@ class SubWorkflowExecutor(BaseExecutor):
         # Trigger sub-workflow
         sub_run = await workflow_engine.trigger_workflow(db, workflow_id, run_data)
 
-        # M16: record parent run ID on the sub-run for audit trail
+        # M16/G8: record lineage on the sub-run for audit trail. This is a
+        # secondary write after the child was created; if it fails we must not
+        # raise, because a parent retry would launch a duplicate child run.
         if parent_run_id is not None:
-            sub_run.custom_data = dict(sub_run.custom_data or {})
-            sub_run.custom_data["parent_run_id"] = int(parent_run_id)
-            await db.commit()
-        
+            try:
+                sub_run.custom_data = dict(sub_run.custom_data or {})
+                sub_run.custom_data["parent_run_id"] = int(parent_run_id)
+                sub_run.custom_data["parent_step_id"] = input_data.get("_workflow_step_id")
+                sub_run.custom_data["execution_mode"] = execution_mode
+                await db.commit()
+            except Exception:
+                logger.warning(
+                    "Could not attach parent lineage to sub-workflow run %s",
+                    sub_run.id,
+                    exc_info=True,
+                )
+
+        if execution_mode == "async":
+            # G8: fire-and-forget. The child run is already committed and its
+            # execution detaches inside trigger_workflow(); return a handle the
+            # parent can pass downstream via $input.run_id without waiting.
+            return {
+                "success": True,
+                "execution_mode": "async",
+                "run_id": sub_run.id,
+                "status": sub_run.status or "pending",
+                "result_data": {},
+                "duration_seconds": None,
+            }
+
         # Wait for completion (synchronous)
         timeout = step_definition.get("timeout_seconds", 300)
         import asyncio

@@ -620,6 +620,7 @@ async def export_table_to_csv(
     columns: Optional[List[str]] = None,
     limit: int = 10000,
     current_user: Any = None,
+    stats: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Export a table to CSV string.
 
@@ -627,6 +628,10 @@ async def export_table_to_csv(
     are always stripped even when explicitly requested (findings #26). When
     ``current_user`` is provided, field-level RBAC further trims the columns to
     those the user is allowed to see.
+
+    G7: when *stats* is provided, the exported row count is recorded there so
+    callers can alert when the hard 100k-row cap is reached. The parameter is
+    optional so existing callers/tests keep their current signature.
     """
     if table_name not in QUERYABLE_TABLES:
         raise ValueError(f"Unknown table: {table_name}")
@@ -641,6 +646,8 @@ async def export_table_to_csv(
     stmt = select(model).limit(limit)
     result = await db.execute(stmt)
     rows = result.scalars().all()
+    if stats is not None:
+        stats["row_count"] = len(rows)
 
     def _serialize(value: Any) -> Any:
         return value.isoformat() if hasattr(value, "isoformat") else value
@@ -676,6 +683,7 @@ async def export_query_to_csv(
     sort_order: str = "asc",
     limit: int = 10000,
     current_user: Any = None,
+    stats: Optional[Dict[str, Any]] = None,
 ) -> str:
     """Execute a visual query and export results to CSV.
 
@@ -688,6 +696,8 @@ async def export_query_to_csv(
         db, table_name, filters, logic, sort_by, sort_order, limit, 0
     )
 
+    if stats is not None:
+        stats["row_count"] = len(result["items"])
     if not result["items"]:
         return ""
 

@@ -220,7 +220,7 @@ function nodeLabel(stepType: string, data: any) {
       return `🛡️ Try/Catch (${t} try · ${c} catch)`
     }
     case 'subWorkflow':
-      return `🔗 Sub-Workflow: ${data.workflow_name || `#${data.workflow_id || 'selected'}`}`
+      return `🔗 Sub-Workflow: ${data.workflow_name || `#${data.workflow_id || 'selected'}`}${data.execution_mode === 'async' ? ' · async' : ''}`
     case 'readonlyForm':
       return `📄 ${data.title || `Form #${data.form_id || ''}`}`
     default: return stepType
@@ -398,8 +398,13 @@ const nodeTypes = {
   }),
   subWorkflow: ({ data }: any) => renderStepNode(data, {
     icon: '🔗', title: 'Sub-Workflow',
-    subtitle: data.workflow_id ? `Workflow #${data.workflow_id}` : 'Select a workflow',
-    style: getNodeStyle('subWorkflow', data.instanceStatus)
+    subtitle: `${data.workflow_id ? `Workflow #${data.workflow_id}` : 'Select a workflow'} · ${data.execution_mode === 'async' ? 'async (fire-and-forget)' : 'sync (wait)'}`,
+    style: {
+      ...getNodeStyle('subWorkflow', data.instanceStatus),
+      border: data.execution_mode === 'async'
+        ? '2px dashed #6a1b9a'
+        : '2px solid #6a1b9a',
+    }
   }),
   readonlyForm: ({ data }: any) => renderStepNode(data, {
     icon: '📄', title: 'Read-only Form',
@@ -2847,7 +2852,17 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                      </option>
                    ))}
                  </select>
-                 <small style={{ color: '#666' }}>Invoke this workflow synchronously. {workflows.length} workflows available.</small>
+                 <small style={{ color: '#666' }}>{workflows.length} workflows available.</small>
+               </div>
+               <div className="form-group">
+                 <label className="form-label">Execution Mode</label>
+                 <select className="form-select"
+                   value={editingDef.execution_mode ?? 'sync'}
+                   onChange={(e) => handleUpdateStepField('execution_mode', e.target.value)}>
+                   <option value="sync">Sync — call, wait, merge result</option>
+                   <option value="async">Async — fire-and-forget</option>
+                 </select>
+                 <small style={{ color: '#666' }}>Async returns immediately with the child run id; child failures do not fail this run.</small>
                </div>
                <div className="form-group">
                  <label className="form-label">Input Data (JSON, <code>$input.*</code> supported)</label>
@@ -2857,13 +2872,15 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
                    placeholder='{"user_id": "$input.user_id"}' />
                  <small style={{ color: '#666' }}>Data passed to the sub-workflow. Supports <code>$input.*</code> references.</small>
                </div>
-               <div className="form-group">
-                 <label className="form-label">Timeout (seconds)</label>
-                 <input className="form-input" type="number" value={editingDef.timeout_seconds ?? 300}
-                   onChange={(e) => handleUpdateStepField('timeout_seconds', Number(e.target.value))}
-                   min={5} max={3600} />
-                 <small style={{ color: '#666' }}>Max time to wait for the sub-workflow to finish.</small>
-               </div>
+               {(editingDef.execution_mode ?? 'sync') === 'sync' && (
+                 <div className="form-group">
+                   <label className="form-label">Timeout (seconds)</label>
+                   <input className="form-input" type="number" value={editingDef.timeout_seconds ?? 300}
+                     onChange={(e) => handleUpdateStepField('timeout_seconds', Number(e.target.value))}
+                     min={5} max={3600} />
+                   <small style={{ color: '#666' }}>Max time to wait for the sub-workflow to finish. Ignored in async mode.</small>
+                 </div>
+               )}
              </>
            )
          case 'readonly_form':
@@ -3207,7 +3224,7 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
              })} style={{ background: '#4527a0' }}>
                🔁 Loop
              </button>
-              <button className="btn btn-primary" onClick={() => handleAddStep('sub_workflow', { workflow_id: null, input_data: {}, timeout_seconds: 300 })}
+              <button className="btn btn-primary" onClick={() => handleAddStep('sub_workflow', { workflow_id: null, input_data: {}, execution_mode: 'sync', timeout_seconds: 300 })}
                 style={{ background: '#6a1b9a' }}>
                 🔗 Sub-Workflow
               </button>

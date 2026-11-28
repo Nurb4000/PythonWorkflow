@@ -254,7 +254,7 @@ async def test_export_table_endpoint_forwards_current_user(monkeypatch):
 
     captured = {}
 
-    async def fake_export(db, table_name, columns=None, limit=10000, current_user=None):
+    async def fake_export(db, table_name, columns=None, limit=10000, current_user=None, stats=None):
         captured["current_user"] = current_user
         return "csv"
 

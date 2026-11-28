@@ -48,6 +48,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Timeout & Retries**: Configurable run timeouts and per-step retry logic
 - **Failure Hooks**: HTTP callbacks on step/run failure
 - **Conditional Error Handling (M6)**: `on_failure_target_step_id` routes a failed step to a handler instead of failing the run (optional `on_failure_filter`, e.g. `data['error_type'] == 'ValueError'`), and the `try_catch` node wraps a group of nested steps with a catch subgraph and local compensation
+- **Async Sub-Workflow Handoff (G8)**: `sub_workflow` steps support `execution_mode: "async"` for fire-and-forget background jobs; the step returns the child run id immediately and does not wait for — or propagate — the child's outcome (sync remains the default)
 
 ### Executors (19 types)
 | Type | Description |
@@ -67,7 +68,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 | `programmable_delay` | SQL WAITFOR/SELECT SLEEP/cron delays |
 | `cmdb_lookup` | Look up CMDB configuration items by type and field criteria |
 | `cmdb_update` | Update a CMDB configuration item by ID or lookup |
-| `sub_workflow` | Synchronous sub-workflow invocation (call, wait, merge result) |
+| `sub_workflow` | Sub-workflow invocation — sync (call, wait, merge result) or async (fire-and-forget) |
 | `loop` | Iterate a collection over a nested step |
 | `transform` | Rename / map / merge / join structured data |
 | `try_catch` | Try/catch boundary around nested steps with optional filtering and compensation |
@@ -89,7 +90,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **SSRF Protection**: Blocks private/loopback IPs in API calls
 - **Webhook Secrets**: HMAC verification for incoming webhooks (fails closed when unset)
 - **Role-Based Access**: Admin/Developer/Staff/User permissions
-- **Rate Limiting & Brute-Force Protection** (shipped): per-username lockout + per-IP rate limiting on `POST /auth/login`; a shared per-IP sliding-window limiter (`app.services.rate_limiter`, wired via the `require_api_rate_limit` dependency) also bounds request frequency on the high-cost / high-touch routers — `/ai/*` (on top of the per-user AI cost throttle), `/data-query/*` and `/data-export/*` — returning HTTP 429 with a `Retry-After` header when a source IP exceeds the cap. Limits are env-configurable (`API_REQUESTS_PER_WINDOW`, `API_REQUEST_WINDOW_SECONDS`).
+- **Rate Limiting & Brute-Force Protection** (shipped): per-username lockout + per-IP rate limiting on `POST /auth/login`; a shared per-IP sliding-window limiter (`app.services.rate_limiter`, wired via the `require_api_rate_limit` dependency) also bounds request frequency on the high-cost / high-touch routers — `/ai/*` (on top of the per-user AI cost throttle), `/data-query/*` and `/data-export/*` — returning HTTP 429 with a `Retry-After` header when a source IP exceeds the cap. `/data-export/*` uses the alerting variant (`require_export_rate_limit`, G7) so throttled and cap-sized exports notify admins through the configured channels. Limits are env-configurable (`API_REQUESTS_PER_WINDOW`, `API_REQUEST_WINDOW_SECONDS`).
 - **Code Sandboxing**: Restricted builtins for custom code steps (subprocess-isolated with CPU/memory limits and a hard timeout)
 - **Export Denylist**: CSV export hard-strips sensitive columns (`password_hash`, `ldap_dn`, `custom_data`, tokens, keys) via a secret-column denylist on top of table-level RBAC — prevents bulk-dumping secrets.
 
@@ -186,7 +187,8 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 1. **Table-level RBAC** — both endpoints call `query_security_service.validate_query_access(..., "view")` and return `403` without access (same guard as `/data-query/build`).
 2. **Secret-column denylist** — `data_query_service._SECRET_EXPORT_COLUMNS` is the source of truth. `strip_secret_export_columns()` removes any of these even when explicitly requested: `password_hash`, `ldap_dn`, `custom_data`, `refresh_token`, `api_token`, `token`, `secret`, `private_key`, `auth_token`. Applied to both table and query export.
 3. **Field-level RBAC** — when a `current_user` is present, per-user visible fields are also applied.
-- **Limits**: default `limit` 10,000, hard cap 100,000 (`Query(ge=1, le=100000)`). **Rate limiting**: per-IP sliding-window cap (via `app.services.rate_limiter`) on `/data-export/*` — and `/data-query/*`, `/ai/*` — returns HTTP 429 + `Retry-After` when a source IP exceeds the window (`API_REQUESTS_PER_WINDOW` / `API_REQUEST_WINDOW_SECONDS`). Alerting is not yet implemented.
+- **Limits**: default `limit` 10,000, hard cap 100,000 (`Query(ge=1, le=100000)`). **Rate limiting**: per-IP sliding-window cap (via `app.services.rate_limiter`) on `/data-export/*` — and `/data-query/*`, `/ai/*` — returns HTTP 429 + `Retry-After` when a source IP exceeds the window (`API_REQUESTS_PER_WINDOW` / `API_REQUEST_WINDOW_SECONDS`).
+- **Export Alerting (G7)**: hitting the 100,000-row cap (or an oversized `/data-export/query` limit being clamped to it) and export rate-limit hits emit deduped admin notifications via the configured notification channels (`export_cap_reached` / `export_rate_limited` → email, Slack, signed webhook). Metadata includes only table/limits/row count/user/IP/path — never query filters or values. Alerts are best-effort and never alter the export response. Config: `EXPORT_ALERTS_ENABLED` (default true), `EXPORT_ALERT_COOLDOWN_SECONDS` (default 300).
 
 ### Reports
 - **Report Builder**: Create/read/update reports and execute them for table/graph output (`/reports`)

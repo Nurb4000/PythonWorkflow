@@ -90,6 +90,9 @@ class NotificationType(str, Enum):
     WORKFLOW_FAILED = "workflow_failed"
     FORM_SUBMISSION = "form_submission"
     MENTION = "mention"
+    # G7: operator-facing data-export events.
+    EXPORT_CAP_REACHED = "export_cap_reached"
+    EXPORT_RATE_LIMITED = "export_rate_limited"
 
 
 class ChannelType(str, Enum):
@@ -147,6 +150,16 @@ DEFAULT_ROUTING: dict[str, list[str]] = {
     NotificationType.FORM_SUBMISSION.value: [ChannelType.EMAIL.value, ChannelType.WEBHOOK.value],
     NotificationType.WORKFLOW_COMPLETED.value: [ChannelType.EMAIL.value],
     NotificationType.MENTION.value: [ChannelType.EMAIL.value, ChannelType.SLACK.value],
+    NotificationType.EXPORT_CAP_REACHED.value: [
+        ChannelType.EMAIL.value,
+        ChannelType.SLACK.value,
+        ChannelType.WEBHOOK.value,
+    ],
+    NotificationType.EXPORT_RATE_LIMITED.value: [
+        ChannelType.EMAIL.value,
+        ChannelType.SLACK.value,
+        ChannelType.WEBHOOK.value,
+    ],
 }
 
 

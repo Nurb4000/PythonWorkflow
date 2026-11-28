@@ -17,7 +17,7 @@ from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory, engine
 from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, webhook_logs, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications, tenancy
 from app.services.scheduler import scheduler_service
-from app.services.rate_limiter import require_api_rate_limit
+from app.services.rate_limiter import require_api_rate_limit, require_export_rate_limit
 
 # E2: Configure logging — JSON format for production, text for development
 def _configure_logging() -> None:
@@ -279,12 +279,13 @@ app.include_router(
     dependencies=[Depends(require_api_rate_limit)],
 )
 # M5 fix: per-IP rate limiting on the unbounded data-export endpoints (DoS guard
-# against table dumps).
+# against table dumps). G7: the export-specific dependency also emits a deduped
+# admin alert when the throttle fires.
 app.include_router(
     data_export.router,
     prefix="/data-export",
     tags=["data-export"],
-    dependencies=[Depends(require_api_rate_limit)],
+    dependencies=[Depends(require_export_rate_limit)],
 )
 app.include_router(sql_views.router, prefix="/sql-views", tags=["sql-views"])
 app.include_router(workflow_import_export.router, prefix="/workflows", tags=["workflow-import-export"])

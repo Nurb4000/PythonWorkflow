@@ -49,7 +49,8 @@ Workflow B (consumer):
 ```
 
 **Why this works:** Decouples timing. Workflow B doesn't need to wait for A.
-Use the async trigger (B3 async handoff) for this pattern.
+Use a `sub_workflow` step with `execution_mode: "async"` (G8) or a webhook
+trigger for this pattern. The async step returns the child `run_id` immediately.
 
 ---
 
@@ -71,7 +72,7 @@ Child workflow:
 **When to use:** When the parent needs the child's result to continue.
 Example: validation workflow that must pass before main workflow proceeds.
 
-**Implementation:** See B3 — synchronous sub-workflow step (in progress).
+**Implementation:** B3 — `sub_workflow` step with the default `execution_mode: "sync"` (implemented). Async handoff is the same step with `execution_mode: "async"`.
 
 ---
 

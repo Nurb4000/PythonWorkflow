@@ -27,6 +27,7 @@ Design notes:
 """
 import time
 from collections import defaultdict, deque
+from typing import Optional
 
 from fastapi import HTTPException, Request
 
@@ -106,15 +107,17 @@ class RateLimiter:
 api_rate_limiter = RateLimiter()
 
 
-def _client_ip(request: Request) -> str:
+def _client_ip(request: Optional[Request]) -> str:
     """Return the client's transport socket IP (not the spoofable X-Forwarded-For).
 
     Same choice as the webhook rate limiter (``app.api.webhooks``): keying on
     ``request.client.host`` means a proxy in front cannot spread one attacker
-    across many forged source IPs.
+    across many forged source IPs. ``None`` is allowed for direct coroutine calls
+    in tests and for internal callers without an HTTP request.
     """
-    if request.client is not None:
-        return request.client.host
+    client = getattr(request, "client", None)
+    if client is not None and getattr(client, "host", None):
+        return client.host
     return "unknown"
 
 
@@ -131,6 +134,46 @@ def require_api_rate_limit(request: Request) -> None:
     try:
         api_rate_limiter.enforce(key)
     except RateLimitError as e:
+        remaining = int(api_rate_limiter.remaining(key))
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "API rate limit exceeded. Try again in ~{}s ({} requests "
+                "remaining in the next window)."
+            ).format(e.window_seconds, remaining),
+            headers={"Retry-After": str(e.window_seconds)},
+        )
+
+
+async def require_export_rate_limit(request: Request) -> None:
+    """Export-router variant of :func:`require_api_rate_limit` (G7).
+
+    Same per-IP sliding-window guard and 429 response, but an over-limit event on
+    a /data-export path also emits a best-effort admin alert. Kept separate so
+    /ai/* and /data-query/* throttling stays silent; making the shared dependency
+    async would also break its existing synchronous callers.
+    """
+    key = f"api:{_client_ip(request)}"
+    try:
+        api_rate_limiter.enforce(key)
+    except RateLimitError as e:
+        # Lazy import avoids pulling notification services into the hot path of
+        # every request and keeps the RateLimiter unit-testable in isolation.
+        from app.services.export_alert_service import alert_export_rate_limited
+
+        url = getattr(request, "url", None)
+        try:
+            await alert_export_rate_limited(
+                client_ip=_client_ip(request),
+                path=getattr(url, "path", None) or "/data-export",
+                retry_after=e.window_seconds,
+                limit=api_rate_limiter.max_requests,
+                window_seconds=e.window_seconds,
+            )
+        except Exception:
+            # Alerting is best-effort; a notification failure must never turn
+            # the 429 into a 500 or swallow the Retry-After header.
+            pass
         remaining = int(api_rate_limiter.remaining(key))
         raise HTTPException(
             status_code=429,

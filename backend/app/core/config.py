@@ -61,6 +61,13 @@ class Settings(BaseSettings):
     api_requests_per_window: int = 60
     api_request_window_seconds: int = 60
 
+    # G7 fix: export alerting. Cap hits (requested/clamped or row count at the
+    # 100k hard cap) and export rate-limit hits are pushed through the configured
+    # admin notification channels. Repeated identical events are deduped for this
+    # many seconds so one client/table cannot spam operators.
+    export_alerts_enabled: bool = True
+    export_alert_cooldown_seconds: int = 300
+
     # G3 fix: per-step retry backoff policy. Per-step retries previously used a single
     # fixed delay, so transient failures re-hit the same limit and waste budget. These
     # tune an exponential-backoff curve (base * multiplier^(attempt-1), capped at

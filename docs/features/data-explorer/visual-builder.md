@@ -174,6 +174,8 @@ After running a query, export results:
 3. Choose format
 4. Download file
 
+**Limits & alerts:** CSV exports are capped at 100,000 rows (the query builder default is 10,000). Reaching the cap, or requesting an oversized export that is clamped to the cap, emits a deduped `export_cap_reached` admin notification via the configured email/Slack/webhook channels; export rate-limit hits emit `export_rate_limited`. Only table name, limits, row count, user/IP and path are included — never query filters or values.
+
 ---
 
 ## Query Builder API
