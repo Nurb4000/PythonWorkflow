@@ -1,6 +1,7 @@
 # Planning & Status — COMPLETE ✅
 
-**Last Updated:** 2026-11-17  
+**Last Updated:** 2026-11-28
+
 **Status:** All items complete — ready for team review
 
 ---
@@ -56,7 +57,7 @@ user's tenant.
 - **Tests** — `tests/test_findings_multi_tenancy_foundation.py` (7): schema, columns,
   resolution, scoping isolation, idempotent default-tenant seeding.
 
-Next: tenant provisioning API (`app/api/tenancy.py`) and endpoint-level scoping wiring.
+**Completed** — tenant provisioning API (`backend/app/api/tenancy.py`, commit `d86ae23`: create/list/update tenants + membership management) and endpoint-level scoping wiring (`X-Tenant-Id` middleware in `backend/app/middleware/active_tenant.py`, `scope_current_tenant` on workflows/runs/tasks/forms/notifications, and the frontend tenant switcher). Regression coverage: `backend/tests/test_findings_tenancy_multi_tenant_switching.py`.
 
 ---
 
