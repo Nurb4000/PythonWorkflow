@@ -75,6 +75,7 @@ const stepTypeToNodeType = (stepType: string): string => {
     report: 'report',
     loop: 'loop',
     transform: 'transform',
+    try_catch: 'tryCatch',
     sub_workflow: 'subWorkflow',
     readonly_form: 'readonlyForm',
     cmdb_lookup: 'cmdbLookup',
@@ -149,6 +150,9 @@ function getNodeStyle(stepType: string, instanceStatus?: string) {
     case 'transform':
       style = { ...base, background: '#fff8e1', border: '2px solid #ff8f00' }
       break
+    case 'tryCatch':
+      style = { ...base, background: '#ffebee', border: '2px solid #c62828' }
+      break
     case 'subWorkflow':
       style = { ...base, background: '#edeaf1', border: '2px solid #6a1b9a' }
       break
@@ -210,6 +214,11 @@ function nodeLabel(stepType: string, data: any) {
       const n = Array.isArray(data.operations) ? data.operations.length : 0
       return `🗂️ Transform${n > 0 ? ` (${n})` : ''}`
     }
+    case 'tryCatch': {
+      const t = Array.isArray(data.try_steps) ? data.try_steps.length : 0
+      const c = Array.isArray(data.catch_steps) ? data.catch_steps.length : 0
+      return `🛡️ Try/Catch (${t} try · ${c} catch)`
+    }
     case 'subWorkflow':
       return `🔗 Sub-Workflow: ${data.workflow_name || `#${data.workflow_id || 'selected'}`}`
     case 'readonlyForm':
@@ -247,6 +256,10 @@ const renderStepNode = (data: any, cfg: { icon: string; title: string; subtitle?
         <Handle key={i} type="source" position={Position.Bottom} id={`out-${i}`}
           style={{ left: `${((i + 1) * 100) / (count + 1)}%`, background: '#1565c0' }} />
       ))}
+      {data.on_failure_target_step_id != null && (
+        <Handle type="source" position={Position.Bottom} id="on-failure"
+          style={{ left: '94%', background: '#e74c3c' }} />
+      )}
     </div>
   )
 }
@@ -295,6 +308,10 @@ const nodeTypes = {
         ))}
         <Handle type="source" position={Position.Bottom} id="default"
           style={{ left: '90%', background: '#e74c3c' }} />
+        {data.on_failure_target_step_id != null && (
+          <Handle type="source" position={Position.Bottom} id="on-failure"
+            style={{ left: '98%', background: '#b71c1c' }} />
+        )}
       </div>
     )
   },
@@ -371,6 +388,13 @@ const nodeTypes = {
       ? `${data.operations.length} operation${data.operations.length === 1 ? '' : 's'}`
       : 'Rename / map / merge / join',
     style: getNodeStyle('transform', data.instanceStatus)
+  }),
+  tryCatch: ({ data }: any) => renderStepNode(data, {
+    icon: '🛡️', title: 'Try / Catch',
+    subtitle: data.catch_steps?.length
+      ? `${data.try_steps?.length || 0} try · ${data.catch_steps.length} catch`
+      : 'Catch a failed subgraph',
+    style: getNodeStyle('tryCatch', data.instanceStatus)
   }),
   subWorkflow: ({ data }: any) => renderStepNode(data, {
     icon: '🔗', title: 'Sub-Workflow',
@@ -467,7 +491,7 @@ const CanvasFlow: React.FC<{
       if (n.id === 'start') return `start:${(d.startStepIds || []).join(',')}`
       const next = (d.next_step_ids || []).join(',') || d.next_step_id || ''
       const routes = (d.routes || []).map((r: any) => r.target_step_id || '').join(',')
-      return `${n.id}:${next}|${routes}|${d.default_target_step_id || ''}`
+      return `${n.id}:${next}|${routes}|${d.default_target_step_id || ''}|${d.on_failure_target_step_id ?? ''}`
     })
     .sort()
     .join(';')
@@ -834,6 +858,15 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
           }
         })
         if (hasTarget) hasOutgoing.add(step.id)
+      }
+
+      // M6: on-failure edge is drawn in addition to the normal path. It is only
+      // highlighted when that handler was actually taken in a run.
+      const failureTarget = toNum(def.on_failure_target_step_id)
+      if (failureTarget && (failureTarget === END_TARGET || stepMap.has(failureTarget))) {
+        const taken = routeTaken.includes(failureTarget)
+        addEdgeFor(step.id, 'on-failure', failureTarget, 'On failure', taken ? '#c62828' : '#e74c3c', taken)
+        hasOutgoing.add(step.id)
       }
     })
 
@@ -1832,6 +1865,34 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
           <button className="btn btn-sm btn-primary" onClick={() => updateTargets([...targets, null])}>
             + Add Output
           </button>
+
+          {/* M6: route a failed step to a handler instead of failing the run */}
+          <div style={{ marginTop: '0.75rem', paddingTop: '0.75rem', borderTop: '1px solid #d6dde5' }}>
+            <label className="form-label" style={{ fontWeight: 'bold', color: '#b71c1c' }}>
+              On failure (optional)
+            </label>
+            <small style={{ display: 'block', color: '#666', marginBottom: '0.5rem' }}>
+              If this step fails after all retries, jump to the selected step and continue the run.
+            </small>
+            <select className="form-select" value={editingDef?.on_failure_target_step_id ?? ''}
+              onChange={(e) => handleUpdateStepField('on_failure_target_step_id', e.target.value ? Number(e.target.value) : null)}>
+              <option value="">-- No handler (failure is terminal) --</option>
+              {draftSteps
+                ?.filter((s: any) => s.id !== selectedStep.id)
+                .map((s: any) => (
+                  <option key={s.id} value={s.id}>
+                    [{s.id}] {s.title || s.step_type}
+                  </option>
+                ))}
+            </select>
+            <input className="form-input" type="text" style={{ marginTop: '0.5rem' }}
+              value={editingDef?.on_failure_filter || ''}
+              onChange={(e) => handleUpdateStepField('on_failure_filter', e.target.value || null)}
+              placeholder="Optional filter, e.g. data['error_type'] == 'HTTPError'" />
+            <small style={{ color: '#7f8c8d' }}>
+              Available in filters: <code>error</code>, <code>error_type</code>, <code>_last_error</code>, <code>_failed_step_id</code>.
+            </small>
+          </div>
         </div>
       )
     }
@@ -2669,6 +2730,51 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               </div>
             </>
           )
+        case 'try_catch':
+          return (
+            <>
+              <div className="form-group">
+                <label className="form-label">Try Steps (JSON array)</label>
+                <textarea className="form-textarea" rows={6}
+                  value={JSON.stringify(editingDef.try_steps || [], null, 2)}
+                  onChange={(e) => {
+                    try { handleUpdateStepField('try_steps', JSON.parse(e.target.value)) }
+                    catch { /* keep last valid JSON while typing */ }
+                  }}
+                  placeholder='[{"step_type": "api_call", "definition": {"method": "GET", "url": "..."}}]' />
+                <small style={{ color: '#666' }}>
+                  Nested steps run in order. The first failure enters the catch path.
+                </small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Catch Steps (JSON array)</label>
+                <textarea className="form-textarea" rows={6}
+                  value={JSON.stringify(editingDef.catch_steps || [], null, 2)}
+                  onChange={(e) => {
+                    try { handleUpdateStepField('catch_steps', JSON.parse(e.target.value)) }
+                    catch { /* keep last valid JSON while typing */ }
+                  }}
+                  placeholder={`[{"step_type": "custom_code", "definition": {"code": "output['error'] = input_data.get('error')"}}]`} />
+                <small style={{ color: '#666' }}>
+                  Catch input includes <code>error</code>, <code>error_type</code>, and <code>_last_error</code>.
+                </small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Error Filter (optional)</label>
+                <input className="form-input" type="text" value={editingDef.error_filter || ''}
+                  onChange={(e) => handleUpdateStepField('error_filter', e.target.value || null)}
+                  placeholder="data['error_type'] == 'HTTPError'" />
+                <small style={{ color: '#666' }}>Only catch when this expression is true; otherwise re-raise.</small>
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input type="checkbox" checked={editingDef.compensate_try_steps !== false}
+                    onChange={(e) => handleUpdateStepField('compensate_try_steps', e.target.checked)} />
+                  Compensate completed try steps before catch
+                </label>
+              </div>
+            </>
+          )
         case 'transform':
           return (
             <>
@@ -3104,6 +3210,18 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               <button className="btn btn-primary" onClick={() => handleAddStep('sub_workflow', { workflow_id: null, input_data: {}, timeout_seconds: 300 })}
                 style={{ background: '#6a1b9a' }}>
                 🔗 Sub-Workflow
+              </button>
+              <button className="btn btn-primary" onClick={() => handleAddStep('try_catch', {
+                try_steps: [
+                  { step_type: 'custom_code', definition: { code: "output['result'] = input_data.get('value', 0)" } },
+                ],
+                catch_steps: [
+                  { step_type: 'custom_code', definition: { code: "output['error'] = input_data.get('error')" } },
+                ],
+                error_filter: null,
+                compensate_try_steps: true,
+              })} style={{ background: '#c62828' }}>
+                🛡️ Try / Catch
               </button>
               <button className="btn btn-primary" onClick={() => handleAddStep('readonly_form', { form_id: null, title: 'Read-only Form' })}
                 style={{ background: '#00695c' }}>

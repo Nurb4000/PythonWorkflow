@@ -4,7 +4,8 @@ Core workflow engine for executing workflows and steps
 import asyncio
 import ast
 import logging
-from typing import Dict, Any, List, Optional
+from dataclasses import dataclass
+from typing import Dict, Any, List, Optional, Set
 from datetime import datetime, timezone
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
@@ -22,6 +23,25 @@ from app.services.tenant_scoping import resolve_creation_tenant_id
 from app.models.auth import User
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass(frozen=True)
+class StepOutcome:
+    """Internal result of one step execution (M6).
+
+    ``bool(outcome)`` keeps the old "should execution continue?" contract:
+    completed and handled failures continue; a pause or unhandled failure stops
+    the current path. ``handled`` failures are stopped by the caller too, but
+    they route to an on-failure handler instead of failing the run.
+    """
+
+    status: str  # completed | paused | failed | handled
+    handled: bool = False
+    failure_target: Optional[int] = None
+    error: Optional[str] = None
+
+    def __bool__(self) -> bool:
+        return self.status in ("completed", "handled")
 
 
 class _RunCtx:
@@ -48,6 +68,7 @@ class _RunCtx:
         "id", "input_data", "status", "error_message", "max_retries",
         "timeout_seconds", "started_at", "completed_at", "priority",
         "tenant_id", "failure_hooks",
+        "comp_log", "compensating", "compensations",
     )
 
     def __init__(self, run: WorkflowRun):
@@ -99,6 +120,7 @@ class WorkflowEngine:
             SubWorkflowExecutor,
             LoopExecutor,
             TransformExecutor,
+            TryCatchExecutor,
         )
 
         self.step_executors = {
@@ -120,6 +142,7 @@ class WorkflowEngine:
             "sub_workflow": SubWorkflowExecutor(),  # B3: sync sub-workflow
             "loop": LoopExecutor(),  # M1: iterate a collection over an inner step
             "transform": TransformExecutor(),  # M2: data transform / map / merge node
+            "try_catch": TryCatchExecutor(),  # M6: try/catch boundary over nested steps
         }
     
     def validate_input_refs(self, steps: List[Dict[str, Any]], entry_form_schema: Optional[Dict] = None) -> List[str]:
@@ -587,30 +610,60 @@ class WorkflowEngine:
                     # (undone in reverse order) if a later step fails.
                     comp_log: List[Dict[str, Any]] = []
                     run_failed = False
+                    # M6: after a handled failure, jump to the configured on-failure
+                    # step and skip the ordinary steps in between.
+                    skip_until: Optional[int] = None
                     for instance in step_instances:
                         # Check timeout before each step
                         if await self._check_timeout(db, run):
                             break
-                        
+
                         if run.status != "running":
                             break
                         step = step_lookup.get(instance.step_id)
                         if not step:
                             continue
+
+                        if skip_until is not None and instance.step_id != skip_until:
+                            if instance.status == "pending":
+                                instance.status = "skipped"
+                                instance.output_data = {"skipped_reason": "on_failure_route"}
+                                instance.completed_at = datetime.utcnow()
+                                self._record_route(instance, [skip_until])
+                                await db.commit()
+                            continue
+                        if instance.step_id == skip_until:
+                            skip_until = None
+
                         if instance.status in ("completed", "failed", "skipped"):
                             if step.step_type in ("human_task", "approval") and not await self._human_task_resolved(db, run_id, step.id):
                                 run.status = "waiting"
                                 await db.commit()
                                 break
                             continue
+
+                        # Merge accumulated run data (prior step outputs and M6 error
+                        # context) into this step's input, matching graph-mode fan-in.
+                        instance.input_data = {
+                            **(instance.input_data or {}), **(run.input_data or {})
+                        }
                         if step.condition_expr and not self._evaluate_condition(step.condition_expr, instance.input_data):
                             instance.status = "skipped"
                             instance.completed_at = datetime.utcnow()
                             self._record_route(instance, self._linear_next(step_instances, instance))
                             await db.commit()
                             continue
-                        success = await self._execute_single_step(db, run, instance, step)
-                        if success:
+
+                        # Only forward steps can be on-failure targets in linear mode;
+                        # a backwards edge would have no deterministic stopping point.
+                        allowed_targets: Set[int] = {
+                            i.step_id for i in step_instances
+                            if i.step_id is not None and (i.position or 0) > (instance.position or 0)
+                        }
+                        outcome = await self._execute_single_step(
+                            db, run, instance, step, allowed_failure_targets=allowed_targets
+                        )
+                        if outcome.status == "completed":
                             # G6: register a compensating transaction for this completed
                             # step so it can be undone if a later step fails.
                             comp_log.append({
@@ -623,12 +676,19 @@ class WorkflowEngine:
                             })
                             self._record_route(instance, self._linear_next(step_instances, instance))
                             await db.commit()
+                        elif outcome.handled:
+                            # M6: handled failures do not fail the run or compensate
+                            # prior steps; jump to the error handler instead.
+                            self._record_route(instance, [outcome.failure_target])
+                            skip_until = outcome.failure_target
+                            await db.commit()
                         else:
                             run_failed = True
                             break
 
                     # G6: if a step failed, undo the side effects of every step that
-                    # completed before it (reverse order), best-effort.
+                    # completed before it (reverse order), best-effort. Handled
+                    # failures deliberately skip this (the handler owns recovery).
                     if run_failed:
                         await self._run_compensations(db, run, comp_log)
                 else:
@@ -683,21 +743,37 @@ class WorkflowEngine:
                 except Exception:
                     logger.exception("Failed to dispatch workflow_failed notification channel")
     
-    async def _execute_single_step(self, db, run, instance, step) -> bool:
-        """Execute a single step with retry support. Returns True if execution should continue."""
+    async def _execute_single_step(
+        self,
+        db,
+        run,
+        instance,
+        step,
+        allowed_failure_targets: Optional[Set[int]] = None,
+    ) -> StepOutcome:
+        """Execute a single step with retry support.
+
+        ``allowed_failure_targets`` enables M6 on-failure routing: when the step
+        exhausts its retries and its definition has a valid
+        ``on_failure_target_step_id`` (whose optional ``on_failure_filter``
+        passes), the failure is recorded on the instance but the *run* is not
+        failed. The caller is told which handler to route to via ``StepOutcome``.
+        Passing ``None`` keeps the legacy "any failure is terminal" behavior.
+        """
         max_retries = step.max_retries or run.max_retries
-        
+
         for attempt in range(max_retries + 1):
             try:
                 instance.status = "running"
                 instance.started_at = datetime.utcnow()
                 instance.retry_count = attempt
                 await db.commit()
-                
+
                 # Handle human_task and approval steps specially
                 if step.step_type in ["human_task", "approval"]:
-                    return await self._handle_human_step(db, run, instance, step)
-                
+                    await self._handle_human_step(db, run, instance, step)
+                    return StepOutcome("paused")
+
                 executor = self.step_executors.get(step.step_type)
                 if not executor:
                     raise ValueError(f"No executor for step type: {step.step_type}")
@@ -717,26 +793,26 @@ class WorkflowEngine:
                     step_definition = interpolate(step.definition, ref_ctx)
 
                 output_data = await executor.execute(step_input, step_definition, db=db)
-                
+
                 instance.status = "completed"
                 instance.output_data = output_data
                 instance.completed_at = datetime.utcnow()
                 instance.retry_count = 0  # Reset retry count on success
                 instance.last_error = ""
-                
+
                 # Update run input for next steps
                 run.input_data = {**(run.input_data or {}), **output_data}
-                
+
                 await db.commit()
-                return True
-                
+                return StepOutcome("completed")
+
             except Exception as e:
                 error_msg = str(e)
                 logger.error(f"Step {instance.id} attempt {attempt + 1} failed: {error_msg}")
-                
+
                 # Store last error for retry
                 instance.last_error = error_msg
-                
+
                 if attempt < max_retries:
                     # Exponential backoff (G3): base grows by the policy multiplier up
                     # to max_delay, with full jitter; an explicit Retry-After from the
@@ -753,29 +829,60 @@ class WorkflowEngine:
                     )
                     await asyncio.sleep(delay)
                     continue
-                else:
-                    # All retries exhausted, mark as failed
-                    instance.status = "failed"
-                    instance.error_message = f"Step failed after {max_retries + 1} attempts: {error_msg}"
-                    instance.completed_at = datetime.utcnow()
-                    
-                    run.status = "failed"
-                    run.error_message = f"Run {run.id}: Step {instance.id} failed after {max_retries + 1} attempts: {error_msg}"
-                    
-                    # Execute failure hooks
-                    await self._execute_failure_hooks(db, run, instance, step, error_msg)
-                    
-                    # Send admin notice
-                    notify_admin(
-                        f"Step failed in workflow run {run.id}",
-                        f"Step {instance.id} ({step.title or step.step_type}) failed after {max_retries + 1} attempts.\n"
-                        f"Error: {error_msg}\n"
-                        f"Run ID: {run.id}"
-                    )
-                    
+
+                # All retries exhausted, mark the step as failed. Whether the run
+                # fails depends on whether an on-failure handler catches it (M6).
+                instance.status = "failed"
+                instance.error_message = f"Step failed after {max_retries + 1} attempts: {error_msg}"
+                instance.completed_at = datetime.utcnow()
+
+                failure_target: Optional[int] = None
+                if allowed_failure_targets is not None:
+                    failure_target = self._failure_target_step_id(step, e, error_msg, instance)
+                    if failure_target is not None and failure_target not in allowed_failure_targets:
+                        failure_target = None
+
+                if failure_target is not None:
+                    # M6: the handler owns recovery. Keep the step's failed status for
+                    # the audit trail, but do not fail the run, fire failure hooks,
+                    # or notify admins. Error context is merged into run input so
+                    # downstream steps can read {{ input._last_error }}.
+                    error_context = self._error_context(instance, step, e, error_msg)
+                    custom = dict(instance.custom_data or {})
+                    custom.update({
+                        "error_handled": True,
+                        "error": error_msg,
+                        "error_type": type(e).__name__,
+                        "on_failure_target_step_id": failure_target,
+                    })
+                    instance.custom_data = custom
+                    run.input_data = {
+                        **(run.input_data or {}),
+                        **error_context,
+                        "_error_handled": True,
+                    }
                     await db.commit()
-                    return False
-        
+                    return StepOutcome(
+                        "handled", handled=True, failure_target=failure_target, error=error_msg
+                    )
+
+                run.status = "failed"
+                run.error_message = f"Run {run.id}: Step {instance.id} failed after {max_retries + 1} attempts: {error_msg}"
+
+                # Execute failure hooks
+                await self._execute_failure_hooks(db, run, instance, step, error_msg)
+
+                # Send admin notice
+                notify_admin(
+                    f"Step failed in workflow run {run.id}",
+                    f"Step {instance.id} ({step.title or step.step_type}) failed after {max_retries + 1} attempts.\n"
+                    f"Error: {error_msg}\n"
+                    f"Run ID: {run.id}"
+                )
+
+                await db.commit()
+                return StepOutcome("failed", error=error_msg)
+
         # Should not reach here, but just in case
         instance.status = "failed"
         instance.error_message = "Unknown error"
@@ -783,7 +890,58 @@ class WorkflowEngine:
         run.status = "failed"
         run.error_message = f"Run {run.id}: Step {instance.id} failed"
         await db.commit()
-        return False
+        return StepOutcome("failed", error="Unknown error")
+
+    @staticmethod
+    def _error_context(instance, step, error: Exception, error_msg: str) -> Dict[str, Any]:
+        """Error context injected into run input before an M6 failure handler runs."""
+        return {
+            "_last_error": error_msg,
+            "_last_error_type": type(error).__name__,
+            "_failed_step_id": instance.step_id,
+            "_failed_step_type": step.step_type,
+            "_error_handled": True,
+            "error": error_msg,
+            "error_type": type(error).__name__,
+        }
+
+    def _failure_target_step_id(
+        self, step, error: Exception, error_msg: str, instance
+    ) -> Optional[int]:
+        """Return the configured on-failure handler, or None when not catchable.
+
+        A bad target id or an invalid ``on_failure_filter`` expression fails
+        closed: the failure stays terminal rather than silently routing. A
+        filter that evaluates false simply does not catch.
+        """
+        d = step.definition or {}
+        raw_target = d.get("on_failure_target_step_id")
+        if raw_target is None:
+            return None
+        try:
+            target = int(raw_target)
+        except (TypeError, ValueError):
+            logger.warning(
+                "Ignoring invalid on_failure_target_step_id %r on step %s",
+                raw_target, instance.step_id,
+            )
+            return None
+        if target == instance.step_id:
+            return None
+
+        error_filter = d.get("on_failure_filter")
+        if error_filter:
+            data = self._error_context(instance, step, error, error_msg)
+            try:
+                if not self._evaluate_condition(error_filter, data):
+                    return None
+            except ValueError:
+                logger.warning(
+                    "Ignoring invalid on_failure_filter %r on step %s; failure stays terminal",
+                    error_filter, instance.step_id,
+                )
+                return None
+        return target
 
     async def _run_compensations(
         self, db: AsyncSession, run_ctx: Any, comp_log: List[Dict[str, Any]]
@@ -1235,14 +1393,29 @@ class WorkflowEngine:
                 # ctx.input_data before releasing it).
                 instance.input_data = {**(instance.input_data or {}), **ctx.input_data, "_workflow_run_id": ctx.id}
 
-                success = await self._execute_single_step(tdb, ctx, instance, step)
-                if not success:
+                outcome = await self._execute_single_step(
+                    tdb, ctx, instance, step,
+                    allowed_failure_targets=set(instance_lookup) - {step_id},
+                )
+                if outcome.status == "paused":
+                    # A human task pauses the run; no compensation (the step itself
+                    # completed by creating the task).
+                    return
+                if outcome.status == "failed":
                     # G6: a step failed — compensate every step that completed before it
                     # (reverse order). The failure already set ctx.status; guard with
                     # ctx.compensating so compensation runs once even if siblings also fail.
                     if not ctx.compensating:
                         ctx.compensating = True
                         await self._run_compensations(tdb, ctx, ctx.comp_log)
+                    return
+                if outcome.handled and outcome.failure_target is not None:
+                    # M6: route to the error handler instead of failing the run.
+                    # Do not release the ordinary successors, and do not compensate
+                    # earlier steps — recovery belongs to the handler subgraph.
+                    self._record_route(instance, [outcome.failure_target])
+                    await tdb.commit()
+                    await release(step_id, [outcome.failure_target])
                     return
 
                 # G6: register a compensating transaction for this completed step, but
@@ -1350,6 +1523,14 @@ class WorkflowEngine:
         ids.update(d.get("next_step_ids") or [])
         if d.get("next_step_id") is not None:
             ids.add(d["next_step_id"])
+        # M6: the on-failure edge must be part of the static graph, otherwise the
+        # fan-in predecessor counter never includes it and the handler can't be
+        # released without deadlocking the scheduler.
+        failure_target = d.get("on_failure_target_step_id")
+        if failure_target is not None:
+            target = int(failure_target)
+            if target != getattr(step, "id", None):
+                ids.add(target)
         return tuple(i for i in ids if i is not None)
 
     @staticmethod

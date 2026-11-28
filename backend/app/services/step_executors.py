@@ -1976,6 +1976,202 @@ class LoopExecutor(BaseExecutor):
         return value
 
 
+class TryCatchExecutor(BaseExecutor):
+    """M6: a try/catch boundary around a group of nested steps.
+
+    Unlike a single-step ``on_failure_target_step_id`` edge, this executor
+    provides a subgraph-level boundary. Configuration (step_definition):
+
+      try_steps:    non-empty list of ``{"step_type", "definition"}`` steps run
+                    in order. Any exception enters the catch path.
+      catch_steps:  list of nested steps run (in order) after an exception. Each
+                    catch step receives the original step input plus error
+                    context: ``error``, ``error_type``, ``_last_error``,
+                    ``_failed_step_id`` / ``_failed_step_type``.
+      error_filter: optional safe expression (same syntax as condition steps,
+                    evaluated with ``data`` = step input + error context). A
+                    false result re-raises the original error instead of
+                    catching it. A malformed expression fails closed.
+      compensate_try_steps: default true — successfully completed try steps are
+                    compensated in reverse order (via their executor's
+                    ``compensate()`` hook) before catch steps run.
+
+    Output is merged into run input by the engine:
+      success, caught, error, error_type, try_results, catch_results,
+      compensations, executed_at.
+
+    Nested steps are ordinary registered executors, but they are *not* separate
+    StepInstances: they have no per-step retries, route_taken, or compensation
+    audit at the run level. Use graph-mode ``on_failure_target_step_id`` when
+    those are required.
+    """
+
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any],
+                      db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        try_steps = step_definition.get("try_steps") or []
+        catch_steps = step_definition.get("catch_steps") or []
+        if not isinstance(try_steps, list) or not try_steps:
+            raise ValueError("try_catch step requires a non-empty 'try_steps' list")
+        if not isinstance(catch_steps, list):
+            raise ValueError("try_catch 'catch_steps' must be a list")
+
+        # Validate nested step specs up front: a malformed configuration is a
+        # definition error, not an exception that the catch path should swallow.
+        self._validate_steps(try_steps, "try_steps")
+        self._validate_steps(catch_steps, "catch_steps")
+
+        compensate_try_steps = step_definition.get("compensate_try_steps", True) is not False
+        completed: List[Dict[str, Any]] = []
+        result: Dict[str, Any] = {"try_results": [], "catch_results": [], "compensations": []}
+
+        try:
+            await self._run_steps(
+                try_steps, input_data, db, completed=completed,
+                results=result["try_results"],
+            )
+        except Exception as e:
+            error_msg = str(e)
+            failed_step = result["try_results"][-1] if result["try_results"] else {}
+            error_context = self._error_context(
+                input_data, e, error_msg, failed_step.get("step_type")
+            )
+            error_filter = step_definition.get("error_filter")
+            if error_filter:
+                from app.services.workflow_engine import workflow_engine
+
+                if not workflow_engine._evaluate_condition(
+                    error_filter, {**(input_data or {}), **error_context}
+                ):
+                    # Not our exception to catch — preserve the original failure.
+                    raise
+
+            if compensate_try_steps:
+                result["compensations"] = await self._compensate(completed, db)
+
+            catch_input = {**(input_data or {}), **error_context}
+            await self._run_steps(
+                catch_steps, catch_input, db, completed=None,
+                results=result["catch_results"],
+            )
+            result.update({
+                "success": True,
+                "caught": True,
+                "error": error_msg,
+                "error_type": type(e).__name__,
+                "executed_at": datetime.utcnow().isoformat(),
+            })
+            return result
+
+        result.update({
+            "success": True,
+            "caught": False,
+            "error": None,
+            "error_type": None,
+            "executed_at": datetime.utcnow().isoformat(),
+        })
+        return result
+
+    @staticmethod
+    def _error_context(
+        input_data, error: Exception, error_msg: str, failed_step_type=None
+    ) -> Dict[str, Any]:
+        """Error fields injected into every catch step's input."""
+        return {
+            "error": error_msg,
+            "error_type": type(error).__name__,
+            "_last_error": error_msg,
+            "_last_error_type": type(error).__name__,
+            "_failed_step_id": (input_data or {}).get("_workflow_step_id"),
+            "_failed_step_type": failed_step_type
+            or (input_data or {}).get("_failed_step_type"),
+        }
+
+    @staticmethod
+    def _validate_steps(steps, field: str) -> None:
+        """Reject malformed nested step definitions before entering the try block."""
+        from app.services.workflow_engine import workflow_engine
+
+        for index, spec in enumerate(steps):
+            if not isinstance(spec, dict) or not spec.get("step_type"):
+                raise ValueError(
+                    f"try_catch {field} step #{index} requires a 'step_type'"
+                )
+            if spec["step_type"] not in workflow_engine.step_executors:
+                raise ValueError(
+                    f"try_catch {field} step #{index} has unknown step_type "
+                    f"{spec['step_type']!r}"
+                )
+
+    async def _run_steps(self, steps, input_data, db, completed, results) -> List[Dict[str, Any]]:
+        """Run nested steps sequentially through the shared executor registry.
+
+        ``results`` is supplied by the caller so a failing step is still visible
+        in the audit list when the exception propagates to the catch boundary.
+        """
+        from app.services.workflow_engine import workflow_engine
+
+        for index, spec in enumerate(steps):
+            if not isinstance(spec, dict) or not spec.get("step_type"):
+                raise ValueError(
+                    f"try_catch nested step #{index} requires a 'step_type'"
+                )
+            executor = workflow_engine.step_executors.get(spec["step_type"])
+            if executor is None:
+                raise ValueError(
+                    f"try_catch nested step #{index} has unknown step_type "
+                    f"{spec['step_type']!r}"
+                )
+            definition = dict(spec.get("definition") or {})
+            try:
+                output = await executor.execute(input_data, definition, db=db)
+            except Exception as e:
+                # Keep the failing step in the audit list, then let the outer
+                # try/catch boundary decide whether to catch or re-raise.
+                results.append({
+                    "index": index,
+                    "step_type": spec["step_type"],
+                    "output": {},
+                    "error": str(e),
+                    "error_type": type(e).__name__,
+                })
+                raise
+            results.append({
+                "index": index,
+                "step_type": spec["step_type"],
+                "output": _unwrap(output),
+            })
+            if completed is not None:
+                completed.append({
+                    "executor": executor,
+                    "step_type": spec["step_type"],
+                    "input_data": dict(input_data or {}),
+                    "step_definition": definition,
+                    "output_data": output,
+                })
+        return results
+
+    async def _compensate(self, completed, db) -> List[Dict[str, Any]]:
+        """Undo completed try steps in reverse order; never abort on one failure."""
+        results: List[Dict[str, Any]] = []
+        for rec in reversed(completed):
+            try:
+                detail = await rec["executor"].compensate(
+                    rec["input_data"], rec["step_definition"], rec["output_data"], db=db
+                )
+                results.append({
+                    "step_type": rec["step_type"],
+                    "status": "compensated",
+                    "detail": detail,
+                })
+            except Exception as e:
+                results.append({
+                    "step_type": rec["step_type"],
+                    "status": "failed",
+                    "detail": f"{type(e).__name__}: {e}",
+                })
+        return results
+
+
 class SubWorkflowExecutor(BaseExecutor):
     """B3: Synchronous sub-workflow invocation (call, wait, merge result).
     
@@ -2046,11 +2242,12 @@ class SubWorkflowExecutor(BaseExecutor):
                 timeout=timeout
             )
         except asyncio.TimeoutError:
-            return {
-                "error": f"Sub-workflow run {sub_run.id} timed out after {timeout}s",
-                "run_id": sub_run.id,
-                "status": "timeout"
-            }
+            # M6: surface a timed-out child as a failed *step* so on-failure
+            # routing and try_catch boundaries can handle it. Returning a dict
+            # here would make the parent step look successful.
+            raise TimeoutError(
+                f"Sub-workflow run {sub_run.id} timed out after {timeout}s"
+            ) from None
         
         # Fetch final run state
         from sqlalchemy import select as sa_select
@@ -2071,13 +2268,25 @@ class SubWorkflowExecutor(BaseExecutor):
                 "result_data": final_run.output_data or {},
                 "duration_seconds": final_run.duration_seconds
             }
-        else:
+        if final_run.status == "waiting":
+            # A child paused at a human step is not a failure. Preserve the
+            # historical status-only result; the parent can decide what to do.
             return {
                 "success": False,
                 "run_id": final_run.id,
                 "status": final_run.status,
-                "error_message": final_run.error_message if hasattr(final_run, 'error_message') and final_run.error_message else f"Sub-workflow ended with status: {final_run.status}"
+                "error_message": final_run.error_message or "Sub-workflow is waiting on a human task",
             }
+
+        # M6: failed / timeout / cancelled children are step failures, not a
+        # successful step with a misleading ``success: False`` payload. Raising
+        # lets the engine's retries, on-failure routing and try_catch boundaries
+        # see the real outcome.
+        detail = final_run.error_message or f"Sub-workflow ended with status: {final_run.status}"
+        raise RuntimeError(
+            f"Sub-workflow run {final_run.id} failed with status "
+            f"{final_run.status}: {detail}"
+        )
     
     async def _wait_for_run_completion(self, db: AsyncSession, run_id: int, timeout: int):
         """Poll until run completes, fails, times out, or pauses at a human step.

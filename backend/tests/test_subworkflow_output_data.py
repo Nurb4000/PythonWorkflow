@@ -105,3 +105,45 @@ async def test_execute_handles_empty_output_data(db_session, monkeypatch):
 
     assert result["success"] is True
     assert result["result_data"] == {}
+
+
+@pytest.mark.asyncio
+async def test_execute_raises_on_failed_subrun(db_session, monkeypatch):
+    """M6: a failed child run must surface as a failed parent step.
+
+    Returning ``{"success": False}`` made the engine mark the parent step
+    completed, so on-failure routing and try_catch never saw the failure.
+    """
+    from app.services import workflow_engine as workflow_engine_module
+
+    wf = Workflow(name="sub-failed")
+    db_session.add(wf)
+    await db_session.flush()
+    sub_run = WorkflowRun(
+        workflow_id=wf.id,
+        status="failed",
+        error_message="child exploded",
+    )
+    db_session.add(sub_run)
+    await db_session.flush()
+
+    async def fake_trigger(db, workflow_id, run_data):
+        return sub_run
+
+    async def fake_wait(db, run_id, timeout):
+        return None
+
+    monkeypatch.setattr(workflow_engine_module.workflow_engine, "trigger_workflow", fake_trigger)
+    executor = SubWorkflowExecutor()
+    monkeypatch.setattr(executor, "_wait_for_run_completion", fake_wait)
+
+    with pytest.raises(RuntimeError, match="child exploded"):
+        await executor.execute(
+            input_data={},
+            step_definition={
+                "workflow_id": wf.id,
+                "input_data": {},
+                "timeout_seconds": 5,
+            },
+            db=db_session,
+        )

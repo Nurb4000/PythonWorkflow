@@ -47,8 +47,9 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Resume Support**: Human-task pauses allow workflow resumption without re-execution
 - **Timeout & Retries**: Configurable run timeouts and per-step retry logic
 - **Failure Hooks**: HTTP callbacks on step/run failure
+- **Conditional Error Handling (M6)**: `on_failure_target_step_id` routes a failed step to a handler instead of failing the run (optional `on_failure_filter`, e.g. `data['error_type'] == 'ValueError'`), and the `try_catch` node wraps a group of nested steps with a catch subgraph and local compensation
 
-### Executors (16 types)
+### Executors (19 types)
 | Type | Description |
 |------|-------------|
 | `api_call` | HTTP requests with SSRF protection |
@@ -67,6 +68,9 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 | `cmdb_lookup` | Look up CMDB configuration items by type and field criteria |
 | `cmdb_update` | Update a CMDB configuration item by ID or lookup |
 | `sub_workflow` | Synchronous sub-workflow invocation (call, wait, merge result) |
+| `loop` | Iterate a collection over a nested step |
+| `transform` | Rename / map / merge / join structured data |
+| `try_catch` | Try/catch boundary around nested steps with optional filtering and compensation |
 
 ### Human-in-the-Loop
 - **Task System**: Open → Owned → Completed → Closed lifecycle

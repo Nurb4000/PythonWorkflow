@@ -56,6 +56,23 @@ async def wait_run(session, run_id, timeout=10.0):
     raise AssertionError(f"run {run_id} did not finish in time")
 
 
+async def wait_compensation_audit(session, run_id, timeout=3.0):
+    """The run is marked failed before the background task commits the audit."""
+    import asyncio
+
+    from app.models.schemas import WorkflowRun
+
+    deadline = asyncio.get_event_loop().time() + timeout
+    while asyncio.get_event_loop().time() < deadline:
+        run = await session.get(WorkflowRun, run_id)
+        if run is not None:
+            await session.refresh(run)
+            if (run.custom_data or {}).get("compensations"):
+                return run
+        await asyncio.sleep(0.05)
+    raise AssertionError(f"compensation audit for run {run_id} not persisted in time")
+
+
 import httpx
 
 
@@ -174,11 +191,34 @@ class TestLinearCompensation:
         assert self.fake.compensated == ["C", "B", "A"]
 
         # Audit trail on the run records each compensation (reverse order C, B, A).
-        audit = run.custom_data.get("compensations") if run.custom_data else None
-        assert audit is not None
+        run = await wait_compensation_audit(session, run.id)
+        audit = run.custom_data["compensations"]
         assert len(audit) == 3
         assert all(e["status"] == "compensated" for e in audit)
         assert [e["step_type"] for e in audit] == ["comp", "comp", "comp"]
+
+    async def test_handled_failure_skips_global_compensation(self, session):
+        """M6: an on-failure handler owns recovery; prior steps stay uncompensated."""
+        wf = await self.engine.create_workflow(
+            session,
+            WorkflowCreate(name="m6-comp", steps=[
+                {"step_type": "comp", "definition": {"name": "A"}},
+                {"step_type": "comp", "definition": {"name": "B", "fail": True}},
+                {"step_type": "comp", "definition": {"name": "C"}},
+            ], config={}),
+        )
+        await session.refresh(wf, attribute_names=["steps"])
+        a, b, c = sorted(wf.steps, key=lambda s: s.position)
+        b.definition = {**b.definition, "on_failure_target_step_id": c.id}
+        await session.commit()
+
+        run = await self.engine.trigger_workflow(session, wf.id, WorkflowRunCreate())
+        run = await wait_run(session, run.id)
+
+        assert run.status == "completed"
+        assert self.fake.executed == ["A", "B", "C"]
+        assert self.fake.compensated == []
+        assert not (run.custom_data or {}).get("compensations")
 
 
 # --------------------------------------------------------------------------- #
@@ -215,8 +255,9 @@ class TestGraphCompensation:
         assert "C" not in self.fake.executed
         assert self.fake.compensated == ["A"]
 
-        audit = run.custom_data.get("compensations") if run.custom_data else None
-        assert audit and len(audit) == 1 and audit[0]["status"] == "compensated"
+        run = await wait_compensation_audit(session, run.id)
+        audit = run.custom_data["compensations"]
+        assert len(audit) == 1 and audit[0]["status"] == "compensated"
 
 
 # --------------------------------------------------------------------------- #
