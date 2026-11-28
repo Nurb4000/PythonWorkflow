@@ -1,9 +1,14 @@
 /**
  * Visual Report Builder — Drag-and-drop report definition tool.
+ *
+ * F1 adds a "Run & visualize" panel: the existing /reports/{id}/execute
+ * endpoint supplies rows, and dependency-free SVG charts render them without
+ * changing the report schema or the definition editor.
  */
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import axios from 'axios'
+import { ReportCharts, ReportChartType } from '../components/ReportCharts'
 
 const API_URL = '/api'
 
@@ -22,9 +27,31 @@ interface ReportDefinition {
   is_active: boolean
 }
 
+interface ReportResult {
+  report_id: number
+  name: string
+  columns: string[]
+  rows: Array<Record<string, any>>
+  total_rows: number
+}
+
+const COUNT_MODE = '__count__'
+
+const errorMessage = (error: unknown): string => {
+  if (axios.isAxiosError(error)) {
+    const detail = (error.response?.data as { detail?: string } | undefined)?.detail
+    return detail || error.message
+  }
+  return 'Report execution failed.'
+}
+
 export const ReportBuilder: React.FC = () => {
   const queryClient = useQueryClient()
   const [editingReport, setEditingReport] = useState<ReportDefinition | null>(null)
+  const [result, setResult] = useState<ReportResult | null>(null)
+  const [chartType, setChartType] = useState<ReportChartType>('bar')
+  const [labelField, setLabelField] = useState('')
+  const [valueField, setValueField] = useState('')
   const [formData, setFormData] = useState({
     name: '',
     description: '',
@@ -85,8 +112,58 @@ export const ReportBuilder: React.FC = () => {
     },
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: ['reports'] })
+      setResult((current) => current?.report_id === undefined ? current : null)
     }
   })
+
+  const executeMutation = useMutation({
+    mutationFn: async (id: number) => {
+      const token = localStorage.getItem('token')
+      const res = await axios.post(`${API_URL}/reports/${id}/execute`, {}, {
+        headers: { Authorization: `Bearer ${token}` }
+      })
+      return res.data as ReportResult
+    },
+    onSuccess: (data) => {
+      setResult(data)
+      setLabelField('')
+      setValueField('')
+    }
+  })
+
+  const resultColumns = useMemo(
+    () => result?.columns?.length
+      ? result.columns
+      : Object.keys(result?.rows?.[0] || {}),
+    [result]
+  )
+
+  const numericColumns = useMemo(
+    () => resultColumns.filter((column) =>
+      (result?.rows || []).some((row) => typeof row[column] === 'number')
+    ),
+    [result, resultColumns]
+  )
+
+  // Aggregate before charting: repeated category labels (or a count-only
+  // result) become one bar/slice/point per label.
+  const chartData = useMemo(() => {
+    if (!result || !resultColumns.length) return { labels: [] as string[], values: [] as number[] }
+    const label = labelField || resultColumns[0]
+    const countMode = valueField === COUNT_MODE || (!valueField && !numericColumns.length)
+    const value = countMode ? '' : (valueField || numericColumns[0])
+    const grouped = new Map<string, number>()
+    for (const row of result.rows) {
+      const key = String(row[label] ?? '(blank)')
+      const measure = countMode ? 1 : Number(row[value])
+      if (!countMode && !Number.isFinite(measure)) continue
+      grouped.set(key, (grouped.get(key) || 0) + measure)
+    }
+    return {
+      labels: Array.from(grouped.keys()),
+      values: Array.from(grouped.values()),
+    }
+  }, [result, resultColumns, labelField, valueField, numericColumns])
 
   const resetForm = () => {
     setEditingReport(null)
@@ -144,12 +221,19 @@ export const ReportBuilder: React.FC = () => {
         <div style={{ marginBottom: '2rem' }}>
           <h3 style={{ marginBottom: '1rem' }}>Existing Reports</h3>
           {reports?.map(report => (
-            <div key={report.id} className="card" style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+            <div key={report.id} className="card report-list-row" style={{ marginBottom: '0.5rem', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
               <div>
                 <strong>{report.name}</strong>
                 <div style={{ fontSize: '0.85rem', color: '#666' }}>{report.description}</div>
               </div>
-              <div style={{ display: 'flex', gap: '0.5rem' }}>
+              <div className="report-row-actions" style={{ display: 'flex', gap: '0.5rem' }}>
+                <button
+                  className="btn btn-sm btn-primary"
+                  onClick={() => executeMutation.mutate(report.id)}
+                  disabled={executeMutation.isPending}
+                >
+                  {executeMutation.isPending ? 'Running...' : 'Run'}
+                </button>
                 <button className="btn btn-sm btn-secondary" onClick={() => handleEdit(report)}>Edit</button>
                 <button className="btn btn-sm btn-danger" onClick={() => {
                   if (confirm(`Delete report "${report.name}"?`)) {
@@ -159,6 +243,90 @@ export const ReportBuilder: React.FC = () => {
               </div>
             </div>
           ))}
+        </div>
+      )}
+
+      {/* F1: execution results + charts */}
+      {!editingReport && executeMutation.isError && (
+        <div className="report-error" role="alert">
+          {errorMessage(executeMutation.error)}
+        </div>
+      )}
+      {!editingReport && result && (
+        <div className="card report-results" style={{ marginBottom: '2rem' }}>
+          <div className="card-header">
+            <h3 className="card-title">{result.name} — results</h3>
+            <span className="stat-label">{result.total_rows} rows</span>
+          </div>
+          <div style={{ padding: '1rem' }}>
+            <div className="report-chart-controls">
+              <label>
+                Chart
+                <select
+                  className="form-input"
+                  value={chartType}
+                  onChange={(e) => setChartType(e.target.value as ReportChartType)}
+                >
+                  <option value="bar">Bar</option>
+                  <option value="line">Line</option>
+                  <option value="donut">Donut</option>
+                </select>
+              </label>
+              <label>
+                Label
+                <select
+                  className="form-input"
+                  value={labelField || resultColumns[0] || ''}
+                  onChange={(e) => setLabelField(e.target.value)}
+                >
+                  {resultColumns.map((column) => (
+                    <option key={column} value={column}>{column}</option>
+                  ))}
+                </select>
+              </label>
+              <label>
+                Value
+                <select
+                  className="form-input"
+                  value={valueField}
+                  onChange={(e) => setValueField(e.target.value)}
+                >
+                  <option value="">Auto</option>
+                  {numericColumns.map((column) => (
+                    <option key={column} value={column}>{column}</option>
+                  ))}
+                  <option value={COUNT_MODE}>Count rows</option>
+                </select>
+              </label>
+            </div>
+
+            <ReportCharts
+              type={chartType}
+              labels={chartData.labels}
+              values={chartData.values}
+              title={`${result.name}: ${labelField || resultColumns[0] || 'label'}`}
+            />
+
+            <details className="report-raw-rows">
+              <summary>View raw rows</summary>
+              <div className="table-responsive">
+                <table className="table">
+                  <thead>
+                    <tr>{resultColumns.map((column) => <th key={column}>{column}</th>)}</tr>
+                  </thead>
+                  <tbody>
+                    {result.rows.slice(0, 50).map((row, index) => (
+                      <tr key={index}>
+                        {resultColumns.map((column) => (
+                          <td key={column}>{String(row[column] ?? '')}</td>
+                        ))}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+            </details>
+          </div>
         </div>
       )}
 

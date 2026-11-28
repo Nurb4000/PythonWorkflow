@@ -256,7 +256,7 @@ class SchedulerService:
         if not self.db_session_factory:
             return
 
-        from app.services.email_service import notify_admin
+        from app.services.email_service import notify_admin, run_email_in_executor
 
         async with self.db_session_factory() as db:
             try:
@@ -305,7 +305,8 @@ class SchedulerService:
                             f"Status: {run.status}\n"
                             f"Started: {run.started_at.isoformat()}"
                         )
-                        notify_admin(
+                        await run_email_in_executor(
+                            notify_admin,
                             f"SLA Response Breach: {svc_name}",
                             sla_message,
                         )
@@ -343,7 +344,7 @@ class SchedulerService:
 
         from datetime import timezone as tz
         from app.models.date_targets import DateTarget
-        from app.services.email_service import notify_admin
+        from app.services.email_service import notify_admin, run_email_in_executor
 
         async with self.db_session_factory() as db:
             try:
@@ -380,7 +381,8 @@ class SchedulerService:
                         f"Step ID: {dt.step_id}\n"
                         f"Task ID: {dt.task_id}"
                     )
-                    notify_admin(
+                    await run_email_in_executor(
+                        notify_admin,
                         f"Date Target Breach: {target_key} (Run #{run_id})",
                         date_target_message,
                     )

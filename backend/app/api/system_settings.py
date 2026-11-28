@@ -57,7 +57,7 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
 
 DEFAULT_SYSTEM_NAME = "Instant Workflow"
 
-VALID_AI_PROVIDERS = ("llama_cpp", "openai")
+VALID_AI_PROVIDERS = ("llama_cpp", "openai", "anthropic")
 
 
 def parse_fallback_providers(raw: str) -> str:
@@ -202,6 +202,9 @@ async def get_settings(
         "openai_api_key": "***" if settings.openai_api_key else "",  # Don't expose actual key
         "openai_model": settings.openai_model,
         "openai_base_url": settings.openai_base_url,
+        "anthropic_api_key": "***" if settings.anthropic_api_key else "",
+        "anthropic_model": settings.anthropic_model,
+        "anthropic_base_url": settings.anthropic_base_url,
         "ai_provider": settings.ai_provider,
         "ai_fallback_providers": settings.ai_fallback_providers,
         "smtp_host": settings.smtp_host,
@@ -235,8 +238,11 @@ async def update_llm_settings(
 async def update_ai_settings(
     ai_provider: str = "llama_cpp",
     openai_api_key: str = "",
-    openai_model: str = "gpt-3.5-turbo",
+    openai_model: str = "gpt-4o",
     openai_base_url: str = "https://api.openai.com/v1",
+    anthropic_api_key: str = "",
+    anthropic_model: str = "claude-sonnet-5-5",
+    anthropic_base_url: str = "https://api.anthropic.com/v1",
     ai_fallback_providers: str = "",
     current_user: User = Depends(get_current_user)
 ):
@@ -245,24 +251,34 @@ async def update_ai_settings(
         raise HTTPException(status_code=403, detail="Admin access required")
 
     if ai_provider not in VALID_AI_PROVIDERS:
-        raise HTTPException(status_code=400, detail="Invalid provider. Must be 'llama_cpp' or 'openai'")
+        raise HTTPException(
+            status_code=400,
+            detail="Invalid provider. Must be 'llama_cpp', 'openai', or 'anthropic'",
+        )
     try:
         fallbacks = parse_fallback_providers(ai_fallback_providers)
     except ValueError as e:
         raise HTTPException(status_code=400, detail=str(e))
 
     settings.ai_provider = ai_provider
-    if openai_api_key:
+    # Never persist the masked placeholder returned by GET /settings.
+    if openai_api_key and openai_api_key != "***":
         settings.openai_api_key = openai_api_key
     settings.openai_model = openai_model
     settings.openai_base_url = openai_base_url
+    if anthropic_api_key and anthropic_api_key != "***":
+        settings.anthropic_api_key = anthropic_api_key
+    settings.anthropic_model = anthropic_model
+    settings.anthropic_base_url = anthropic_base_url
     settings.ai_fallback_providers = fallbacks
 
     return {"message": "AI settings updated", "settings": {
         "ai_provider": settings.ai_provider,
         "ai_fallback_providers": settings.ai_fallback_providers,
         "openai_model": settings.openai_model,
-        "openai_base_url": settings.openai_base_url
+        "openai_base_url": settings.openai_base_url,
+        "anthropic_model": settings.anthropic_model,
+        "anthropic_base_url": settings.anthropic_base_url,
     }}
 
 

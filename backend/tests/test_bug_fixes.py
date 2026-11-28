@@ -113,6 +113,20 @@ class TestC2_AiProviderDispatch:
                 mock_openai.assert_called_once_with("prompt")
                 assert result == "gpt"
 
+    def test_call_ai_dispatches_to_anthropic(self):
+        from app.services.ai_service import AIService, system_settings
+
+        service = AIService()
+        with patch.object(system_settings, "ai_provider", "anthropic"):
+            with patch.object(
+                service, "_call_anthropic", new_callable=AsyncMock, return_value="claude"
+            ) as mock_anthropic:
+                import asyncio
+
+                result = asyncio.run(service._call_ai("prompt"))
+                mock_anthropic.assert_called_once_with("prompt")
+                assert result == "claude"
+
 
 class TestC3_NoDuplicateRoutes:
     """C3: webhook router has exactly one definition per route."""

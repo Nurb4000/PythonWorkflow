@@ -39,10 +39,15 @@ class Settings(BaseSettings):
     
     # AI / OpenAI
     openai_api_key: str = ""
-    openai_model: str = "gpt-3.5-turbo"
+    openai_model: str = "gpt-4o"
     openai_base_url: str = "https://api.openai.com/v1"
     
-    # AI provider selection (llama_cpp or openai)
+    # AI / Anthropic Claude (F3)
+    anthropic_api_key: str = ""
+    anthropic_model: str = "claude-sonnet-5-5"
+    anthropic_base_url: str = "https://api.anthropic.com/v1"
+
+    # AI provider selection (llama_cpp, openai, or anthropic)
     ai_provider: str = "llama_cpp"
 
     # M8 fix: optional ordered fallback providers, e.g. "openai,llama_cpp".

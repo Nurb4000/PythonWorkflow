@@ -235,6 +235,8 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
     allow_headers=["Authorization", "Content-Type", "Accept", "X-Webhook-Secret", "X-Api-Key"],
+    # M8/F3: let browser clients read request-level AI provider attribution.
+    expose_headers=["X-AI-Provider"],
 )
 
 # E1: Request ID tracing — attach unique ID to every request

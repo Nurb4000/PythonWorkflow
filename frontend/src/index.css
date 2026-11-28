@@ -362,6 +362,144 @@ code {
   margin-top: 0.5rem;
 }
 
+/* Report charts (F1) — plain SVG, no chart dependency */
+.report-list-row,
+.report-row-actions {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.report-results .card-header {
+  flex-wrap: wrap;
+  gap: 0.5rem;
+}
+
+.report-chart-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 1rem;
+  margin-bottom: 1rem;
+}
+
+.report-chart-controls label {
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  color: #7f8c8d;
+  font-size: 0.85rem;
+}
+
+.report-chart-controls .form-input {
+  min-width: 150px;
+}
+
+.report-chart-block,
+.report-chart {
+  width: 100%;
+}
+
+.report-chart svg {
+  display: block;
+  width: 100%;
+  height: auto;
+}
+
+.chart-grid-line {
+  stroke: #e1e4e8;
+  stroke-width: 1;
+}
+
+.chart-axis-label,
+.chart-label {
+  fill: #7f8c8d;
+  font-size: 12px;
+}
+
+.chart-bar,
+.chart-point {
+  transition: opacity 0.15s ease;
+}
+
+.chart-bar:hover,
+.chart-point:hover {
+  opacity: 0.8;
+}
+
+.chart-line {
+  fill: none;
+  stroke: #2980b9;
+  stroke-width: 3;
+}
+
+.chart-area {
+  fill: rgba(41, 128, 185, 0.12);
+}
+
+.chart-donut-track {
+  fill: none;
+  stroke: #ecf0f1;
+  stroke-width: 34;
+}
+
+.chart-donut-total {
+  fill: #2c3e50;
+  font-size: 26px;
+  font-weight: 700;
+}
+
+.chart-legend {
+  list-style: none;
+  margin: 0.5rem 0 0;
+  padding: 0;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: 0.25rem 0.75rem;
+  font-size: 0.875rem;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.chart-legend-item strong {
+  margin-left: auto;
+}
+
+.chart-swatch {
+  width: 12px;
+  height: 12px;
+  border-radius: 2px;
+  flex: none;
+}
+
+.chart-empty {
+  padding: 2rem;
+  text-align: center;
+  color: #7f8c8d;
+  background: #f8f9fa;
+  border-radius: 6px;
+}
+
+.report-raw-rows {
+  margin-top: 1rem;
+}
+
+.report-raw-rows summary {
+  cursor: pointer;
+  color: #2980b9;
+}
+
+.report-error {
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border-radius: 6px;
+  background: #fdf2f2;
+  color: #c0392b;
+}
+
 /* Loading */
 .loading {
   text-align: center;
@@ -490,6 +628,15 @@ code {
   .card-header {
     flex-wrap: wrap;
     gap: 0.5rem;
+  }
+
+  .report-chart-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .report-chart-controls .form-input {
+    width: 100%;
   }
 
   /* Bare tables scroll in-place; wrapped tables scroll in their wrapper. */

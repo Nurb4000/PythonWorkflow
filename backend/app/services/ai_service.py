@@ -1,6 +1,6 @@
 """
 AI integration service for generating workflow steps, node assistance, and error diagnosis.
-Supports llama.cpp (local) and OpenAI (cloud) providers.
+Supports llama.cpp (local), OpenAI, and Anthropic Claude (cloud) providers.
 """
 import json
 import logging
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 # M8: supported provider names and request-local attribution of the provider
 # that actually answered. A ContextVar is used because ``ai_service`` is a
 # singleton shared by every request/background task.
-AI_PROVIDERS = ("llama_cpp", "openai")
+AI_PROVIDERS = ("llama_cpp", "openai", "anthropic")
 current_ai_provider: ContextVar[Optional[str]] = ContextVar(
     "current_ai_provider", default=None
 )
@@ -862,6 +862,45 @@ Rules:
             except httpx.HTTPError as e:
                 raise ValueError(f"OpenAI error: {str(e)}")
 
+    async def _call_anthropic(self, prompt: str) -> str:
+        """Call Anthropic's Messages API (Claude) with the configured model.
+
+        F3 uses the existing httpx dependency (no SDK). API version 2026-10-21
+        rejects temperature/top_p/top_k, so only supported fields are sent.
+        """
+        if not system_settings.anthropic_api_key:
+            raise ValueError("Anthropic API key not configured")
+
+        headers = {
+            "x-api-key": system_settings.anthropic_api_key,
+            "anthropic-version": "2026-10-21",
+            "Content-Type": "application/json",
+        }
+        payload = {
+            "model": system_settings.anthropic_model,
+            "max_tokens": 2000,
+            "system": "You are a helpful assistant that generates JSON responses.",
+            "messages": [{"role": "user", "content": prompt}],
+        }
+
+        async with httpx.AsyncClient() as client:
+            try:
+                response = await client.post(
+                    f"{system_settings.anthropic_base_url}/messages",
+                    headers=headers,
+                    json=payload,
+                    timeout=60.0,
+                )
+                response.raise_for_status()
+                for block in response.json().get("content", []):
+                    if isinstance(block, dict) and block.get("type") == "text":
+                        return block["text"]
+                raise ValueError("Anthropic response contained no text content")
+            except httpx.TimeoutException:
+                raise ValueError("Anthropic request timed out")
+            except httpx.HTTPError as e:
+                raise ValueError(f"Anthropic error: {str(e)}")
+
     async def _call_ai(self, prompt: str) -> str:
         """Call the configured provider, then fallbacks on failure (M8).
 
@@ -872,9 +911,15 @@ Rules:
         """
         chain = ai_provider_chain()
         current_ai_provider.set(None)
+        # Explicit dispatch: a new provider must never silently route to llama.cpp.
+        calls = {
+            "llama_cpp": self._call_llama_cpp,
+            "openai": self._call_openai,
+            "anthropic": self._call_anthropic,
+        }
         errors = []
         for index, provider in enumerate(chain):
-            call = self._call_openai if provider == "openai" else self._call_llama_cpp
+            call = calls[provider]
             try:
                 text = await call(prompt)
             except Exception as e:

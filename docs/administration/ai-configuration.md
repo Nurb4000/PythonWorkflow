@@ -7,16 +7,17 @@
 
 ## Overview
 
-The system supports two AI providers for workflow assistance:
+The system supports three AI providers for workflow assistance:
 
 | Provider | Use Case | Cost |
 |----------|----------|------|
 | **llama.cpp** (local) | Offline, private, no API keys | Hardware costs |
-| **OpenAI** (cloud) | Faster, better quality, requires API key | Per-token costs |
+| **OpenAI** (cloud, GPT-4) | Faster, better quality, requires API key | Per-token costs |
+| **Anthropic Claude** (cloud) | Alternative cloud model, requires API key | Per-token costs |
 
 Choose a primary provider in **Admin → Settings → LLM Configuration**. An optional fallback chain can be configured there or with `AI_FALLBACK_PROVIDERS` (comma-separated, e.g. `openai,llama_cpp`). When the primary call fails, the same prompt is retried against each fallback in order; if all fail, the error names each provider. With an empty chain (the default) behavior is unchanged: one call, one original error.
 
-Every `/ai/*` response includes an `X-AI-Provider` header naming the provider that answered, and `GET /ai/health` reports the status of all configured providers. `/ai/health` does not make a paid OpenAI probe request.
+Every `/ai/*` response that invokes the LLM includes an `X-AI-Provider` header naming the provider that answered (non-LLM utility endpoints such as standards validation do not). `GET /ai/health` reports the status of all configured providers. Cloud providers are checked by configuration only — `/ai/health` makes no paid probe request.
 
 > **Privacy / cost:** a cloud fallback sends prompts off-host. Local-only deployments should leave `AI_FALLBACK_PROVIDERS` empty. Fallback attempts do not consume extra per-user AI quota, but they can increase provider spend within one counted request.
 
@@ -62,7 +63,7 @@ Every `/ai/*` response includes an `X-AI-Provider` header naming the provider th
 2. Configure in Settings:
    - **AI Provider:** Select "OpenAI"
    - **API Key:** Your OpenAI key
-   - **Model:** `gpt-3.5-turbo` (default) or `gpt-4`
+   - **Model:** `gpt-4o` (default). The field suggests GPT-4 presets (`gpt-4o`, `gpt-4.1`, `gpt-4-turbo`) but accepts any OpenAI-compatible model ID.
    - **Base URL:** `https://api.openai.com/v1` (default)
 
 ### Pricing
@@ -84,13 +85,28 @@ Typical workflow assistance: 1-5K tokens per request = $0.002-$0.03
 
 ---
 
+## Anthropic Claude (Cloud, F3)
+
+1. Get an API key from [Anthropic](https://console.anthropic.com/).
+
+2. Configure in **Admin → Settings → LLM Configuration**:
+   - **AI Provider:** Anthropic Claude
+   - **API Key:** your `sk-ant-...` key (masked as `***` when read back)
+   - **Model:** `claude-sonnet-5-5` (default); presets also include `claude-opus-5-5` and `claude-haiku-5-5`
+   - **Base URL:** `https://api.anthropic.com/v1` (override for a compatible gateway)
+
+Claude uses the Messages API with `anthropic-version: 2026-10-21`; sampling parameters removed in that version are not sent. Fallback ordering, `X-AI-Provider` attribution, the per-request AI quota, and `/ai/health` reporting work the same as for OpenAI. No Anthropic SDK is required — the existing `httpx` dependency is used.
+
+---
+
 ## Switching Providers
 
 1. Go to **Admin → Settings → LLM Configuration**
 2. Change **AI Provider** dropdown
 3. Fill in provider-specific fields:
    - **llama.cpp:** Server URL, Model name
-   - **OpenAI:** API key, Model, Base URL
+   - **OpenAI / GPT-4:** API key, Model, Base URL
+   - **Anthropic Claude:** API key, Model, Base URL
 4. Click **Save AI Settings**
 
 **Note:** Changes apply immediately to all AI features.

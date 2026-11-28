@@ -87,7 +87,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Form Designer AI**: Suggest fields from a description with per-field accept/reject
 - **Error Diagnosis**: Explain run/step failures with root cause, suggested fixes, corrected config
 - **Hybrid KB Steering**: domain-specific knowledge-base files loaded per feature
-- **Provider Fallback (M8)**: optional ordered `AI_FALLBACK_PROVIDERS` chain (e.g. `openai,llama_cpp`) tried on provider errors; `/ai/*` responses carry an `X-AI-Provider` header and `/ai/health` reports every configured provider. Local-only deployments should leave the chain empty so prompts never leave the host
+- **Provider Fallback (M8) / GPT-4 & Claude (F3)**: choose `llama_cpp`, `openai` (GPT-4 presets in Settings), or `anthropic` (Claude) as the primary provider; an optional ordered `AI_FALLBACK_PROVIDERS` chain (e.g. `openai,anthropic,llama_cpp`) is tried on provider errors. LLM-backed `/ai/*` responses carry an `X-AI-Provider` header and `/ai/health` reports every configured provider. Local-only deployments should leave the chain empty so prompts never leave the host
 
 ### Security
 - **SSRF Protection**: Blocks private/loopback IPs in API calls
@@ -222,7 +222,7 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 - **Backend**: Python 3.11+ (developed and tested on 3.13), FastAPI, SQLAlchemy 2.0 (async), Alembic
 - **Frontend**: React 18, TypeScript, React Flow, TanStack Query
 - **Database**: PostgreSQL 15 only (production and tests; tests use an auto-created `workflow_db_test`). No SQLite fallback exists.
-- **AI**: Optional LLM backend. Run locally with `llama.cpp` (no API key) or point at any OpenAI-compatible endpoint (e.g. OpenAI cloud) via the configurable `AI_PROVIDER`; set `OPENAI_API_KEY` to use the cloud provider. Optional `AI_FALLBACK_PROVIDERS` adds automatic failover without changing callers.
+- **AI**: Optional LLM backend. Run locally with `llama.cpp` (no API key), or use `openai` (GPT-4 presets in Settings) / `anthropic` (Claude) via the configurable `AI_PROVIDER` with the matching API key. Optional `AI_FALLBACK_PROVIDERS` adds automatic failover without changing callers.
 - **Email**: SMTP (optional, for admin notices + workflow emails)
 - **Testing**: pytest, pytest-asyncio, Puppeteer, Docker Compose
 
@@ -577,6 +577,11 @@ AI_PROVIDER=llama_cpp
 AI_FALLBACK_PROVIDERS=
 LLAMA_CPP_URL=http://localhost:8081
 LLAMA_CPP_MODEL=default
+# Cloud alternatives (GPT-4 or Claude); see .env.example
+# OPENAI_API_KEY=
+# OPENAI_MODEL=gpt-4o
+# ANTHROPIC_API_KEY=
+# ANTHROPIC_MODEL=claude-sonnet-5-5
 ```
 
 See `.env.example` for the full list.

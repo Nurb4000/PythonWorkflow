@@ -73,11 +73,11 @@ user's tenant.
 - **M8 — Automatic LLM provider fallback** (`AI_FALLBACK_PROVIDERS` + `X-AI-Provider` attribution)
 - **M7 — Mobile-responsive admin UI** (media-scoped CSS + phone-viewport E2E check)
 
-### Future Enhancements
-- Advanced reporting (charts, dashboards)
-- Performance optimization
-- Additional AI models (GPT-4, Claude)
+### Planned Work Items (converted from Future Enhancements)
+- **F1 — Advanced reporting (charts, dashboards)** — *Complete*. `ReportBuilder` now runs saved reports in place and renders dependency-free SVG bar/line/donut charts with label/value selection and row aggregation; no new dependencies or schema changes. Dashboard-card embedding and scheduled delivery remain out of scope.
+- **F2 — Performance optimization** — *In progress*. Audit identified three bounded hotspots; first fix ships `run_email_in_executor` so SMTP admin notices no longer block the event loop in the workflow engine or scheduler. Remaining candidates: KB admin/export N+1 group loading and the non-admin workflow-list full scan. Index additions and engine commit batching are deliberately deferred as higher-risk schema/semantics changes.
+- **F3 — Additional AI models (GPT-4, Claude)** — *Complete*. Settings now offers GPT-4 model presets and an `anthropic` provider using the existing httpx dependency; Claude has full M8 parity (settings/key masking, fallback chain, `X-AI-Provider` attribution, and config-only health).
 
 ---
 
-*All planned items complete. Ready for team review and production deployment.*
+*F1 and F3 complete; F2 in progress (first hotspot fixed). Ready for team review after the remaining F2 hotspots land.*

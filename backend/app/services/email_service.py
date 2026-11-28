@@ -10,6 +10,7 @@ Every send attempt returns stage-level diagnostics instead of swallowing
 errors, so misconfiguration is diagnosable from the UI (Settings →
 "Send Test Email") rather than only from container logs.
 """
+import asyncio
 import logging
 import smtplib
 from datetime import datetime
@@ -150,6 +151,23 @@ def notify_admin(subject: str, body: str) -> bool:
         return False
     msg = _build_msg(settings.smtp_from, settings.admin_notify_email, subject, body)
     return _send(msg)
+
+
+async def run_email_in_executor(send, *args) -> bool:
+    """Run a blocking email sender off the event loop (F2).
+
+    ``smtplib`` blocks on connect/TLS/login/send (up to 10s per stage). Async
+    workflow and scheduler paths must not stall every other request while an
+    admin notice is delivered. The sender is passed in (rather than looked up)
+    so callers' runtime overrides/tests keep taking effect. Best effort: never
+    raises, matching ``notify_admin``.
+    """
+    try:
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, send, *args)
+    except Exception:
+        logger.exception("Best-effort email notice failed")
+        return False
 
 
 def send_email(

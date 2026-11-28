@@ -235,8 +235,9 @@ async def ai_health():
     """Check AI service health for the configured provider chain (M8).
 
     The old endpoint always probed llama.cpp even when OpenAI was selected. It
-    now reports each configured provider: llama.cpp is probed at /health, and
-    OpenAI is checked by local configuration only (no paid probe request).
+    now reports each configured provider: llama.cpp is probed at /health, while
+    OpenAI and Anthropic Claude are checked by local configuration only (no
+    paid probe request).
     """
     import httpx
 
@@ -248,6 +249,12 @@ async def ai_health():
             providers[name] = {
                 "status": "configured" if configured else "not_configured",
                 "model": app_settings.openai_model,
+            }
+        elif name == "anthropic":
+            configured = bool(app_settings.anthropic_api_key)
+            providers[name] = {
+                "status": "configured" if configured else "not_configured",
+                "model": app_settings.anthropic_model,
             }
         else:
             try:

@@ -29,6 +29,9 @@ interface Settings {
   openai_api_key: string
   openai_model: string
   openai_base_url: string
+  anthropic_api_key: string
+  anthropic_model: string
+  anthropic_base_url: string
   ai_provider: string
   ai_fallback_providers: string
   ldap_server_url: string
@@ -64,8 +67,11 @@ export const SettingsPage: React.FC = () => {
     llama_cpp_url: '',
     llama_cpp_model: 'default',
     openai_api_key: '',
-    openai_model: 'gpt-3.5-turbo',
+    openai_model: 'gpt-4o',
     openai_base_url: 'https://api.openai.com/v1',
+    anthropic_api_key: '',
+    anthropic_model: 'claude-sonnet-5-5',
+    anthropic_base_url: 'https://api.anthropic.com/v1',
     ai_provider: 'llama_cpp',
     ai_fallback_providers: '',
     ldap_server_url: '',
@@ -351,7 +357,11 @@ export const SettingsPage: React.FC = () => {
             openai_api_key: settings.openai_api_key && settings.openai_api_key !== '***'
               ? settings.openai_api_key : '',
             openai_model: settings.openai_model,
-            openai_base_url: settings.openai_base_url
+            openai_base_url: settings.openai_base_url,
+            anthropic_api_key: settings.anthropic_api_key && settings.anthropic_api_key !== '***'
+              ? settings.anthropic_api_key : '',
+            anthropic_model: settings.anthropic_model,
+            anthropic_base_url: settings.anthropic_base_url
           },
           headers: { Authorization: `Bearer ${token}` }
         }
@@ -642,7 +652,8 @@ export const SettingsPage: React.FC = () => {
               onChange={(e) => setSettings({...settings, ai_provider: e.target.value})}
             >
               <option value="llama_cpp">llama.cpp (local)</option>
-              <option value="openai">OpenAI (cloud)</option>
+              <option value="openai">OpenAI / GPT-4 (cloud)</option>
+              <option value="anthropic">Anthropic Claude (cloud)</option>
             </select>
           </div>
 
@@ -653,10 +664,10 @@ export const SettingsPage: React.FC = () => {
               className="form-input"
               value={settings.ai_fallback_providers || ''}
               onChange={(e) => setSettings({...settings, ai_fallback_providers: e.target.value})}
-              placeholder="openai,llama_cpp"
+              placeholder="openai,anthropic,llama_cpp"
             />
             <small style={{ color: '#7f8c8d' }}>
-              Comma-separated order tried when the primary provider fails. Leave empty for single-provider behavior.
+              Comma-separated order (llama_cpp, openai, anthropic) tried when the primary fails. Leave empty for single-provider behavior.
             </small>
           </div>
 
@@ -698,14 +709,24 @@ export const SettingsPage: React.FC = () => {
                 />
               </div>
               <div className="form-group">
-                <label className="form-label">Model</label>
+                <label className="form-label">Model (GPT-4 presets available)</label>
                 <input
                   type="text"
                   className="form-input"
+                  list="openai-model-presets"
                   value={settings.openai_model}
                   onChange={(e) => setSettings({...settings, openai_model: e.target.value})}
-                  placeholder="gpt-3.5-turbo"
+                  placeholder="gpt-4o"
                 />
+                <datalist id="openai-model-presets">
+                  <option value="gpt-4o" />
+                  <option value="gpt-4.1" />
+                  <option value="gpt-4-turbo" />
+                  <option value="gpt-3.5-turbo" />
+                </datalist>
+                <small style={{ color: '#7f8c8d' }}>
+                  Any OpenAI-compatible model ID works; presets are suggestions only.
+                </small>
               </div>
               <div className="form-group">
                 <label className="form-label">Base URL</label>
@@ -715,6 +736,47 @@ export const SettingsPage: React.FC = () => {
                   value={settings.openai_base_url}
                   onChange={(e) => setSettings({...settings, openai_base_url: e.target.value})}
                   placeholder="https://api.openai.com/v1"
+                />
+              </div>
+            </>
+          )}
+
+          {settings.ai_provider === 'anthropic' && (
+            <>
+              <div className="form-group">
+                <label className="form-label">Anthropic API Key</label>
+                <input
+                  type="password"
+                  className="form-input"
+                  value={settings.anthropic_api_key}
+                  onChange={(e) => setSettings({...settings, anthropic_api_key: e.target.value})}
+                  placeholder="sk-ant-..."
+                />
+              </div>
+              <div className="form-group">
+                <label className="form-label">Model (Claude presets available)</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  list="anthropic-model-presets"
+                  value={settings.anthropic_model}
+                  onChange={(e) => setSettings({...settings, anthropic_model: e.target.value})}
+                  placeholder="claude-sonnet-5-5"
+                />
+                <datalist id="anthropic-model-presets">
+                  <option value="claude-sonnet-5-5" />
+                  <option value="claude-opus-5-5" />
+                  <option value="claude-haiku-5-5" />
+                </datalist>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Base URL</label>
+                <input
+                  type="text"
+                  className="form-input"
+                  value={settings.anthropic_base_url}
+                  onChange={(e) => setSettings({...settings, anthropic_base_url: e.target.value})}
+                  placeholder="https://api.anthropic.com/v1"
                 />
               </div>
             </>

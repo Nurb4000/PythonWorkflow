@@ -132,21 +132,17 @@ Questions? Contact admin@example.com.
 
 ---
 
-## Dashboard Cards
+## Run & Visualize (F1)
 
-Embed reports as cards on the Admin Dashboard.
+From **Admin → Report Builder**, use **Run** on any saved report to execute it and
+render the result immediately in the same page.
 
-**Steps:**
-1. Admin → Dashboard → Edit Layout
-2. Click **+ Add Card**
-3. Select report
-4. Configure display (table, chart, KPI)
-5. Save
+- Choose **Bar**, **Line**, or **Donut**; charts are plain SVG, so no chart library is required.
+- Pick a **Label** column and a **Value** column, or leave **Value** on *Auto* to sum the first numeric column. *Count rows* groups by label without a numeric column.
+- Repeated labels are aggregated before charting. The first 50 raw rows remain available under **View raw rows**.
+- Execution uses the existing read-only report query; no report definition or database schema changes are needed.
 
-**Card Types:**
-- **Table:** Raw data rows
-- **Chart:** Bar, line, pie visualizations
-- **KPI:** Single metric with trend
+Dashboard-card embedding and scheduled delivery are not implemented yet; use the Report Builder results panel for charts today.
 
 ---
 
@@ -166,13 +162,14 @@ Embed reports as cards on the Admin Dashboard.
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| `GET` | `/reports` | List reports |
-| `POST` | `/reports` | Create report |
-| `PUT` | `/reports/{id}` | Update report |
-| `DELETE` | `/reports/{id}` | Delete report |
-| `POST` | `/reports/{id}/run` | Execute report manually |
-| `GET` | `/reports/{id}/export` | Export current results |
-| `POST` | `/reports/{id}/schedule` | Configure schedule |
+| `GET` | `/reports/` | List reports |
+| `GET` | `/reports/{id}` | Get a report definition |
+| `POST` | `/reports/` | Create report (admin) |
+| `PUT` | `/reports/{id}` | Update report (admin) |
+| `DELETE` | `/reports/{id}` | Delete report (admin) |
+| `POST` | `/reports/{id}/execute` | Execute report manually (used by Run & Visualize) |
+
+Scheduling and export are definition fields (`schedule_cron`, `export_format`) but have no dedicated endpoints yet.
 
 ---
 

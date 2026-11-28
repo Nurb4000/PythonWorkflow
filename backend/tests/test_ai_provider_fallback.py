@@ -34,6 +34,7 @@ def _restore_ai_settings():
     keys = (
         "ai_provider", "ai_fallback_providers", "openai_api_key",
         "openai_model", "openai_base_url", "llama_cpp_url",
+        "anthropic_api_key", "anthropic_model", "anthropic_base_url",
     )
     saved = {k: getattr(settings, k) for k in keys}
     reset_current_ai_provider()

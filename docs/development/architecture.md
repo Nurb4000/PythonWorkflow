@@ -11,7 +11,7 @@ Instant Workflow is a full-stack workflow automation platform with:
 
 - **Backend:** FastAPI (Python 3.11) + PostgreSQL
 - **Frontend:** React 18 + TypeScript
-- **AI:** llama.cpp (local) or OpenAI (cloud)
+- **AI:** llama.cpp (local), OpenAI (cloud, GPT-4 presets), or Anthropic Claude (cloud)
 - **Deployment:** Docker Compose
 
 ### Architecture Diagram
@@ -30,7 +30,7 @@ Instant Workflow is a full-stack workflow automation platform with:
 │                      Backend (FastAPI)                       │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
 │  │Workflow  │ │ Form     │ │ CMDB     │ │ AI Service   │   │
-│  │Engine    │ │ Service  │ │ Service  │ │ (llama/OpenAI)│   │
+│  │Engine    │ │ Service  │ │ Service  │ │ (3 providers)│   │
 │  └──────────┘ └──────────┘ └──────────┘ └──────────────┘   │
 │  ┌──────────┐ ┌──────────┐ ┌──────────┐ ┌──────────────┐   │
 │  │Scheduler│ │ Email    │ │ LDAP     │ │ Search       │   │
@@ -167,7 +167,7 @@ Frontend sends prompt to /ai/assist-node
     ↓
 Backend:
   - Loads relevant KB context
-  - Calls AI provider (llama.cpp or OpenAI)
+  - Calls AI provider (llama.cpp, OpenAI, or Anthropic Claude) with optional fallback
   - Parses response
   - Validates against step schema
     ↓
@@ -216,7 +216,8 @@ Flexible data stored as JSON:
 | Service | Purpose | Configuration |
 |---------|---------|---------------|
 | **llama.cpp** | Local AI inference | `LLAMA_CPP_URL`, `LLAMA_CPP_MODEL` |
-| **OpenAI** | Cloud AI inference | `OPENAI_API_KEY`, `OPENAI_MODEL` |
+| **OpenAI** | Cloud AI inference (GPT-4 presets) | `OPENAI_API_KEY`, `OPENAI_MODEL` |
+| **Anthropic** | Claude cloud inference | `ANTHROPIC_API_KEY`, `ANTHROPIC_MODEL` |
 | **SMTP** | Email delivery | `SMTP_HOST`, `SMTP_PORT`, etc. |
 | **LDAP** | User authentication | `LDAP_SERVER_URL`, etc. |
 

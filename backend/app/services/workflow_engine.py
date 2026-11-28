@@ -15,7 +15,7 @@ from app.core.database import async_session_factory
 from app.models.schemas import Workflow, WorkflowStep, WorkflowRun, StepInstance, Task
 from app.schemas.workflow import WorkflowCreate, WorkflowUpdate, WorkflowRunCreate
 from app.core.config import settings
-from app.services.email_service import notify_admin
+from app.services.email_service import notify_admin, run_email_in_executor
 from app.services.interpolation import ReferenceContext, interpolate, context_has_templates
 from app.services.retry_backoff import RetryPolicy, extract_retry_after
 from app.services.workflow_version_service import snapshot_workflow
@@ -554,7 +554,8 @@ class WorkflowEngine:
             run.completed_at = datetime.now(timezone.utc)
             await db.commit()
             
-            notify_admin(
+            await run_email_in_executor(
+                notify_admin,
                 f"Workflow run timed out: {run.id}",
                 f"Run {run.id} exceeded timeout of {run.timeout_seconds} seconds.\n"
                 f"Elapsed time: {elapsed:.1f} seconds\n"
@@ -730,7 +731,7 @@ class WorkflowEngine:
                     await db.commit()
                 except:
                     pass
-                notify_admin(f"Workflow run {run_id} failed", str(e))
+                await run_email_in_executor(notify_admin, f"Workflow run {run_id} failed", str(e))
                 # G4: also push the failure through configured external channels
                 # (email / Slack / signed webhook). Best-effort; never raises.
                 try:
@@ -875,7 +876,8 @@ class WorkflowEngine:
                 await self._execute_failure_hooks(db, run, instance, step, error_msg)
 
                 # Send admin notice
-                notify_admin(
+                await run_email_in_executor(
+                    notify_admin,
                     f"Step failed in workflow run {run.id}",
                     f"Step {instance.id} ({step.title or step.step_type}) failed after {max_retries + 1} attempts.\n"
                     f"Error: {error_msg}\n"
