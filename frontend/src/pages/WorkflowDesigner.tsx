@@ -76,6 +76,7 @@ const stepTypeToNodeType = (stepType: string): string => {
     loop: 'loop',
     transform: 'transform',
     try_catch: 'tryCatch',
+    join: 'join',
     sub_workflow: 'subWorkflow',
     readonly_form: 'readonlyForm',
     cmdb_lookup: 'cmdbLookup',
@@ -153,6 +154,9 @@ function getNodeStyle(stepType: string, instanceStatus?: string) {
     case 'tryCatch':
       style = { ...base, background: '#ffebee', border: '2px solid #c62828' }
       break
+    case 'join':
+      style = { ...base, background: '#e1f5fe', border: '2px solid #0277bd' }
+      break
     case 'subWorkflow':
       style = { ...base, background: '#edeaf1', border: '2px solid #6a1b9a' }
       break
@@ -218,6 +222,10 @@ function nodeLabel(stepType: string, data: any) {
       const t = Array.isArray(data.try_steps) ? data.try_steps.length : 0
       const c = Array.isArray(data.catch_steps) ? data.catch_steps.length : 0
       return `🛡️ Try/Catch (${t} try · ${c} catch)`
+    }
+    case 'join': {
+      const n = Array.isArray(data.sources) ? data.sources.length : 0
+      return `🧬 Join${n > 0 ? ` (${n} sources)` : ''} → ${data.output_key || 'joined'}`
     }
     case 'subWorkflow':
       return `🔗 Sub-Workflow: ${data.workflow_name || `#${data.workflow_id || 'selected'}`}${data.execution_mode === 'async' ? ' · async' : ''}`
@@ -395,6 +403,13 @@ const nodeTypes = {
       ? `${data.try_steps?.length || 0} try · ${data.catch_steps.length} catch`
       : 'Catch a failed subgraph',
     style: getNodeStyle('tryCatch', data.instanceStatus)
+  }),
+  join: ({ data }: any) => renderStepNode(data, {
+    icon: '🧬', title: 'Join',
+    subtitle: Array.isArray(data.sources) && data.sources.length
+      ? `${data.sources.length} branch source${data.sources.length === 1 ? '' : 's'} → ${data.output_key || 'joined'}`
+      : `Collect inputs → ${data.output_key || 'joined'}`,
+    style: getNodeStyle('join', data.instanceStatus)
   }),
   subWorkflow: ({ data }: any) => renderStepNode(data, {
     icon: '🔗', title: 'Sub-Workflow',
@@ -2837,6 +2852,73 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
               </div>
             </>
           )
+        case 'join':
+          return (
+            <>
+              <div className="form-group">
+                <label className="form-label">Branch Sources (JSON array)</label>
+                <textarea className="form-textarea" rows={6}
+                  value={JSON.stringify(editingDef.sources || [], null, 2)}
+                  onChange={(e) => {
+                    try { handleUpdateStepField('sources', JSON.parse(e.target.value)) }
+                    catch { /* keep last valid JSON while typing */ }
+                  }}
+                  placeholder={'[{"step_id": 12, "as": "validation"}, {"key": "manual", "as": "manual"}]'} />
+                <small style={{ color: '#666' }}>
+                  Collects fan-in branch outputs. Wire the branches to this node with normal graph edges;
+                  sources only select and alias the outputs.
+                </small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Add source</label>
+                <div style={{ display: 'flex', gap: '0.5rem', flexWrap: 'wrap' }}>
+                  <select id="join-source-step" className="form-select" style={{ flex: 1, minWidth: '160px' }} defaultValue="">
+                    <option value="">— Select upstream step —</option>
+                    {draftSteps
+                      ?.filter((s: any) => s.id !== selectedStep.id)
+                      .map((s: any) => (
+                        <option key={s.id} value={s.id}>
+                          [{s.id}] {s.title || s.step_type}
+                        </option>
+                      ))}
+                  </select>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    const el = document.getElementById('join-source-step') as HTMLSelectElement | null
+                    if (!el?.value) return
+                    const id = Number(el.value)
+                    handleUpdateStepField('sources', [...(editingDef.sources || []), { step_id: id, as: `step_${id}` }])
+                    el.value = ''
+                  }}>+ Step output</button>
+                  <button className="btn btn-sm btn-secondary" onClick={() => {
+                    handleUpdateStepField('sources', [...(editingDef.sources || []), { key: '', as: '' }])
+                  }}>+ $input key</button>
+                </div>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Output Key</label>
+                <input className="form-input" type="text" value={editingDef.output_key || 'joined'}
+                  onChange={(e) => handleUpdateStepField('output_key', e.target.value || 'joined')}
+                  placeholder="joined" />
+                <small style={{ color: '#666' }}>Downstream steps read the aggregate as <code>$input.joined</code> (or your custom key).</small>
+              </div>
+              <div className="form-group">
+                <label className="form-label">Missing sources</label>
+                <select className="form-select" value={editingDef.missing || 'error'}
+                  onChange={(e) => handleUpdateStepField('missing', e.target.value)}>
+                  <option value="error">Fail the join (default)</option>
+                  <option value="skip">Skip missing sources</option>
+                </select>
+              </div>
+              <div className="form-group">
+                <label style={{ display: 'flex', alignItems: 'center', gap: '0.5rem' }}>
+                  <input type="checkbox" checked={editingDef.include_input !== false}
+                    onChange={(e) => handleUpdateStepField('include_input', e.target.checked)} />
+                  Also include existing $input fields
+                </label>
+                <small style={{ color: '#666' }}>Automatically enabled when no sources are declared.</small>
+              </div>
+            </>
+          )
         case 'sub_workflow':
           return (
              <>
@@ -3224,6 +3306,10 @@ export const WorkflowDesigner: React.FC<WorkflowDesignerProps> = ({
              })} style={{ background: '#4527a0' }}>
                🔁 Loop
              </button>
+              <button className="btn btn-primary" onClick={() => handleAddStep('join', { sources: [], output_key: 'joined', missing: 'error' })}
+                style={{ background: '#0277bd' }}>
+                🧬 Join
+              </button>
               <button className="btn btn-primary" onClick={() => handleAddStep('sub_workflow', { workflow_id: null, input_data: {}, execution_mode: 'sync', timeout_seconds: 300 })}
                 style={{ background: '#6a1b9a' }}>
                 🔗 Sub-Workflow

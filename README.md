@@ -42,7 +42,8 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 ### Core Engine
 - **Visual Workflow Designer**: Drag-and-drop interface with graph-mode execution
 - **Condition Routing**: Model B condition steps with per-route expressions and default targets
-- **Graph Traversal**: Fan-out/fan-in graph execution with a visited set so each step runs at most once per run (DAG semantics). Branches traverse depth-first/sequentially; concurrent parallel branches with true fan-in synchronization are planned (see Next Steps)
+- **Graph Traversal**: Fan-out/fan-in graph execution with a visited set so each step runs at most once per run (DAG semantics). Branches traverse depth-first/sequentially; converging steps wait for all static predecessors before running
+- **Workflow Join (M9)**: `join` nodes collect fan-in branch outputs into one aliased object (`$input.joined`) for downstream steps, with deterministic source selection by step id or `$input` key
 - **State Machine**: Runs track status (pending/running/completed/failed/waiting/timeout/cancelled)
 - **Resume Support**: Human-task pauses allow workflow resumption without re-execution
 - **Timeout & Retries**: Configurable run timeouts and per-step retry logic
@@ -50,7 +51,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Conditional Error Handling (M6)**: `on_failure_target_step_id` routes a failed step to a handler instead of failing the run (optional `on_failure_filter`, e.g. `data['error_type'] == 'ValueError'`), and the `try_catch` node wraps a group of nested steps with a catch subgraph and local compensation
 - **Async Sub-Workflow Handoff (G8)**: `sub_workflow` steps support `execution_mode: "async"` for fire-and-forget background jobs; the step returns the child run id immediately and does not wait for — or propagate — the child's outcome (sync remains the default)
 
-### Executors (19 types)
+### Executors (20 types)
 | Type | Description |
 |------|-------------|
 | `api_call` | HTTP requests with SSRF protection |
@@ -72,6 +73,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 | `loop` | Iterate a collection over a nested step |
 | `transform` | Rename / map / merge / join structured data |
 | `try_catch` | Try/catch boundary around nested steps with optional filtering and compensation |
+| `join` | Collect and alias workflow-level fan-in branch outputs (M9) |
 
 ### Human-in-the-Loop
 - **Task System**: Open → Owned → Completed → Closed lifecycle
@@ -85,6 +87,7 @@ A production-ready workflow automation platform with visual designer, AI-assiste
 - **Form Designer AI**: Suggest fields from a description with per-field accept/reject
 - **Error Diagnosis**: Explain run/step failures with root cause, suggested fixes, corrected config
 - **Hybrid KB Steering**: domain-specific knowledge-base files loaded per feature
+- **Provider Fallback (M8)**: optional ordered `AI_FALLBACK_PROVIDERS` chain (e.g. `openai,llama_cpp`) tried on provider errors; `/ai/*` responses carry an `X-AI-Provider` header and `/ai/health` reports every configured provider. Local-only deployments should leave the chain empty so prompts never leave the host
 
 ### Security
 - **SSRF Protection**: Blocks private/loopback IPs in API calls
@@ -206,9 +209,12 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 - **Form Uploads**: Manage uploaded form files (`GET /admin/form-uploads`)
 - **Webhook Logs**: Inspect incoming invocations and outgoing delivery attempts/retries (`GET /admin/webhook-logs`, `/admin/webhook-logs/stats`)
 
+### Mobile Admin UI (M7)
+- Admin dashboards, runs/tasks tables, modals, and toolbars adapt to phone widths (collapsible nav, scrollable table wrappers, tappable controls). Desktop layouts and behavior are unchanged. An optional CDP smoke check runs at 390×844 (`tests/e2e/mobile-responsive.js`).
+
 ### Testing
 - **Backend**: 570+ tests (pytest + asyncio) against a dedicated PostgreSQL test database — covering marketplace, engine-behavior regressions, run inspection, and the security-findings regression suite.
-- **E2E**: 18 steps across Puppeteer + Chromium headless (CDP-driven) smoke/regression scripts
+- **E2E**: Puppeteer + Chromium headless (CDP-driven) smoke/regression scripts, including a mobile-viewport responsive check (`tests/e2e/mobile-responsive.js`)
 - **Regression Net**: Pins current behavior before refactors
 
 ## Tech Stack
@@ -216,7 +222,7 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 - **Backend**: Python 3.11+ (developed and tested on 3.13), FastAPI, SQLAlchemy 2.0 (async), Alembic
 - **Frontend**: React 18, TypeScript, React Flow, TanStack Query
 - **Database**: PostgreSQL 15 only (production and tests; tests use an auto-created `workflow_db_test`). No SQLite fallback exists.
-- **AI**: Optional LLM backend. Run locally with `llama.cpp` (no API key) or point at any OpenAI-compatible endpoint (e.g. OpenAI cloud) via the configurable `AI_PROVIDER`; set `OPENAI_API_KEY` to use the cloud provider.
+- **AI**: Optional LLM backend. Run locally with `llama.cpp` (no API key) or point at any OpenAI-compatible endpoint (e.g. OpenAI cloud) via the configurable `AI_PROVIDER`; set `OPENAI_API_KEY` to use the cloud provider. Optional `AI_FALLBACK_PROVIDERS` adds automatic failover without changing callers.
 - **Email**: SMTP (optional, for admin notices + workflow emails)
 - **Testing**: pytest, pytest-asyncio, Puppeteer, Docker Compose
 
@@ -567,6 +573,8 @@ ADMIN_NOTIFY_EMAIL=admin@example.com
 WEBHOOK_SECRET=your-secret-here
 
 # AI service (optional)
+AI_PROVIDER=llama_cpp
+AI_FALLBACK_PROVIDERS=
 LLAMA_CPP_URL=http://localhost:8081
 LLAMA_CPP_MODEL=default
 ```

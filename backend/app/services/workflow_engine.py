@@ -121,6 +121,7 @@ class WorkflowEngine:
             LoopExecutor,
             TransformExecutor,
             TryCatchExecutor,
+            JoinExecutor,
         )
 
         self.step_executors = {
@@ -143,6 +144,7 @@ class WorkflowEngine:
             "loop": LoopExecutor(),  # M1: iterate a collection over an inner step
             "transform": TransformExecutor(),  # M2: data transform / map / merge node
             "try_catch": TryCatchExecutor(),  # M6: try/catch boundary over nested steps
+            "join": JoinExecutor(),  # M9: collect/alias fan-in branch outputs
         }
     
     def validate_input_refs(self, steps: List[Dict[str, Any]], entry_form_schema: Optional[Dict] = None) -> List[str]:

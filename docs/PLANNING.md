@@ -67,9 +67,13 @@ Next: tenant provisioning API (`app/api/tenancy.py`) and endpoint-level scoping 
 - Production deployment preparation
 - User acceptance testing
 
+### Recently completed
+- **M9 — Workflow-level join / fan-in aggregation** (`join` executor + designer node)
+- **M8 — Automatic LLM provider fallback** (`AI_FALLBACK_PROVIDERS` + `X-AI-Provider` attribution)
+- **M7 — Mobile-responsive admin UI** (media-scoped CSS + phone-viewport E2E check)
+
 ### Future Enhancements
 - Advanced reporting (charts, dashboards)
-- Mobile-responsive admin UI
 - Performance optimization
 - Additional AI models (GPT-4, Claude)
 

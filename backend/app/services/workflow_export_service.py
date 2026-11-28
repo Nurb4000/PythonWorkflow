@@ -159,6 +159,19 @@ class WorkflowExportService:
                 elif field == "assigned_to_user_id":
                     remapped[field] = id_map["user"].get(val, str(val))
 
+        # M9: join sources reference step ids too; remap them alongside edges so
+        # exported/imported workflows keep their branch aliases connected.
+        sources = remapped.get("sources")
+        if isinstance(sources, list):
+            remapped_sources = []
+            for src in sources:
+                item = dict(src) if isinstance(src, dict) else src
+                if isinstance(item, dict) and item.get("step_id") is not None:
+                    val = item["step_id"]
+                    item["step_id"] = id_map["step"].get(val, str(val))
+                remapped_sources.append(item)
+            remapped["sources"] = remapped_sources
+
         return remapped
 
     def _to_xml(self, workflow, steps, schedules, forms, groups, user_emails, id_map, include_forms, include_groups) -> Tuple[str, str]:

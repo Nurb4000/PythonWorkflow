@@ -24,6 +24,7 @@ export const TenantSwitcher: React.FC<TenantSwitcherProps> = ({ style }) => {
 
   return (
     <div
+      className="tenant-switcher"
       style={{
         display: 'flex',
         alignItems: 'center',

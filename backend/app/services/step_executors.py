@@ -1271,6 +1271,186 @@ class TransformExecutor(BaseExecutor):
         return value
 
 
+class JoinExecutor(BaseExecutor):
+    """Workflow-level output aggregation / join node (M9).
+
+    Unlike ``TransformExecutor``'s data-level ``join`` operation, this node
+    collects *branch outputs* from a fan-in and publishes one deterministic,
+    aliased object for downstream steps.
+
+    Definition::
+
+        {
+          "sources": [
+            {"step_id": 12, "as": "validation"},
+            {"step_id": 13, "as": "enrichment"},
+            {"key": "manual_input", "as": "manual"}
+          ],
+          "output_key": "joined",
+          "include_input": false,
+          "missing": "error"
+        }
+
+    * ``step_id`` sources read the latest completed/skipped ``StepInstance`` for
+      the current run from the database (the engine injects ``_workflow_run_id``).
+      Real graph edges must still wire the branches into this step — source
+      declarations only select and alias outputs, they do not create edges.
+    * ``key`` sources read an already-flat ``$input`` key. Useful when a branch
+      published a value directly into run state and for unit testing.
+    * ``as`` gives each source a stable alias, avoiding collisions when branches
+      both emit keys like ``rows``. With no ``sources``, all non-meta input keys
+      are collected under ``output_key``.
+    * ``include_input`` defaults to false when sources are declared and true
+      otherwise. ``missing: "skip"`` omits absent sources; the default fails
+      closed so a broken join is visible instead of silently producing partial data.
+
+    Read-only: the default ``BaseExecutor.compensate`` no-op is correct.
+    """
+
+    META_KEYS = {"_workflow_run_id", "_workflow_step_id"}
+
+    async def execute(self, input_data: Dict[str, Any], step_definition: Dict[str, Any], db: Optional[AsyncSession] = None) -> Dict[str, Any]:
+        sources = step_definition.get("sources") or []
+        if not isinstance(sources, list):
+            raise ValueError("Join 'sources' must be a list")
+
+        raw_output_key = step_definition.get("output_key")
+        output_key = "joined" if raw_output_key is None else raw_output_key
+        if not isinstance(output_key, str) or not output_key.strip():
+            raise ValueError("Join 'output_key' must be a non-empty string")
+
+        missing_policy = str(step_definition.get("missing", "error")).lower()
+        if missing_policy not in ("error", "skip"):
+            raise ValueError("Join 'missing' must be 'error' or 'skip'")
+
+        include_input = step_definition.get(
+            "include_input", not bool(sources)
+        )
+        joined = {
+            k: v for k, v in (input_data or {}).items() if k not in self.META_KEYS
+        } if include_input else {}
+
+        resolved = []
+        missing = []
+        # Validate every source before any I/O so a bad definition fails with a
+        # precise message even when it contains a step_id source.
+        parsed = [self._parse_source(source, index) for index, source in enumerate(sources)]
+        db_outputs = await self._load_step_outputs(sources, input_data, db) if any(
+            step_id is not None for step_id, _, _ in parsed
+        ) else {}
+
+        for step_id, key, alias in parsed:
+            value = None
+            found = False
+
+            if step_id is not None:
+                key = ("step_id", step_id)
+                if key in db_outputs:
+                    value = db_outputs[key]
+                    found = True
+            elif key is not None:
+                found = key in (input_data or {})
+                if found:
+                    value = (input_data or {})[key]
+
+            if not found:
+                if missing_policy == "error":
+                    raise ValueError(
+                        f"Join source {step_id if step_id is not None else key!r} "
+                        "has no completed output in this run"
+                    )
+                missing.append(str(step_id if step_id is not None else key))
+                continue
+
+            alias = alias or str(step_id if step_id is not None else key)
+            if isinstance(value, dict):
+                TransformExecutor._deep_merge(joined.setdefault(alias, {}), value)
+            else:
+                joined[alias] = value
+            resolved.append({
+                "step_id": step_id,
+                "key": key if step_id is None else None,
+                "as": alias,
+                "status": "resolved",
+            })
+
+        if not sources:
+            for key, value in (input_data or {}).items():
+                if key not in self.META_KEYS:
+                    joined[key] = value
+
+        return {
+            output_key: joined,
+            "sources": resolved,
+            "source_count": len(resolved),
+            "missing_sources": missing,
+            "executed_at": datetime.utcnow().isoformat(),
+        }
+
+    def _parse_source(self, source: Any, index: int):
+        """Return ``(step_id, input_key, alias)`` for one source declaration."""
+        if isinstance(source, dict):
+            step_id = source.get("step_id")
+            key = source.get("key")
+            alias = source.get("as")
+        else:
+            step_id = None
+            key = source
+            alias = None
+
+        if step_id is not None:
+            try:
+                step_id = int(step_id)
+            except (TypeError, ValueError) as e:
+                raise ValueError(f"Join source #{index} has invalid step_id: {step_id!r}") from e
+        elif key is None or not str(key):
+            raise ValueError(f"Join source #{index} needs a 'step_id' or 'key'")
+
+        if alias is not None and (not isinstance(alias, str) or not alias.strip()):
+            raise ValueError(f"Join source #{index} has an invalid alias: {alias!r}")
+        return step_id, key, alias
+
+    async def _load_step_outputs(self, sources, input_data: Dict[str, Any], db):
+        """Fetch latest completed/skipped outputs for all step_id sources at once."""
+        if db is None:
+            raise ValueError(
+                "Join sources with 'step_id' require a database session "
+                "(use 'key' sources for flat $input values)"
+            )
+        run_id = input_data.get("_workflow_run_id")
+        if run_id is None:
+            raise ValueError("Join 'step_id' sources require the current workflow run id")
+
+        step_ids = []
+        for source in sources:
+            if isinstance(source, dict) and source.get("step_id") is not None:
+                try:
+                    step_ids.append(int(source["step_id"]))
+                except (TypeError, ValueError):
+                    continue
+        if not step_ids:
+            return {}
+
+        from app.models.schemas import StepInstance  # local import avoids engine cycles
+
+        stmt = (
+            select(StepInstance)
+            .where(
+                StepInstance.workflow_run_id == run_id,
+                StepInstance.step_id.in_(step_ids),
+                StepInstance.status.in_(["completed", "skipped"]),
+            )
+            .order_by(StepInstance.id.desc())
+        )
+        result = await db.execute(stmt)
+        outputs = {}
+        for instance in result.scalars().all():
+            marker = ("step_id", instance.step_id)
+            if marker not in outputs:  # first row is the latest attempt
+                outputs[marker] = dict(instance.output_data or {})
+        return outputs
+
+
 class ReportExecutor(BaseExecutor):
     """Render read-only report (P5.3), including SQL query execution.
 

@@ -4,12 +4,71 @@ Supports llama.cpp (local) and OpenAI (cloud) providers.
 """
 import json
 import logging
+from contextvars import ContextVar
 from typing import Dict, Any, Optional, List
 import httpx
 from app.api.system_settings import settings as system_settings
 from app.core.config import resolve_project_root
 
 logger = logging.getLogger(__name__)
+
+# M8: supported provider names and request-local attribution of the provider
+# that actually answered. A ContextVar is used because ``ai_service`` is a
+# singleton shared by every request/background task.
+AI_PROVIDERS = ("llama_cpp", "openai")
+current_ai_provider: ContextVar[Optional[str]] = ContextVar(
+    "current_ai_provider", default=None
+)
+
+
+def get_current_ai_provider() -> Optional[str]:
+    """Provider that served the most recent AI call in this context, if any."""
+    return current_ai_provider.get()
+
+
+def reset_current_ai_provider() -> None:
+    """Clear provider attribution at the start of a request."""
+    current_ai_provider.set(None)
+
+
+def ai_provider_chain() -> List[str]:
+    """Return the ordered, de-duplicated provider chain (primary first).
+
+    ``AI_FALLBACK_PROVIDERS`` accepts a comma-separated string (env-friendly) or
+    a JSON list. Unknown/duplicate names are ignored with a warning rather than
+    breaking the whole AI surface. An empty setting returns just the primary,
+    preserving pre-M8 behavior and error messages exactly.
+    """
+    primary = str(getattr(system_settings, "ai_provider", "llama_cpp") or "llama_cpp")
+    if primary not in AI_PROVIDERS:
+        logger.warning("Unknown AI provider %r; falling back to llama_cpp", primary)
+        primary = "llama_cpp"
+
+    raw = getattr(system_settings, "ai_fallback_providers", "") or ""
+    fallbacks = []
+    if isinstance(raw, str):
+        text = raw.strip()
+        if text.startswith("["):
+            try:
+                parsed = json.loads(text)
+                fallbacks = parsed if isinstance(parsed, list) else []
+            except json.JSONDecodeError:
+                logger.warning("Invalid AI_FALLBACK_PROVIDERS JSON: %r", raw)
+        elif text:
+            fallbacks = [p.strip() for p in text.split(",")]
+    elif isinstance(raw, (list, tuple)):
+        fallbacks = list(raw)
+
+    chain = [primary]
+    for name in fallbacks:
+        name = str(name).strip()
+        if not name or name not in AI_PROVIDERS:
+            if name:
+                logger.warning("Ignoring unknown fallback AI provider %r", name)
+            continue
+        if name not in chain:
+            chain.append(name)
+    return chain
 
 
 class AIService:
@@ -804,11 +863,37 @@ Rules:
                 raise ValueError(f"OpenAI error: {str(e)}")
 
     async def _call_ai(self, prompt: str) -> str:
-        """Call AI service based on configured provider"""
-        if system_settings.ai_provider == "openai":
-            return await self._call_openai(prompt)
-        else:
-            return await self._call_llama_cpp(prompt)
+        """Call the configured provider, then fallbacks on failure (M8).
+
+        With no fallbacks configured this is exactly the old dispatch: one call,
+        one unchanged exception on failure. When a chain is configured, each
+        failure is logged and the next provider tries the same prompt; if all
+        fail, a ``ValueError`` lists them in order (never API keys/tokens).
+        """
+        chain = ai_provider_chain()
+        current_ai_provider.set(None)
+        errors = []
+        for index, provider in enumerate(chain):
+            call = self._call_openai if provider == "openai" else self._call_llama_cpp
+            try:
+                text = await call(prompt)
+            except Exception as e:
+                errors.append(f"{provider}: {e}")
+                if index == len(chain) - 1:
+                    if len(chain) == 1:
+                        raise  # preserve the original error message/type verbatim
+                    raise ValueError(
+                        "All AI providers failed: " + "; ".join(errors)
+                    ) from e
+                logger.warning(
+                    "AI provider %s failed (%s); trying fallback %s",
+                    provider, e, chain[index + 1],
+                )
+                continue
+            current_ai_provider.set(provider)
+            return text
+        # Unreachable (chain is never empty), but keeps the contract explicit.
+        raise ValueError("No AI provider configured")
 
     def _parse_response(self, response_text: str) -> Dict[str, Any]:
         """Parse AI response into structured data"""

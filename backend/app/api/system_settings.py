@@ -3,6 +3,7 @@ Settings API endpoints for system configuration
 """
 import os
 import email
+import json
 
 from fastapi import APIRouter, HTTPException, Depends, UploadFile, File as FileParam, Request
 from fastapi.responses import FileResponse
@@ -55,6 +56,33 @@ async def set_setting(db: AsyncSession, key: str, value: str) -> None:
 
 
 DEFAULT_SYSTEM_NAME = "Instant Workflow"
+
+VALID_AI_PROVIDERS = ("llama_cpp", "openai")
+
+
+def parse_fallback_providers(raw: str) -> str:
+    """Normalize a comma/JSON-list fallback chain; raise ValueError on bad names."""
+    if not raw:
+        return ""
+    if isinstance(raw, str) and raw.strip().startswith("["):
+        try:
+            names = json.loads(raw)
+        except json.JSONDecodeError as e:
+            raise ValueError(f"Invalid fallback provider list: {e}") from e
+    else:
+        names = [p.strip() for p in str(raw).split(",")]
+    if not isinstance(names, list):
+        raise ValueError("Fallback providers must be a list")
+    cleaned = []
+    for name in names:
+        name = str(name).strip()
+        if not name:
+            continue
+        if name not in VALID_AI_PROVIDERS:
+            raise ValueError(f"Invalid fallback provider: {name}")
+        if name not in cleaned:
+            cleaned.append(name)
+    return ",".join(cleaned)
 
 
 @router.get("/branding")
@@ -175,6 +203,7 @@ async def get_settings(
         "openai_model": settings.openai_model,
         "openai_base_url": settings.openai_base_url,
         "ai_provider": settings.ai_provider,
+        "ai_fallback_providers": settings.ai_fallback_providers,
         "smtp_host": settings.smtp_host,
         "smtp_port": settings.smtp_port,
         "smtp_username": settings.smtp_username,
@@ -208,23 +237,30 @@ async def update_ai_settings(
     openai_api_key: str = "",
     openai_model: str = "gpt-3.5-turbo",
     openai_base_url: str = "https://api.openai.com/v1",
+    ai_fallback_providers: str = "",
     current_user: User = Depends(get_current_user)
 ):
-    """Update AI provider settings (admin only)"""
+    """Update AI provider settings (admin only), including the M8 fallback chain."""
     if current_user.role != "admin":
         raise HTTPException(status_code=403, detail="Admin access required")
 
-    if ai_provider not in ["llama_cpp", "openai"]:
+    if ai_provider not in VALID_AI_PROVIDERS:
         raise HTTPException(status_code=400, detail="Invalid provider. Must be 'llama_cpp' or 'openai'")
+    try:
+        fallbacks = parse_fallback_providers(ai_fallback_providers)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
 
     settings.ai_provider = ai_provider
     if openai_api_key:
         settings.openai_api_key = openai_api_key
     settings.openai_model = openai_model
     settings.openai_base_url = openai_base_url
+    settings.ai_fallback_providers = fallbacks
 
     return {"message": "AI settings updated", "settings": {
         "ai_provider": settings.ai_provider,
+        "ai_fallback_providers": settings.ai_fallback_providers,
         "openai_model": settings.openai_model,
         "openai_base_url": settings.openai_base_url
     }}

@@ -202,6 +202,36 @@ Each step can return data:
 
 Data flows downstream via `$input.field_name`.
 
+### Workflow Join (M9)
+
+A `join` node collects the outputs of converging branches into one deterministic object.
+Wire the upstream branches to it with normal graph edges; the node's `sources` only select
+and alias outputs (they do not create edges).
+
+**Step Type:** `join`
+
+**Configuration:**
+```json
+{
+  "sources": [
+    {"step_id": 12, "as": "validation"},
+    {"step_id": 13, "as": "enrichment"},
+    {"key": "manual_input", "as": "manual"}
+  ],
+  "output_key": "joined",
+  "include_input": false,
+  "missing": "error"
+}
+```
+
+- `step_id` reads the latest completed/skipped output for that step in the current run;
+  `key` reads an already-flat `$input` key. `as` avoids collisions between branches that
+  both emit names like `rows`.
+- With no `sources`, every non-metadata `$input` field is collected under `output_key`
+  (`joined` by default). `include_input` defaults to true in that case and false otherwise.
+- `missing: "error"` (default) fails the join if a declared source has no output; use
+  `"skip"` to omit missing sources. Downstream steps read the aggregate as `$input.joined`.
+
 ---
 
 ## Execution Modes

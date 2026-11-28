@@ -587,7 +587,7 @@ const SLADashboardWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                  <div className="grid grid-2" style={{ marginTop: '1rem' }}>
                     {/* Response breakdown */}
                     <div className="card" style={{ padding: '1rem' }}>
                       <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Response SLA</h4>
@@ -734,7 +734,7 @@ const OLADashboardWidget: React.FC<{ daysProp: number }> = ({ daysProp }) => {
                     </div>
                   </div>
 
-                  <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem', marginTop: '1rem' }}>
+                  <div className="grid grid-2" style={{ marginTop: '1rem' }}>
                     <div className="card" style={{ padding: '1rem' }}>
                       <h4 style={{ margin: '0 0 0.75rem 0', fontSize: '0.95rem' }}>Pickup OLA</h4>
                       <div style={{ display: 'flex', flexDirection: 'column', gap: '0.4rem' }}>

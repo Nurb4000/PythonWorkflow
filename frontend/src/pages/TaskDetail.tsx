@@ -178,7 +178,7 @@ export const TaskDetail: React.FC = () => {
 
       <div className="card">
         <h3 className="card-title">Details</h3>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '1rem' }}>
+        <div className="grid grid-2">
           <div>
             <strong>Assigned To:</strong> {task.assigned_user?.full_name || task.assigned_user?.username || 'Unassigned'}
           </div>

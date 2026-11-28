@@ -63,7 +63,7 @@ export const DataMaintenanceConsole: React.FC = () => {
     <div style={{ padding: '1.5rem' }}>
       <h2 style={{ marginBottom: '1.5rem' }}>Data Maintenance Console</h2>
       
-      <div style={{ display: 'grid', gridTemplateColumns: '200px 1fr', gap: '2rem' }}>
+      <div className="grid grid-2 maintenance-layout" style={{ gap: '2rem' }}>
         {/* Table Selector */}
         <div>
           <h3 style={{ marginBottom: '1rem' }}>Tables</h3>

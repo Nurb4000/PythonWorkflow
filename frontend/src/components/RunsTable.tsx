@@ -46,13 +46,17 @@ export const RunsTable: React.FC<RunsTableProps> = ({
   }, [visible, storageKey])
 
   useEffect(() => {
-    const onClickOutside = (e: MouseEvent) => {
+    const onClickOutside = (e: Event) => {
       if (menuRef.current && !menuRef.current.contains(e.target as Node)) {
         setShowColMenu(false)
       }
     }
     document.addEventListener('mousedown', onClickOutside)
-    return () => document.removeEventListener('mousedown', onClickOutside)
+    document.addEventListener('touchstart', onClickOutside)
+    return () => {
+      document.removeEventListener('mousedown', onClickOutside)
+      document.removeEventListener('touchstart', onClickOutside)
+    }
   }, [])
 
   const cellValue = (row: any, col: ColumnDef): string => {
@@ -106,11 +110,10 @@ export const RunsTable: React.FC<RunsTableProps> = ({
         <div style={{ display: 'flex', gap: '0.5rem', alignItems: 'center', flexWrap: 'wrap' }}>
           <input
             type="text"
-            className="form-input"
+            className="form-input table-toolbar-search"
             placeholder="Search..."
             value={search}
             onChange={(e) => setSearch(e.target.value)}
-            style={{ width: '240px' }}
           />
           <div style={{ position: 'relative' }} ref={menuRef}>
             <button
@@ -120,33 +123,9 @@ export const RunsTable: React.FC<RunsTableProps> = ({
               Columns
             </button>
             {showColMenu && (
-              <div
-                style={{
-                  position: 'absolute',
-                  zIndex: 20,
-                  top: '100%',
-                  left: 0,
-                  background: 'white',
-                  border: '1px solid #ddd',
-                  borderRadius: '6px',
-                  padding: '0.5rem 0.75rem',
-                  boxShadow: '0 2px 8px rgba(0,0,0,0.12)',
-                  minWidth: '170px'
-                }}
-              >
+              <div className="column-popover">
                 {columns.map(c => (
-                  <label
-                    key={c.key}
-                    style={{
-                      display: 'flex',
-                      alignItems: 'center',
-                      gap: '0.4rem',
-                      padding: '0.2rem 0',
-                      cursor: 'pointer',
-                      fontSize: '0.85rem',
-                      whiteSpace: 'nowrap'
-                    }}
-                  >
+                  <label key={c.key} className="column-option">
                     <input
                       type="checkbox"
                       checked={visible.includes(c.key)}
@@ -167,32 +146,34 @@ export const RunsTable: React.FC<RunsTableProps> = ({
         </div>
       </div>
 
-      <table className="table">
-        <thead>
-          <tr>
-            {visibleColumns.map(c => <th key={c.key}>{c.label}</th>)}
-            {actions && <th>Actions</th>}
-          </tr>
-        </thead>
-        <tbody>
-          {filtered.length === 0 ? (
+      <div className="table-responsive">
+        <table className="table">
+          <thead>
             <tr>
-              <td colSpan={colSpan} style={{ textAlign: 'center', padding: '2rem', opacity: 0.6 }}>
-                {emptyMessage}
-              </td>
+              {visibleColumns.map(c => <th key={c.key}>{c.label}</th>)}
+              {actions && <th>Actions</th>}
             </tr>
-          ) : (
-            filtered.map((row, i) => (
-              <tr key={row.id ?? i}>
-                {visibleColumns.map(c => (
-                  <td key={c.key}>{c.render ? c.render(row) : row[c.key] ?? '-'}</td>
-                ))}
-                {actions && <td>{actions(row)}</td>}
+          </thead>
+          <tbody>
+            {filtered.length === 0 ? (
+              <tr>
+                <td colSpan={colSpan} style={{ textAlign: 'center', padding: '2rem', opacity: 0.6 }}>
+                  {emptyMessage}
+                </td>
               </tr>
-            ))
-          )}
-        </tbody>
-      </table>
+            ) : (
+              filtered.map((row, i) => (
+                <tr key={row.id ?? i}>
+                  {visibleColumns.map(c => (
+                    <td key={c.key}>{c.render ? c.render(row) : row[c.key] ?? '-'}</td>
+                  ))}
+                  {actions && <td>{actions(row)}</td>}
+                </tr>
+              ))
+            )}
+          </tbody>
+        </table>
+      </div>
     </div>
   )
 }

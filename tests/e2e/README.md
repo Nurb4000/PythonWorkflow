@@ -35,6 +35,10 @@ Env overrides: `E2E_BASE` (default `http://localhost:3000`), `E2E_CDP`
   staged Save (add output A→B, persist, survive reload) and Cancel-with-dirty
   (confirm dialog, leaves designer), then deletes the workflow. Safe to run
   repeatedly.
+- `mobile-responsive.js` (M7) — read-only 390×844 phone-viewport check: mobile
+  nav toggle, no page-level horizontal overflow on admin/task screens, and
+  tappable buttons. Set `SHOT_DIR` to save screenshots. Run with
+  `bash tests/e2e/run-e2e.sh mobile-responsive.js`.
 
 ## Adding a test
 

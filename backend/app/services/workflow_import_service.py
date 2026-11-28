@@ -282,6 +282,20 @@ class WorkflowImportService:
                             route["target_step_id"] = step_ref_to_id[val]
                         elif val == "-1":
                             route["target_step_id"] = -1  # END_TARGET sentinel
+            # M9: remap join source step ids to the newly created steps. Build
+            # new dicts instead of mutating nested ones: the JSON column has no
+            # MutableDict tracking, so an in-place edit would be invisible to
+            # SQLAlchemy's change detection on flush.
+            if "sources" in defn and isinstance(defn["sources"], list):
+                remapped_sources = []
+                for src in defn["sources"]:
+                    item = dict(src) if isinstance(src, dict) else src
+                    if isinstance(item, dict) and item.get("step_id") is not None:
+                        val = item["step_id"]
+                        if isinstance(val, str) and val in step_ref_to_id:
+                            item["step_id"] = step_ref_to_id[val]
+                    remapped_sources.append(item)
+                defn["sources"] = remapped_sources
             # Normalize END_TARGET sentinels from string to int
             if "next_step_ids" in defn and isinstance(defn["next_step_ids"], list):
                 defn["next_step_ids"] = [-1 if v == "-1" else v for v in defn["next_step_ids"]]

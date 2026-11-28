@@ -313,7 +313,7 @@ export const FormRenderer: React.FC<FormRendererProps> = ({
     const sorted = [...group].sort((a, b) => (a[1].column ?? 0) - (b[1].column ?? 0))
 
     return (
-      <div style={{
+      <div className="form-columns" style={{
         display: 'grid',
         gridTemplateColumns: `repeat(${colCount}, 1fr)`,
         gap: '1rem',

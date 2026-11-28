@@ -44,6 +44,12 @@ class Settings(BaseSettings):
     
     # AI provider selection (llama_cpp or openai)
     ai_provider: str = "llama_cpp"
+
+    # M8 fix: optional ordered fallback providers, e.g. "openai,llama_cpp".
+    # Empty (the default) preserves single-provider behavior exactly. Parsing is
+    # done in ai_service.ai_provider_chain() so both comma-separated env values
+    # and runtime API updates are accepted.
+    ai_fallback_providers: str = ""
     
     # M7 fix: per-user AI usage throttle. Caps the number of paid LLM requests
     # a single user may make within a rolling window to prevent unbounded cost

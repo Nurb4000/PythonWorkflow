@@ -30,6 +30,7 @@ interface Settings {
   openai_model: string
   openai_base_url: string
   ai_provider: string
+  ai_fallback_providers: string
   ldap_server_url: string
   ldap_base_dn: string
   ldap_bind_dn: string
@@ -66,6 +67,7 @@ export const SettingsPage: React.FC = () => {
     openai_model: 'gpt-3.5-turbo',
     openai_base_url: 'https://api.openai.com/v1',
     ai_provider: 'llama_cpp',
+    ai_fallback_providers: '',
     ldap_server_url: '',
     ldap_base_dn: '',
     ldap_bind_dn: '',
@@ -337,23 +339,25 @@ export const SettingsPage: React.FC = () => {
     try {
       const token = localStorage.getItem('token')
       
-      if (settings.ai_provider === 'openai') {
-        // Save OpenAI settings
-        await axios.put(
-          `${API_URL}/settings/ai`,
-          null,
-          {
-            params: {
-              ai_provider: 'openai',
-              openai_api_key: settings.openai_api_key,
-              openai_model: settings.openai_model,
-              openai_base_url: settings.openai_base_url
-            },
-            headers: { Authorization: `Bearer ${token}` }
-          }
-        )
-      } else {
-        // Save llama.cpp settings
+      // Always persist the selected provider + M8 fallback chain. Never send the
+      // masked key placeholder back to the server (it would replace the real key).
+      await axios.put(
+        `${API_URL}/settings/ai`,
+        null,
+        {
+          params: {
+            ai_provider: settings.ai_provider,
+            ai_fallback_providers: settings.ai_fallback_providers || '',
+            openai_api_key: settings.openai_api_key && settings.openai_api_key !== '***'
+              ? settings.openai_api_key : '',
+            openai_model: settings.openai_model,
+            openai_base_url: settings.openai_base_url
+          },
+          headers: { Authorization: `Bearer ${token}` }
+        }
+      )
+      if (settings.ai_provider === 'llama_cpp') {
+        // Save llama.cpp connection details as well
         await axios.put(
           `${API_URL}/settings/llm`,
           null,
@@ -640,6 +644,20 @@ export const SettingsPage: React.FC = () => {
               <option value="llama_cpp">llama.cpp (local)</option>
               <option value="openai">OpenAI (cloud)</option>
             </select>
+          </div>
+
+          <div className="form-group">
+            <label className="form-label">Fallback Providers (optional)</label>
+            <input
+              type="text"
+              className="form-input"
+              value={settings.ai_fallback_providers || ''}
+              onChange={(e) => setSettings({...settings, ai_fallback_providers: e.target.value})}
+              placeholder="openai,llama_cpp"
+            />
+            <small style={{ color: '#7f8c8d' }}>
+              Comma-separated order tried when the primary provider fails. Leave empty for single-provider behavior.
+            </small>
           </div>
 
           {settings.ai_provider === 'llama_cpp' && (

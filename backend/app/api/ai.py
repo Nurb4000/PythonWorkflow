@@ -4,14 +4,42 @@ API endpoints for AI-powered generation and assistance
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException, Depends, Query
+from fastapi.routing import APIRoute
 from pydantic import BaseModel, Field
 from typing import Optional, Dict, Any, List
-from app.services.ai_service import ai_service
+from app.services.ai_service import (
+    ai_service,
+    ai_provider_chain,
+    get_current_ai_provider,
+    reset_current_ai_provider,
+)
 from app.services.ai_usage_service import ai_usage, AIUsageLimitError
+from app.core.config import settings as app_settings
 from app.api.auth import get_current_developer
 from app.models.auth import User
 
-router = APIRouter()
+class AIRoute(APIRoute):
+    """Attach the provider that served each AI request (M8), additively.
+
+    A response header keeps every existing response body/field unchanged while
+    making fallback attribution visible to clients and support staff.
+    """
+
+    def get_route_handler(self):
+        original = super().get_route_handler()
+
+        async def with_provider(request):
+            reset_current_ai_provider()
+            response = await original(request)
+            provider = get_current_ai_provider()
+            if provider:
+                response.headers["X-AI-Provider"] = provider
+            return response
+
+        return with_provider
+
+
+router = APIRouter(route_class=AIRoute)
 
 
 # M7 fix: enforce the per-user AI usage throttle on every paid-LLM endpoint.
@@ -204,23 +232,49 @@ async def get_knowledge_base(user: User = Depends(get_current_developer)):
 
 @router.get("/ai/health")
 async def ai_health():
-    """Check AI service health"""
-    try:
-        import httpx
-        async with httpx.AsyncClient() as client:
-            response = await client.get(f"{ai_service.base_url}/health", timeout=5.0)
-            return {
-                "status": "healthy",
-                "llama_cpp_url": ai_service.base_url,
-                "model": ai_service.model,
-                "kb_domains_loaded": len(ai_service.kb),
+    """Check AI service health for the configured provider chain (M8).
+
+    The old endpoint always probed llama.cpp even when OpenAI was selected. It
+    now reports each configured provider: llama.cpp is probed at /health, and
+    OpenAI is checked by local configuration only (no paid probe request).
+    """
+    import httpx
+
+    chain = ai_provider_chain()
+    providers = {}
+    for name in chain:
+        if name == "openai":
+            configured = bool(app_settings.openai_api_key)
+            providers[name] = {
+                "status": "configured" if configured else "not_configured",
+                "model": app_settings.openai_model,
             }
-    except Exception as e:
-        return {
-            "status": "unhealthy",
-            "error": str(e),
-            "llama_cpp_url": ai_service.base_url
-        }
+        else:
+            try:
+                async with httpx.AsyncClient() as client:
+                    await client.get(f"{ai_service.base_url}/health", timeout=5.0)
+                providers[name] = {
+                    "status": "healthy",
+                    "url": ai_service.base_url,
+                    "model": ai_service.model,
+                }
+            except Exception as e:
+                providers[name] = {
+                    "status": "unhealthy",
+                    "url": ai_service.base_url,
+                    "error": str(e),
+                }
+
+    healthy = any(p.get("status") in ("healthy", "configured") for p in providers.values())
+    return {
+        "status": "healthy" if healthy else "unhealthy",
+        "provider": chain[0],
+        "fallback_providers": chain[1:],
+        "providers": providers,
+        "llama_cpp_url": ai_service.base_url,
+        "model": ai_service.model,
+        "kb_domains_loaded": len(ai_service.kb),
+    }
 
 
 # ---------------------------------------------------------------------------

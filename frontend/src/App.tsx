@@ -183,32 +183,40 @@ const Dropdown: React.FC<{ label: string; children: React.ReactNode }> = ({ labe
   const [open, setOpen] = useState(false)
   const ref = useRef<HTMLDivElement>(null)
 
+  const menuId = `nav-dropdown-${label.toLowerCase().replace(/\s+/g, '-')}`
+
   useEffect(() => {
     if (!open) return
-    const handler = (e: MouseEvent) => {
+    const handler = (e: Event) => {
       if (ref.current && !ref.current.contains(e.target as Node)) {
         setOpen(false)
       }
     }
     document.addEventListener('mousedown', handler)
-    return () => document.removeEventListener('mousedown', handler)
+    document.addEventListener('touchstart', handler)
+    return () => {
+      document.removeEventListener('mousedown', handler)
+      document.removeEventListener('touchstart', handler)
+    }
   }, [open])
 
   return (
     <div ref={ref} style={{ position: 'relative' }}>
-      <span
+      <button
+        type="button"
+        className="nav-dropdown-trigger"
+        aria-haspopup="true"
+        aria-expanded={open}
+        aria-controls={menuId}
         onClick={() => setOpen(!open)}
-        style={{
-          cursor: 'pointer', fontWeight: open ? 700 : 500, color: 'white',
-          display: 'flex', alignItems: 'center', gap: '4px',
-          background: open ? '#3d566e' : 'transparent', padding: '4px 8px', borderRadius: '4px',
-        }}
+        onKeyDown={(e) => { if (e.key === 'Escape') setOpen(false) }}
+        style={{ fontWeight: open ? 700 : 500, background: open ? '#3d566e' : 'transparent' }}
       >
         {label}
         <span style={{ fontSize: '0.6rem' }}>{open ? '\u25b2' : '\u25bc'}</span>
-      </span>
+      </button>
       {open && (
-        <div style={{
+        <div id={menuId} style={{
           position: 'absolute', top: '100%', left: 0, marginTop: '0.25rem',
           background: '#34495e', borderRadius: '6px', padding: '0.25rem 0', minWidth: '160px',
           boxShadow: '0 4px 12px rgba(0,0,0,0.3)', zIndex: 100,
@@ -252,6 +260,7 @@ const Navbar: React.FC = () => {
   const { branding } = useBranding()
   const { user, logout, tenants } = useAuth()
   const [showPwdModal, setShowPwdModal] = useState(false)
+  const [mobileNavOpen, setMobileNavOpen] = useState(false)
   const [pwdForm, setPwdForm] = useState({ old_password: '', new_password: '', confirm_password: '' })
   const [pwdMsg, setPwdMsg] = useState('')
   const [pwdLoading, setPwdLoading] = useState(false)
@@ -291,7 +300,16 @@ const Navbar: React.FC = () => {
           <h1>{branding.system_name || 'Instant Workflow'}</h1>
         </Link>
       </div>
-      <div className="nav-links">
+      <button
+        type="button"
+        className="nav-toggle"
+        aria-expanded={mobileNavOpen}
+        aria-controls="main-nav"
+        onClick={() => setMobileNavOpen((open) => !open)}
+      >
+        {mobileNavOpen ? 'Close menu' : 'Menu'}
+      </button>
+      <div id="main-nav" className={`nav-links${mobileNavOpen ? ' open' : ''}`}>
         {user && (
           <>
             <RoleAwareNav />
@@ -300,7 +318,7 @@ const Navbar: React.FC = () => {
       </div>
       {/* Right side: user controls */}
       {user && (
-        <div style={{ display: 'flex', alignItems: 'center', gap: '1rem' }}>
+        <div className="nav-user-controls">
           <TenantSwitcher />
           <span style={{ opacity: 0.8, fontSize: '0.9rem' }}>
             {user.full_name || user.username} ({user.role})
@@ -320,7 +338,7 @@ const Navbar: React.FC = () => {
           background: 'rgba(0,0,0,0.5)', display: 'flex',
           alignItems: 'center', justifyContent: 'center', zIndex: 1000
         }} onClick={() => setShowPwdModal(false)}>
-          <div className="card" style={{ maxWidth: '400px', width: '90%' }} onClick={e => e.stopPropagation()}>
+          <div className="card modal-card" onClick={e => e.stopPropagation()}>
             <h3 className="card-title">Change Password</h3>
             {pwdMsg && (
               <div style={{ marginBottom: '1rem', padding: '0.5rem', borderRadius: '4px', backgroundColor: pwdMsg.includes('successfully') ? '#d4edda' : '#f8d7da', color: pwdMsg.includes('successfully') ? '#155724' : '#721c24' }}>
