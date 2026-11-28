@@ -53,6 +53,23 @@ from app.core.database import Base
 TEST_DATABASE_URL = os.environ["DATABASE_URL"]
 
 
+@pytest_asyncio.fixture(autouse=True)
+async def _dispose_shared_engine_pool():
+    """Clear the app-wide engine pool after every test.
+
+    Services that open their own sessions (LDAP/SMTP overrides, webhook
+    execution logging in M4, ...) share ``app.core.database.async_session_factory``.
+    pytest-asyncio creates a fresh event loop per test, so cached connections
+    from an earlier test can be bound to a closed loop and fail with
+    "Future ... attached to a different loop". Disposing after each test keeps
+    that shared pool empty between loops without changing production behavior.
+    """
+    from app.core.database import engine as app_engine
+
+    yield
+    await app_engine.dispose()
+
+
 @pytest.fixture(autouse=True)
 def _reset_rate_limiter_state():
     """Isolate each test from the module-global per-IP API rate limiter.

@@ -14,3 +14,4 @@ from app.models.reports import ReportDefinition
 from app.models.roles import CustomRole
 from app.models.role_permissions import RolePermission
 from app.models.tenancy import Tenant
+from app.models.webhook_log import WebhookLog

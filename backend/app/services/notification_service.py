@@ -148,12 +148,16 @@ async def notify(
     )
     results: dict = {}
     if dispatch:
+        # M4: carry the tenant on the external delivery so its execution-log row
+        # can be attributed to the same tenant as the in-app notification.
+        log_context = dict(context or {})
+        log_context.setdefault("tenant_id", getattr(user, "tenant_id", None))
         target = NotificationTarget(
             type=type,
             title=title,
             message=message,
             recipients=[user.email] if getattr(user, "email", None) else [],
-            context=context or {},
+            context=log_context,
             entity_type=related_entity_type,
             entity_id=related_entity_id,
         )

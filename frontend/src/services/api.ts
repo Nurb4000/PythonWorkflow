@@ -135,6 +135,11 @@ export const adminApi = {
   getLogs: (params?: any) => api.get('/admin/logs', { params }),
   exportLogs: (params?: any) => api.get('/admin/logs/export', { params, responseType: 'blob' }),
   listFormUploads: (params?: any) => api.get('/admin/form-uploads', { params }),
+  listWebhookLogs: (params?: any) => api.get('/admin/webhook-logs', { params }),
+  getWebhookLogStats: (hours?: number) => api.get('/admin/webhook-logs/stats', { params: { hours } }),
+  getWebhookLog: (id: number) => api.get(`/admin/webhook-logs/${id}`),
+  cleanupWebhookLogs: (olderThanDays: number) =>
+    api.delete('/admin/webhook-logs', { params: { older_than_days: olderThanDays } }),
 }
 
 // Portal APIs

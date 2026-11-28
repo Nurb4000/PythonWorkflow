@@ -12,6 +12,7 @@ from app.core.database import get_db
 from app.core.config import settings
 from app.services.scheduler import scheduler_service
 from app.services.auth_service import auth_service
+from app.services import webhook_log_service as webhook_logs
 from app.models.schemas import Workflow
 
 router = APIRouter()
@@ -72,6 +73,42 @@ def _check_rate_limit(key: str) -> None:
     bucket.append(now)
 
 
+async def _log_incoming(
+    event_type: str,
+    endpoint: str,
+    *,
+    source_ip: str,
+    success: bool,
+    status: str,
+    status_code: Optional[int] = None,
+    workflow_id: Optional[int] = None,
+    run_id: Optional[int] = None,
+    tenant_id: Optional[int] = None,
+    idempotency_key: Optional[str] = None,
+    detail: str = "",
+    payload: Optional[dict] = None,
+) -> None:
+    """Write one inbound invocation row (M4). Never raises to the caller."""
+    await webhook_logs.log_webhook_event(
+        direction=webhook_logs.DIRECTION_INCOMING,
+        event_type=event_type,
+        endpoint=endpoint,
+        method="POST",
+        source_ip=source_ip,
+        success=success,
+        status=status,
+        status_code=status_code,
+        workflow_id=workflow_id,
+        run_id=run_id,
+        tenant_id=tenant_id,
+        idempotency_key=idempotency_key or "",
+        attempt=1,
+        max_attempts=1,
+        detail=detail,
+        request_payload=payload,
+    )
+
+
 def verify_webhook_secret(x_webhook_secret: Optional[str]) -> None:
     """Verify the webhook secret.
 
@@ -112,12 +149,32 @@ async def webhook_trigger(
         client_ip = request.client.host
     else:
         client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
-    _check_rate_limit(f"webhook:{client_ip}")
+    endpoint = f"/webhook/{workflow_id}"
+
+    # M4: record every invocation outcome, including rejections and duplicates.
+    # Rejected requests deliberately do not log the caller-supplied payload.
+    try:
+        _check_rate_limit(f"webhook:{client_ip}")
+    except HTTPException as e:
+        await _log_incoming(
+            webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_REJECTED,
+            status_code=e.status_code, detail=str(e.detail),
+        )
+        raise
 
     # Verify webhook secret if configured. Must run before the idempotency check so an
     # attacker with a bad/missing secret cannot drive cache writes / O(N) scans
     # (findings #37).
-    verify_webhook_secret(x_webhook_secret)
+    try:
+        verify_webhook_secret(x_webhook_secret)
+    except HTTPException as e:
+        await _log_incoming(
+            webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_REJECTED,
+            status_code=e.status_code, detail=str(e.detail),
+        )
+        raise
 
     # FG5: Idempotency check — after auth (#37): prune expired + evict-overflow, then
     # replay a previously seen key.
@@ -125,6 +182,13 @@ async def webhook_trigger(
         _prune_idempotency_entries(time.monotonic())
         cached = _idempotency_cache.get(x_idempotency_key)
         if cached is not None:
+            await _log_incoming(
+                webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+                success=True, status=webhook_logs.STATUS_DUPLICATE,
+                run_id=cached[1], workflow_id=workflow_id,
+                idempotency_key=x_idempotency_key,
+                detail="Duplicate request (idempotent replay)", payload=payload,
+            )
             return {
                 "success": True,
                 "run_id": cached[1],
@@ -132,16 +196,16 @@ async def webhook_trigger(
                 "message": "Duplicate request (idempotent replay)",
                 "idempotent": True,
             }
-    
+
     try:
         # Verify workflow exists and is active
         stmt = select(Workflow).where(Workflow.id == workflow_id, Workflow.is_active == True)
         result = await db.execute(stmt)
         workflow = result.scalar_one_or_none()
-        
+
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found or inactive")
-        
+
         # Trigger the workflow via scheduler (which uses engine.trigger_workflow)
         run = await scheduler_service.trigger_webhook(workflow_id, payload)
 
@@ -149,18 +213,44 @@ async def webhook_trigger(
         if x_idempotency_key:
             _record_idempotency(x_idempotency_key, run.id)
 
+        await _log_incoming(
+            webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+            success=True, status=webhook_logs.STATUS_SUCCESS,
+            workflow_id=workflow_id, run_id=run.id,
+            tenant_id=getattr(workflow, "tenant_id", None),
+            idempotency_key=x_idempotency_key,
+            detail="Workflow triggered successfully", payload=payload,
+        )
         return {
             "success": True,
             "run_id": run.id,
             "workflow_id": workflow_id,
             "message": "Workflow triggered successfully"
         }
-        
-    except HTTPException:
+
+    except HTTPException as e:
+        await _log_incoming(
+            webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_FAILED,
+            status_code=e.status_code, workflow_id=workflow_id,
+            idempotency_key=x_idempotency_key, detail=str(e.detail), payload=payload,
+        )
         raise
     except ValueError as e:
+        await _log_incoming(
+            webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_FAILED,
+            status_code=400, workflow_id=workflow_id,
+            idempotency_key=x_idempotency_key, detail=str(e), payload=payload,
+        )
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        await _log_incoming(
+            webhook_logs.EVENT_WEBHOOK, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_FAILED,
+            status_code=500, workflow_id=workflow_id,
+            idempotency_key=x_idempotency_key, detail=str(e), payload=payload,
+        )
         raise HTTPException(status_code=500, detail=f"Webhook trigger failed: {str(e)}")
 
 
@@ -180,7 +270,17 @@ async def external_trigger(
         client_ip = request.client.host
     else:
         client_ip = (x_forwarded_for or "unknown").split(",")[0].strip()
-    _check_rate_limit(f"api_trigger:{client_ip}")
+    endpoint = f"/api/trigger/{workflow_id}"
+
+    try:
+        _check_rate_limit(f"api_trigger:{client_ip}")
+    except HTTPException as e:
+        await _log_incoming(
+            webhook_logs.EVENT_API_TRIGGER, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_REJECTED,
+            status_code=e.status_code, detail=str(e.detail),
+        )
+        raise
 
     # Validate API key against stored tokens if provided.
     # Findings #31 fix: verify with bcrypt via the shared indexed lookup
@@ -188,37 +288,71 @@ async def external_trigger(
     # hash against the bcrypt-stored token_hash — the two can never match, which
     # made this endpoint return 401 for every request (valid or not). verify_api_token
     # also handles expiry (tz-aware) and returns None for unknown/inactive tokens.
-    if x_api_key:
-        user = await auth_service.verify_api_token(db, x_api_key)
-        if user is None:
-            raise HTTPException(status_code=401, detail="Invalid API key")
-    else:
-        raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
+    # Never log the key itself.
+    try:
+        if x_api_key:
+            user = await auth_service.verify_api_token(db, x_api_key)
+            if user is None:
+                raise HTTPException(status_code=401, detail="Invalid API key")
+        else:
+            raise HTTPException(status_code=401, detail="Missing X-Api-Key header")
+    except HTTPException as e:
+        await _log_incoming(
+            webhook_logs.EVENT_API_TRIGGER, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_REJECTED,
+            status_code=e.status_code, detail=str(e.detail),
+        )
+        raise
 
     try:
         # Verify workflow exists and is active
         stmt = select(Workflow).where(Workflow.id == workflow_id, Workflow.is_active == True)
         result = await db.execute(stmt)
         workflow = result.scalar_one_or_none()
-        
+
         if not workflow:
             raise HTTPException(status_code=404, detail="Workflow not found or inactive")
-        
+
         # Trigger the workflow via scheduler
         run = await scheduler_service.trigger_external_api(workflow_id, input_data, x_api_key)
-        
+
+        await _log_incoming(
+            webhook_logs.EVENT_API_TRIGGER, endpoint, source_ip=client_ip,
+            success=True, status=webhook_logs.STATUS_SUCCESS,
+            workflow_id=workflow_id, run_id=run.id,
+            tenant_id=getattr(workflow, "tenant_id", None),
+            detail="Workflow triggered successfully", payload=input_data,
+        )
         return {
             "success": True,
             "run_id": run.id,
             "workflow_id": workflow_id,
             "message": "Workflow triggered successfully"
         }
-        
-    except HTTPException:
+
+    except HTTPException as e:
+        await _log_incoming(
+            webhook_logs.EVENT_API_TRIGGER, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_FAILED,
+            status_code=e.status_code, workflow_id=workflow_id,
+            detail=str(e.detail), payload=input_data,
+        )
         raise
     except ValueError as e:
+        await _log_incoming(
+            webhook_logs.EVENT_API_TRIGGER, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_FAILED,
+            status_code=400, workflow_id=workflow_id,
+            detail=str(e), payload=input_data,
+        )
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
+        await _log_incoming(
+            webhook_logs.EVENT_API_TRIGGER, endpoint, source_ip=client_ip,
+            success=False, status=webhook_logs.STATUS_FAILED,
+            status_code=500, workflow_id=workflow_id,
+            detail=str(e), payload=input_data,
+        )
         raise HTTPException(status_code=500, detail=f"API trigger failed: {str(e)}")
 
 

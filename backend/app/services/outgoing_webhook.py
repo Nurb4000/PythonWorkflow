@@ -23,9 +23,10 @@ import hmac
 import json
 import logging
 import random
+import time
 import uuid
-from dataclasses import dataclass
-from typing import Any, Optional
+from dataclasses import dataclass, field
+from typing import Any, Awaitable, Callable, Optional
 
 import httpx
 
@@ -57,6 +58,34 @@ def make_idempotency_key(key: Optional[str]) -> str:
 
 
 @dataclass
+class WebhookAttempt:
+    """One HTTP attempt within a delivery (M4 execution log).
+
+    Emitted after every attempt -- including attempts that will be retried --
+    so operators can see the full retry chain, not just the final outcome.
+    """
+
+    url: str
+    payload: dict[str, Any]
+    attempt: int
+    max_attempts: int
+    success: bool
+    status_code: Optional[int]
+    detail: str
+    will_retry: bool
+    duration_ms: int
+    idempotency_key: str
+    event_type: str = "outgoing_webhook"
+    context: dict[str, Any] = field(default_factory=dict)
+
+
+# Optional hook for writing the M4 execution log. Kept as a callback (rather
+# than importing the log service here) so delivery stays transport-agnostic and
+# existing callers/tests need no DB.
+AttemptLogger = Optional[Callable[[WebhookAttempt], Awaitable[None]]]
+
+
+@dataclass
 class WebhookRequest:
     """A single signed, idempotent outgoing webhook delivery.
 
@@ -70,6 +99,9 @@ class WebhookRequest:
     idempotency_key: Optional[str] = None
     timeout: float = DEFAULT_TIMEOUT
     max_retries: Optional[int] = None
+    attempt_logger: AttemptLogger = None
+    log_event_type: str = "outgoing_webhook"
+    log_context: dict[str, Any] = field(default_factory=dict)
 
 
 @dataclass
@@ -126,7 +158,8 @@ class OutgoingWebhookSender:
 
         The effective cap is the per-request ``max_retries`` when set, otherwise the
         sender's configured default -- so a channel can set a policy once and callers
-        may still override it for a single delivery.
+        may still override it for a single delivery. Every attempt is reported to
+        ``request.attempt_logger`` when one is supplied (M4 execution log).
         """
         max_retries = request.max_retries if request.max_retries is not None else self._max_retries
         max_retries = max(1, max_retries)
@@ -140,8 +173,40 @@ class OutgoingWebhookSender:
         if signature:
             headers["X-Signature"] = signature
 
+        async def note(
+            attempt: int,
+            started: float,
+            success: bool,
+            status_code: Optional[int],
+            detail: str,
+            will_retry: bool,
+        ) -> None:
+            """Record one attempt; a broken logger must not affect delivery."""
+            if request.attempt_logger is None:
+                return
+            try:
+                await request.attempt_logger(
+                    WebhookAttempt(
+                        url=request.url,
+                        payload=request.payload,
+                        attempt=attempt,
+                        max_attempts=max_retries,
+                        success=success,
+                        status_code=status_code,
+                        detail=detail,
+                        will_retry=will_retry,
+                        duration_ms=int((time.monotonic() - started) * 1000),
+                        idempotency_key=idem_key,
+                        event_type=request.log_event_type,
+                        context=request.log_context,
+                    )
+                )
+            except Exception as e:  # audit logging is best-effort
+                logger.debug("Outgoing webhook attempt logger failed: %s", e)
+
         last_status: Optional[int] = None
         for attempt in range(1, max_retries + 1):
+            started = time.monotonic()
             try:
                 async with (self._client or httpx.AsyncClient()) as client:
                     resp = await client.post(
@@ -149,34 +214,32 @@ class OutgoingWebhookSender:
                     )
                 last_status = resp.status_code
                 if 200 <= resp.status_code < 300:
+                    await note(attempt, started, True, resp.status_code, "ok", False)
                     return WebhookResult(
                         True, resp.status_code, attempt, idem_key, signature, "ok"
                     )
+                detail = f"HTTP {resp.status_code}: {resp.text[:200]}"
                 if self.is_retryable_status(resp.status_code) and attempt < max_retries:
+                    await note(attempt, started, False, resp.status_code, detail, True)
                     await asyncio.sleep(self._backoff_delay(attempt))
                     continue
                 # Non-retryable status, or a retryable status on the final attempt.
-                return WebhookResult(
-                    False,
-                    resp.status_code,
-                    attempt,
-                    idem_key,
-                    signature,
-                    f"HTTP {resp.status_code}: {resp.text[:200]}",
-                )
+                await note(attempt, started, False, resp.status_code, detail, False)
+                return WebhookResult(False, resp.status_code, attempt, idem_key, signature, detail)
             except (httpx.TimeoutException, httpx.TransportError) as e:
                 # Transient network-level failures: retry until attempts are spent.
+                detail = f"{type(e).__name__}: {e}"
                 if attempt < max_retries:
+                    await note(attempt, started, False, None, detail, True)
                     await asyncio.sleep(self._backoff_delay(attempt))
                     continue
-                return WebhookResult(
-                    False, None, attempt, idem_key, signature, f"{type(e).__name__}: {e}"
-                )
+                await note(attempt, started, False, None, detail, False)
+                return WebhookResult(False, None, attempt, idem_key, signature, detail)
             except Exception as e:  # never raise to the caller; log + report failure
                 logger.error("Outgoing webhook delivery failed: %s", e)
-                return WebhookResult(
-                    False, None, attempt, idem_key, signature, f"{type(e).__name__}: {e}"
-                )
+                detail = f"{type(e).__name__}: {e}"
+                await note(attempt, started, False, None, detail, False)
+                return WebhookResult(False, None, attempt, idem_key, signature, detail)
 
         # Exhausted all retries (defensive; the loop always returns).
         return WebhookResult(

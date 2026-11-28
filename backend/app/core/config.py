@@ -69,6 +69,12 @@ class Settings(BaseSettings):
     retry_backoff_base_seconds: float = 1.0
     retry_backoff_multiplier: float = 2.0
     retry_backoff_max_seconds: float = 60.0
+
+    # M4 fix: webhook execution logs (every inbound invocation and outbound
+    # delivery attempt) are kept in the DB for operator inspection. Bound both
+    # retention and per-row payload size so the audit table cannot grow forever.
+    webhook_log_retention_days: int = 30
+    webhook_log_payload_chars: int = 4000
     
     # LDAP configuration (optional)
     ldap_server_url: str = ""  # e.g., ldap://ldap.example.com:389

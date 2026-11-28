@@ -11,6 +11,7 @@ import { RunMonitor } from './pages/RunMonitor'
 import { AdminDashboard } from './pages/AdminDashboard'
 import { WorkflowRunsAdmin } from './pages/WorkflowRunsAdmin'
 import { UploadsAdmin } from './pages/UploadsAdmin'
+import { WebhookLogsAdmin } from './pages/WebhookLogsAdmin'
 import { AdminTaskDashboard } from './pages/AdminTaskDashboard'
 import { RoleTaskDashboard } from './pages/RoleTaskDashboard'
 import { TaskDetail } from './pages/TaskDetail'
@@ -137,6 +138,7 @@ const RoleAwareNav: React.FC = () => {
         <Dropdown label="Admin">
           <Link to="/admin/runs" onClick={() => navigate('/admin/runs')}>Runs</Link>
           <Link to="/admin/uploads" onClick={() => navigate('/admin/uploads')}>Uploads</Link>
+          <Link to="/admin/webhook-logs" onClick={() => navigate('/admin/webhook-logs')}>Webhook Logs</Link>
           <Link to="/admin/users" onClick={() => navigate('/admin/users')}>Users</Link>
           <Link to="/admin/groups" onClick={() => navigate('/admin/groups')}>Groups</Link>
           <Link to="/admin/services" onClick={() => navigate('/admin/services')}>Services</Link>
@@ -406,6 +408,7 @@ const AppContent: React.FC = () => {
           <Route path="/admin/groups" element={<RoleRoute roles={['admin']}><GroupsPage /></RoleRoute>} />
           <Route path="/admin/runs" element={<RoleRoute roles={['admin']}><WorkflowRunsAdmin /></RoleRoute>} />
           <Route path="/admin/uploads" element={<RoleRoute roles={['admin']}><UploadsAdmin /></RoleRoute>} />
+          <Route path="/admin/webhook-logs" element={<RoleRoute roles={['admin']}><WebhookLogsAdmin /></RoleRoute>} />
           <Route path="/admin/tasks" element={<RoleRoute roles={['admin']}><AdminTaskDashboard /></RoleRoute>} />
           <Route path="/admin/services" element={<RoleRoute roles={['admin']}><ServiceManager /></RoleRoute>} />
           <Route path="/admin/kb" element={<RoleRoute roles={['admin']}><KBManagement /></RoleRoute>} />

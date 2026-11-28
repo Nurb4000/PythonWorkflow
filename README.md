@@ -198,6 +198,7 @@ CSV export applies **defense in depth** so sensitive fields can never be bulk-du
 - **Logs**: View and export audit logs (`/admin/logs`, `/admin/logs/export`)
 - **Promote**: Promote a workflow or form between environments (`/admin/promote/workflow/{id}`, `/admin/promote/form/{id}`)
 - **Form Uploads**: Manage uploaded form files (`GET /admin/form-uploads`)
+- **Webhook Logs**: Inspect incoming invocations and outgoing delivery attempts/retries (`GET /admin/webhook-logs`, `/admin/webhook-logs/stats`)
 
 ### Testing
 - **Backend**: 570+ tests (pytest + asyncio) against a dedicated PostgreSQL test database — covering marketplace, engine-behavior regressions, run inspection, and the security-findings regression suite.

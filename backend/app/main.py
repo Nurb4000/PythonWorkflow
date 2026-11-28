@@ -15,7 +15,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.config import settings
 from app.core.database import init_db, close_db, async_session_factory, engine
-from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications, tenancy
+from app.api import workflows, workflow_runs, admin, ai, knowledge_base, auth, portal, forms, system_settings, tasks, webhooks, webhook_logs, data_fields, data_query, data_export, sql_views, workflow_import_export, marketplace, cmdb, services, date_targets, field_library, search, bulk_operations, reports, ldap, lookup, roles, where_used, audit, role_permissions, notifications, tenancy
 from app.services.scheduler import scheduler_service
 from app.services.rate_limiter import require_api_rate_limit
 
@@ -253,6 +253,7 @@ app.include_router(workflows.router, prefix="/workflows", tags=["workflows"])
 app.include_router(workflow_runs.router, prefix="/workflows/{workflow_id}/runs", tags=["workflow-runs"])
 app.include_router(workflow_runs.runs_router, tags=["workflow-runs"])
 app.include_router(admin.router, prefix="/admin", tags=["admin"])
+app.include_router(webhook_logs.router, prefix="/admin", tags=["admin"])
 # M5 fix: per-IP rate limiting on the spend-exposed AI routes (in addition to the
 # existing per-user AI cost throttle). Bounds request frequency per source IP.
 app.include_router(

@@ -33,9 +33,51 @@ from typing import Optional
 import httpx
 
 from app.core.config import settings
-from app.services.outgoing_webhook import OutgoingWebhookSender, WebhookRequest
+from app.services import webhook_log_service as webhook_logs
+from app.services.outgoing_webhook import (
+    OutgoingWebhookSender,
+    WebhookAttempt,
+    WebhookRequest,
+)
 
 logger = logging.getLogger(__name__)
+
+
+def _as_int(value) -> Optional[int]:
+    """Best-effort coercion for optional FK ids carried in notification context."""
+    try:
+        return int(value) if value is not None else None
+    except (TypeError, ValueError):
+        return None
+
+
+async def _log_webhook_attempt(attempt: WebhookAttempt) -> None:
+    """Persist one outbound delivery attempt (M4). Never raises."""
+    ctx = attempt.context or {}
+    status = (
+        webhook_logs.STATUS_SUCCESS
+        if attempt.success
+        else (webhook_logs.STATUS_RETRY if attempt.will_retry else webhook_logs.STATUS_FAILED)
+    )
+    await webhook_logs.log_webhook_event(
+        direction=webhook_logs.DIRECTION_OUTGOING,
+        event_type=attempt.event_type,
+        endpoint=attempt.url,
+        success=attempt.success,
+        status=status,
+        workflow_id=_as_int(ctx.get("workflow_id")),
+        run_id=_as_int(ctx.get("run_id")),
+        tenant_id=_as_int(ctx.get("tenant_id")),
+        idempotency_key=attempt.idempotency_key,
+        attempt=attempt.attempt,
+        max_attempts=attempt.max_attempts,
+        will_retry=attempt.will_retry,
+        status_code=attempt.status_code,
+        duration_ms=attempt.duration_ms,
+        detail=attempt.detail,
+        response_snippet="" if attempt.success else attempt.detail,
+        request_payload=attempt.payload,
+    )
 
 
 class NotificationType(str, Enum):
@@ -185,9 +227,40 @@ class SlackChannel(NotificationChannel):
             status, body = await self._post(url, payload, {"Content-Type": "application/json"})
             ok = 200 <= status < 300
             detail = "ok" if ok else f"HTTP {status}: {body[:200]}"
+            await webhook_logs.log_webhook_event(
+                direction=webhook_logs.DIRECTION_OUTGOING,
+                event_type=webhook_logs.EVENT_NOTIFICATION_SLACK,
+                endpoint=url,
+                success=ok,
+                status=webhook_logs.STATUS_SUCCESS if ok else webhook_logs.STATUS_FAILED,
+                status_code=status,
+                attempt=1,
+                max_attempts=1,
+                detail=detail,
+                response_snippet="" if ok else body[:200],
+                request_payload=payload,
+                workflow_id=_as_int(target.context.get("workflow_id")),
+                run_id=_as_int(target.context.get("run_id")),
+                tenant_id=_as_int(target.context.get("tenant_id")),
+            )
             return [DeliveryResult(self.type.value, "<webhook>", ok, detail)]
         except Exception as e:  # best-effort: never raise to the caller
-            return [DeliveryResult(self.type.value, "<webhook>", False, f"{type(e).__name__}: {e}")]
+            detail = f"{type(e).__name__}: {e}"
+            await webhook_logs.log_webhook_event(
+                direction=webhook_logs.DIRECTION_OUTGOING,
+                event_type=webhook_logs.EVENT_NOTIFICATION_SLACK,
+                endpoint=url,
+                success=False,
+                status=webhook_logs.STATUS_FAILED,
+                attempt=1,
+                max_attempts=1,
+                detail=detail,
+                request_payload=payload,
+                workflow_id=_as_int(target.context.get("workflow_id")),
+                run_id=_as_int(target.context.get("run_id")),
+                tenant_id=_as_int(target.context.get("tenant_id")),
+            )
+            return [DeliveryResult(self.type.value, "<webhook>", False, detail)]
 
 
 class WebhookChannel(NotificationChannel):
@@ -233,8 +306,16 @@ class WebhookChannel(NotificationChannel):
         }
         # A single logical delivery carries one idempotency key + signature across all
         # retry attempts, so transient failures don't cause duplicate processing.
+        # Each attempt is written to the M4 execution log via the callback.
         result = await self._sender.deliver(
-            WebhookRequest(url=url, payload=payload, secret=settings.webhook_secret)
+            WebhookRequest(
+                url=url,
+                payload=payload,
+                secret=settings.webhook_secret,
+                attempt_logger=_log_webhook_attempt,
+                log_event_type=webhook_logs.EVENT_NOTIFICATION_WEBHOOK,
+                log_context=dict(target.context),
+            )
         )
         return [DeliveryResult(self.type.value, "<webhook>", result.success, result.detail)]
 
